@@ -105,6 +105,10 @@ where it answers nothing at all, since restart expects no reply. A full
 mains power cycle does **not** fix it, and neither does `pnputil` or a DTR
 pulse. See FINDINGS.md for the full list of what was tried.
 
+If the panel is *silent* rather than merely black — nothing replies at all
+— run `RUN_DIAG2.bat`, which sweeps the DTR/RTS line states and, if the
+panel still says nothing, tries to draw blind without needing a reply.
+
 Never open this device with `rtscts=True` — it hangs pyserial indefinitely.
 
 ## Status

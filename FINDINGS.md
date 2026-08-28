@@ -145,10 +145,15 @@ if (a || r >= 1024) l = 260;
 | `test_connection.py` | Connect → print device info → set brightness → one test frame. |
 | `demo_clock.py` | Starter template for live content — edit `render_frame()`. |
 | `RUN_TEST.bat` | Runs the above, plus port/process/task diagnostics, logs to `test_output.log`. |
-| `diag_probe.py` / `RUN_DIAG.bat` | Read-only probe: dumps every byte the panel sends across several variants and baud rates. |
-| `diag2_lines.py` / `RUN_DIAG2.bat` | The DTR/RTS sweep that cracked fault 1. Falls back to blind drawing if the panel stays silent. |
-| `blind_draw.py` | Draws without ever needing a reply, walking candidate resolutions. Useful if a future panel's info reply is unavailable. |
-| `draw_lab.py` / `RUN_DRAWLAB.bat` | Phased draw experiment; its phase 0 restart is what cracked fault 2. |
+| `diag2_lines.py` / `RUN_DIAG2.bat` | The DTR/RTS sweep that cracked fault 1, kept as the recovery tool for a silent panel. Falls back to blind drawing if it stays silent. |
+| `blind_draw.py` | Draws without ever needing a reply, walking candidate resolutions. For a panel whose info reply is unavailable. Invoked by `RUN_DIAG2.bat`. |
+
+Removed after the fix, recoverable from commit `611885d` if ever needed:
+`diag_probe.py` / `RUN_DIAG.bat` (superseded by the diag2 sweep, which
+tests everything it did and more), `draw_lab.py` / `RUN_DRAWLAB.bat` (its
+phase-0 restart is now `blind_restart()` in the driver), and
+`KILL_ALL.bat` / `KILL_PID.bat` (built to chase the `smartscreen.exe` red
+herring -- there was never a process holding the port).
 
 ## If it ever wedges again
 
