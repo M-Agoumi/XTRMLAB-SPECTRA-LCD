@@ -21,6 +21,23 @@ drawlab_output.log
 *.orig
 *.rej
 
+# --- Personal settings & media (never commit) --------------------------
+# app_config.json holds your own port, brightness, and local file paths
+# (video/image locations on your machine) -- machine-specific, not source.
+# The app creates it fresh on first run if it's missing.
+app_config.json
+
+# Nothing here ships with a bundled video or "nothing playing" image on
+# purpose (see the Dashboard/Video tabs' file pickers) -- your own picks
+# stay out of the repo. Add your own filenames here too if you keep them
+# in this folder instead of elsewhere.
+badapple.mp4
+default_spotify.jpeg
+*.mp4
+*.mkv
+*.avi
+*.mov
+
 # --- Vendor material (do NOT commit) ----------------------------------
 # app.asar is ~58 MB of the vendor's proprietary Electron bundle. It was
 # the reference for the protocol, but it is their copyrighted code and has

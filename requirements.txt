@@ -1,0 +1,33 @@
+# hongtai_screen -- everything needed to run the desktop app (app.py)
+# with all four themes available. Windows only.
+#
+# Only want one theme instead of the full desktop app? You don't need
+# all of this -- see that theme's own section in README.md for just
+# its dependencies.
+#
+#   pip install -r requirements.txt
+
+# --- Core: the driver itself + the desktop app ------------------------
+pyserial
+pillow
+
+# --- demo_clock.py: CPU/RAM bars ---------------------------------------
+psutil
+
+# --- dashboard_theme.py: gauges, CPU/GPU stats, Spotify art -----------
+numpy               # required -- gauge rendering
+pycairo             # required -- gauge rendering (prebuilt wheel on Windows)
+nvidia-ml-py        # optional -- NVIDIA GPU stats; degrades gracefully without one
+winsdk              # optional -- Spotify/now-playing album art (Windows 10 1809+)
+
+# --- video_theme.py: stream a video file to the panel ------------------
+opencv-python-headless
+# pygame            # optional -- only needed for --audio; also needs ffmpeg on PATH
+
+# --- webpage_theme.py: mirror a webpage to the panel --------------------
+playwright
+# after installing, run once:  playwright install chromium   (~150MB download)
+
+# --- Desktop app extra: system tray icon on close/at startup -----------
+pystray             # optional -- without it, closing the window quits instead
+                     # of dismissing to tray, and --autostart just minimizes

@@ -1,7 +1,7 @@
 """
 Example "starter template" for ongoing custom content: a live clock +
-basic system stats, redrawn once a second, running until you press
-Ctrl+C.
+basic system stats, redrawn at 10Hz (every ~100ms) for a smoother feel,
+running until you press Ctrl+C.
 
     python demo_clock.py               # auto-detects the port
     python demo_clock.py COM5          # or specify one explicitly
@@ -94,24 +94,45 @@ def draw_bar(draw, x, y, w, h, percent, label):
     draw.text((x + w + 8, y - 1), f"{label} {percent:.0f}%", font=FONT_SMALL, fill=(210, 210, 215))
 
 
-def main():
-    port = sys.argv[1] if len(sys.argv) > 1 else None
-    screen = HongtaiScreen(port)  # auto-detects if port is None
-    info = screen.connect()
-    print(f"Connected: {info.width}x{info.height}, firmware {info.version}")
-    screen.set_brightness(90)
+def run(port=None, brightness=90, stop_event=None, log=print, screen_factory=HongtaiScreen,
+        on_connected=None):
+    """Runs until stop_event is set (or forever if stop_event is None --
+    the CLI entry point relies on Ctrl+C instead). Pulled out of main()
+    so a GUI can drive this theme in a background thread.
 
-    print("Streaming live clock. Press Ctrl+C to stop.")
+    `on_connected(screen)`, if given, is called once right after connect()
+    so a GUI can keep a live reference (e.g. for a brightness slider that
+    should apply immediately instead of only on the next Start)."""
+    screen = screen_factory(port)
+    info = screen.connect()
+    log(f"Connected: {info.width}x{info.height}, firmware {info.version}")
+    screen.set_brightness(brightness)
+    if on_connected is not None:
+        on_connected(screen)
+
+    log("Streaming live clock at 10Hz." + ("" if stop_event is not None else " Press Ctrl+C to stop."))
+    target_period = 0.1  # 10Hz -- times itself so a slow frame doesn't push later ones late
     try:
-        while True:
+        while stop_event is None or not stop_event.is_set():
+            frame_start = time.time()
             img = render_frame(info.width, info.height)
             screen.show(img)
-            time.sleep(1.0)
+            elapsed = time.time() - frame_start
+            sleep_for = max(0.0, target_period - elapsed)
+            if stop_event is not None:
+                stop_event.wait(sleep_for)
+            else:
+                time.sleep(sleep_for)
     except KeyboardInterrupt:
         pass
     finally:
         screen.close()
-        print("Stopped, disconnected cleanly.")
+        log("Stopped, disconnected cleanly.")
+
+
+def main():
+    port = sys.argv[1] if len(sys.argv) > 1 else None
+    run(port=port)
 
 
 if __name__ == "__main__":

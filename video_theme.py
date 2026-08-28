@@ -25,7 +25,6 @@ Requires:
 
 import argparse
 import subprocess
-import sys
 import time
 import shutil
 import tempfile
@@ -71,6 +70,108 @@ def extract_audio(video_path, out_wav):
         return False
 
 
+def run(video_path, port=None, fps=None, bw=False, audio=False, loop=False,
+        brightness=90, stop_event=None, log=print, screen_factory=HongtaiScreen,
+        on_connected=None):
+    """Runs until the video ends (or forever if loop=True), or stop_event
+    is set. Pulled out of main() so a GUI can drive this in a background
+    thread. `video_path` is always required -- there's no bundled/default
+    video, you always point this at your own file.
+
+    `on_connected(screen)`, if given, is called once right after connect()
+    so a GUI can keep a live reference (e.g. for a brightness slider that
+    should apply immediately instead of only on the next Start)."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        log(f"Could not open video file: {video_path}")
+        return
+
+    src_fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    target_fps = fps or min(src_fps, 24.0)  # 24fps is already plenty for silhouette content
+    log(f"Video: {video_path}  ({frame_count} frames @ {src_fps:.1f}fps source, "
+        f"playing at {target_fps:.1f}fps)")
+
+    screen = screen_factory(port)
+    info = screen.connect()
+    log(f"Connected: {info.width}x{info.height}, firmware {info.version}")
+    if on_connected is not None:
+        on_connected(screen)
+    screen.set_brightness(brightness)
+
+    have_audio = False
+    audio_tmp = None
+    if audio:
+        try:
+            import pygame  # noqa: F401
+        except ImportError:
+            log("  --audio needs pygame (pip install pygame) -- skipping audio")
+        else:
+            audio_tmp = os.path.join(tempfile.gettempdir(), "video_theme_audio.wav")
+            have_audio = extract_audio(video_path, audio_tmp)
+
+    def _start_audio():
+        if have_audio:
+            import pygame
+            pygame.mixer.init()
+            pygame.mixer.music.load(audio_tmp)
+            pygame.mixer.music.play()
+
+    def _stopped():
+        return stop_event is not None and stop_event.is_set()
+
+    _start_audio()
+    period = 1.0 / target_fps
+    frame_idx = 0
+    start_time = time.time()
+
+    try:
+        while not _stopped():
+            ok, frame = cap.read()
+            if not ok:
+                if not loop:
+                    break
+                # restart from the top and keep going
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                frame_idx = 0
+                start_time = time.time()
+                if have_audio:
+                    import pygame
+                    pygame.mixer.music.play()
+                continue
+
+            # keep roughly in sync with wall-clock time, dropping frames
+            # if we've fallen behind rather than letting playback lag
+            target_time = start_time + frame_idx / target_fps
+            now = time.time()
+            if now < target_time:
+                time.sleep(target_time - now)
+            elif now > target_time + period:
+                frame_idx += 1
+                continue  # we're behind -- skip this frame instead of queueing up
+
+            img = fit_frame(frame, info.width, info.height, bw=bw)
+            screen.show(img)
+            frame_idx += 1
+
+            if frame_count and frame_idx % 100 == 0:
+                pct = 100 * frame_idx / frame_count
+                log(f"  {frame_idx}/{frame_count} ({pct:.0f}%)")
+
+    except KeyboardInterrupt:
+        pass
+    finally:
+        cap.release()
+        if have_audio:
+            try:
+                import pygame
+                pygame.mixer.music.stop()
+            except Exception:  # noqa: BLE001
+                pass
+        screen.close()
+        log("Done, disconnected cleanly.")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("video", help="path to a video file you already have")
@@ -82,82 +183,10 @@ def main():
     ap.add_argument("--audio", action="store_true",
                      help="also play the audio track through the PC's speakers, "
                           "roughly synced (best-effort, needs ffmpeg + pygame)")
+    ap.add_argument("--loop", action="store_true", help="restart from the beginning when the video ends")
     args = ap.parse_args()
 
-    cap = cv2.VideoCapture(args.video)
-    if not cap.isOpened():
-        print(f"Could not open video file: {args.video}")
-        sys.exit(1)
-
-    src_fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    target_fps = args.fps or min(src_fps, 24.0)  # 24fps is already plenty for silhouette content
-    print(f"Video: {args.video}  ({frame_count} frames @ {src_fps:.1f}fps source, "
-          f"playing at {target_fps:.1f}fps)")
-
-    screen = HongtaiScreen(args.port)
-    info = screen.connect()
-    print(f"Connected: {info.width}x{info.height}, firmware {info.version}")
-    screen.set_brightness(90)
-
-    audio_tmp = None
-    if args.audio:
-        try:
-            import pygame  # noqa: F401
-        except ImportError:
-            print("  --audio needs pygame (pip install pygame) -- skipping audio")
-            args.audio = False
-
-    if args.audio:
-        audio_tmp = os.path.join(tempfile.gettempdir(), "video_theme_audio.wav")
-        if extract_audio(args.video, audio_tmp):
-            import pygame
-            pygame.mixer.init()
-            pygame.mixer.music.load(audio_tmp)
-            pygame.mixer.music.play()
-        else:
-            args.audio = False
-
-    period = 1.0 / target_fps
-    frame_idx = 0
-    start = time.time()
-
-    try:
-        while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
-
-            # keep roughly in sync with wall-clock time, dropping frames
-            # if we've fallen behind rather than letting playback lag
-            target_time = start + frame_idx / target_fps
-            now = time.time()
-            if now < target_time:
-                time.sleep(target_time - now)
-            elif now > target_time + period:
-                frame_idx += 1
-                continue  # we're behind -- skip this frame instead of queueing up
-
-            img = fit_frame(frame, info.width, info.height, bw=args.bw)
-            screen.show(img)
-            frame_idx += 1
-
-            if frame_count and frame_idx % 100 == 0:
-                pct = 100 * frame_idx / frame_count
-                print(f"  {frame_idx}/{frame_count} ({pct:.0f}%)")
-
-    except KeyboardInterrupt:
-        pass
-    finally:
-        cap.release()
-        if args.audio:
-            try:
-                import pygame
-                pygame.mixer.music.stop()
-            except Exception:  # noqa: BLE001
-                pass
-        screen.close()
-        print("Done, disconnected cleanly.")
+    run(args.video, port=args.port, fps=args.fps, bw=args.bw, audio=args.audio, loop=args.loop)
 
 
 if __name__ == "__main__":

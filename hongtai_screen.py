@@ -130,6 +130,16 @@ so you can drive the screen with *whatever content you want* -- text,
 clocks, live system stats, images, anything you can render with
 Pillow -- instead of being stuck with the vendor's theme editor.
 
+Any script using this class can also mirror the panel live to a
+webpage, with one extra line after connect():
+
+    screen.enable_web_mirror()   # prints the URL to open
+
+That starts a tiny built-in HTTP server (no extra dependencies) that
+always serves whatever image was last passed to show() -- open the
+printed URL from a laptop or phone on the same network to watch the
+panel remotely, in real time, without standing in front of the case.
+
 Requirements:
     pip install pyserial pillow
 
@@ -151,14 +161,18 @@ Example:
 
 from __future__ import annotations
 
+import http.server
 import io
+import socket
+import socketserver
+import sys
 import time
 import threading
 from dataclasses import dataclass
 from typing import List, Optional
 
 import serial  # pyserial
-from PIL import Image
+from PIL import Image, ImageEnhance
 from serial.tools import list_ports
 
 BAUD_RATE = 2_000_000
@@ -189,6 +203,120 @@ HONGTAI_VID = 0x33C3
 KNOWN_PIDS = {
     0x7804: "XTRM Lab (confirmed)",
 }
+
+
+# ---------------------------------------------------------------------- #
+# Web mirror: a live browser view of whatever's currently on the panel.
+# Plain http.server, no extra dependencies -- enable_web_mirror() starts a
+# tiny background HTTP server that always serves the most recent frame
+# passed to show(), and a page that polls it a few times a second so you
+# can watch the panel from a laptop or phone on the same network.
+# ---------------------------------------------------------------------- #
+
+_MIRROR_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8">
+<title>Panel mirror</title>
+<style>
+  html,body{margin:0;height:100%;background:#050308;display:flex;
+            align-items:center;justify-content:center;
+            font-family:-apple-system,"Segoe UI",sans-serif;overflow:hidden;}
+  img{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto;
+      box-shadow:0 0 40px rgba(140,60,220,0.35);border-radius:6px;
+      background:#050308;}
+  #status{position:fixed;top:10px;right:14px;font-size:12px;
+          color:#9a97ac;letter-spacing:.06em;text-transform:uppercase;
+          background:rgba(10,8,16,0.55);padding:4px 10px;border-radius:20px;}
+  #dot{display:inline-block;width:8px;height:8px;border-radius:50%;
+       background:#3ddc73;margin-right:6px;box-shadow:0 0 6px #3ddc73;
+       vertical-align:middle;}
+  #dot.stale{background:#e05252;box-shadow:0 0 6px #e05252;}
+</style></head>
+<body>
+  <img id="mirror" alt="panel mirror">
+  <div id="status"><span id="dot"></span><span id="label">connecting</span></div>
+<script>
+  const img = document.getElementById('mirror');
+  const dot = document.getElementById('dot');
+  const label = document.getElementById('label');
+  let lastOk = 0;
+  img.onload = () => {
+    lastOk = Date.now();
+    dot.classList.remove('stale');
+    label.textContent = 'live';
+  };
+  img.onerror = () => {
+    if (Date.now() - lastOk > 2000) {
+      dot.classList.add('stale');
+      label.textContent = 'no signal';
+    }
+  };
+  setInterval(() => { img.src = '/frame.jpg?t=' + Date.now(); }, 100);
+</script>
+</body></html>"""
+
+
+def _local_ip() -> str:
+    """Best-effort LAN IP to print in the "open this URL" message --
+    doesn't actually send anything, just asks the OS which local address
+    it would use to reach the internet."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:  # noqa: BLE001
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+class _MirrorServer(socketserver.ThreadingTCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def handle_error(self, request, client_address):
+        """A browser tab that's polling /frame.jpg 10x/second and then
+        gets closed, refreshed, or navigated away from resets its
+        connection mid-request all the time -- that's completely normal
+        for this kind of poll loop, not a bug, but the default handler
+        prints a full traceback for every single one of them. Only print
+        anything for errors that *aren't* just "the other end hung up"."""
+        exc_type = sys.exc_info()[0]
+        if exc_type in (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            return
+        super().handle_error(request, client_address)
+
+
+def _make_mirror_handler(screen: "HongtaiScreen"):
+    class MirrorHandler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, fmt, *args):  # noqa: A002 -- keep stdout clean
+            pass  # the default logs every single poll request (10/s)
+
+        def do_GET(self):
+            if self.path.startswith("/frame.jpg"):
+                with screen._mirror_lock:
+                    data = screen._mirror_jpeg
+                if data is None:
+                    self.send_response(503)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                body = _MIRROR_PAGE.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+    return MirrorHandler
 
 
 @dataclass
@@ -357,6 +485,20 @@ class HongtaiScreen:
         # leave a later write hung until it raises SerialTimeoutException.
         # This lock serializes every write+flush against the port.
         self._write_lock = threading.Lock()
+        # Guards every read/transition of _live_started -- start_live(),
+        # stop_live(), and show()'s "auto-start if not live" check.
+        self._live_state_lock = threading.Lock()
+        # Current brightness (0-100), applied to every frame in show() as
+        # a software dim -- see set_brightness()'s docstring for why this
+        # is the mechanism that actually matters, not the hardware
+        # command by itself.
+        self._brightness = 100
+        # Web mirror state (see enable_web_mirror() below) -- off by default.
+        self._mirror_enabled = False
+        self._mirror_lock = threading.Lock()
+        self._mirror_jpeg: Optional[bytes] = None
+        self._mirror_quality = 80
+        self._mirror_httpd = None
 
     @property
     def width(self) -> int:
@@ -506,7 +648,59 @@ class HongtaiScreen:
         )
         return self.info
 
+    # ------------------------------------------------------------------ #
+    # web mirror
+    # ------------------------------------------------------------------ #
+    def enable_web_mirror(self, port: int = 8765, quality: int = 80):
+        """
+        Serve whatever's currently on the panel as a live webpage -- so
+        you (or anyone else on the same network, including a phone) can
+        watch it without standing in front of the case. Call this any
+        time after connect(); every show() from then on also updates the
+        mirrored frame. Uses only Python's built-in http.server, no
+        extra dependencies.
+
+        `quality`: JPEG quality for the *web* copy specifically (0-100).
+        This is independent of the adaptive quality show() uses for the
+        panel's own serial link, so slowing down the panel's link never
+        affects what the browser sees, and vice versa.
+        """
+        if self._mirror_enabled:
+            return
+        self._mirror_quality = quality
+        handler = _make_mirror_handler(self)
+        try:
+            httpd = _MirrorServer(("0.0.0.0", port), handler)
+        except OSError as e:  # noqa: BLE001 -- e.g. port already in use
+            print(f"  (couldn't start the web mirror on port {port}: {e})")
+            return
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self._mirror_httpd = httpd
+        self._mirror_enabled = True
+
+        ip = _local_ip()
+        print(f"  live web mirror: http://{ip}:{port}/  (or http://localhost:{port}/ on this machine)")
+
+    def disable_web_mirror(self):
+        if not self._mirror_enabled:
+            return
+        try:
+            self._mirror_httpd.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        self._mirror_httpd = None
+        self._mirror_enabled = False
+
+    def _update_mirror(self, img: Image.Image):
+        if not self._mirror_enabled:
+            return
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=self._mirror_quality)
+        with self._mirror_lock:
+            self._mirror_jpeg = buf.getvalue()
+
     def close(self):
+        self.disable_web_mirror()
         self.stop_live()
         if self._ser and self._ser.is_open:
             try:
@@ -555,9 +749,49 @@ class HongtaiScreen:
     # public controls
     # ------------------------------------------------------------------ #
     def set_brightness(self, percent: int):
-        """percent: 0-100"""
+        """percent: 0-100.
+
+        This sends the panel's own hardware "setLight" command (key 3),
+        matching the official XTRM lab app -- but, per that app's own
+        source (found by reading its app.asar), that command is NOT what
+        actually makes its brightness slider visibly work. The official
+        app implements visible brightness almost entirely in software: it
+        draws a full-screen black overlay at opacity (100-brightness)/100
+        on top of the rendered theme *before* capturing/sending each
+        frame, and pushes brightness changes live to that overlay via IPC
+        with no reconnect at all. The hardware command is sent too (it's
+        even explicitly whitelisted to skip their reconnect-on-command
+        logic), but appears to have little to no effect on this panel by
+        itself -- which matches exactly what was observed here: sending
+        it alone, live, had no visible effect.
+
+        So this driver does the same thing: set_brightness() both sends
+        the hardware command (for parity / in case it does matter on some
+        panel revisions) AND stores the percentage, which show() then
+        applies as a per-frame software dim -- see there for details.
+        Because it's just adjusting how each frame is rendered rather
+        than touching the connection, this is already "live" with no
+        special-casing needed: change self._brightness any time, live or
+        not, and the very next frame reflects it.
+        """
         percent = max(0, min(100, int(percent)))
+        self._brightness = percent
         self._send_noreply(CMD_SET_BRIGHTNESS, bytes([percent]))
+
+    def set_brightness_live(self, percent: int):
+        """Back-compat alias for set_brightness().
+
+        Earlier revisions of this driver tried to make brightness changes
+        "take live effect" via increasingly involved workarounds (a live
+        session pseudo-restart, then a full serial reconnect) because the
+        hardware command alone had no visible effect while streaming.
+        Now that brightness is applied as a per-frame software dim (see
+        set_brightness()), plain set_brightness() already is the live
+        path -- no reconnect, no interruption -- so this just forwards to
+        it. Kept only so any existing caller of set_brightness_live()
+        doesn't need to change.
+        """
+        self.set_brightness(percent)
 
     def restart_device(self):
         self._send_noreply(CMD_RESTART)
@@ -610,29 +844,31 @@ class HongtaiScreen:
         """Begin a live session: sends the initial ping and starts a
         background thread that keeps pinging every 1.5s so the
         firmware doesn't time out the session between frames."""
-        if self._live_started:
-            return
-        self._send_noreply(CMD_LIVE_PING)
-        self._live_started = True
-        self._ping_stop.clear()
+        with self._live_state_lock:
+            if self._live_started:
+                return
+            self._send_noreply(CMD_LIVE_PING)
+            self._live_started = True
+            self._ping_stop.clear()
 
-        def _pinger():
-            while not self._ping_stop.wait(1.5):
-                try:
-                    self._send_noreply(CMD_LIVE_PING)
-                except Exception:  # noqa: BLE001
-                    pass
+            def _pinger():
+                while not self._ping_stop.wait(1.5):
+                    try:
+                        self._send_noreply(CMD_LIVE_PING)
+                    except Exception:  # noqa: BLE001
+                        pass
 
-        self._ping_thread = threading.Thread(target=_pinger, daemon=True)
-        self._ping_thread.start()
+            self._ping_thread = threading.Thread(target=_pinger, daemon=True)
+            self._ping_thread.start()
 
     def stop_live(self):
-        if not self._live_started:
-            return
-        self._ping_stop.set()
-        if self._ping_thread:
-            self._ping_thread.join(timeout=2)
-        self._live_started = False
+        with self._live_state_lock:
+            if not self._live_started:
+                return
+            self._ping_stop.set()
+            if self._ping_thread:
+                self._ping_thread.join(timeout=2)
+            self._live_started = False
 
     def show(self, img: Image.Image):
         """
@@ -649,6 +885,24 @@ class HongtaiScreen:
             img = img.resize((self.info.width, self.info.height))
         if img.mode != "RGB":
             img = img.convert("RGB")
+
+        # Software brightness dim -- see set_brightness()'s docstring.
+        # Matches the official app's own approach (a black overlay at
+        # opacity (100-brightness)/100 drawn on top of the rendered scene
+        # before capture) exactly: scaling every channel by brightness/100
+        # is mathematically identical to compositing pure black at that
+        # opacity over the image. Applied here, per frame, so a brightness
+        # change takes effect on the very next frame with no reconnect.
+        if self._brightness < 100:
+            img = ImageEnhance.Brightness(img).enhance(max(0.0, self._brightness) / 100.0)
+
+        # Feed the web mirror (if enabled) the upright, pre-rotation image
+        # -- i.e. the same orientation a person looking at the actual
+        # panel sees, since the rotation below only compensates for the
+        # controller's internal scan order, not the panel's visible
+        # appearance. Uses the already-dimmed image so the mirror matches
+        # what's actually on the panel.
+        self._update_mirror(img)
 
         # The panel reports how it is physically mounted in `angle` (180 on
         # the XTRM Lab Spectra -- the ribbon comes out the top, so the
