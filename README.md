@@ -97,6 +97,22 @@ SmartScreen**, not this panel's software. Ignore it.
   Copy this file and edit `render_frame()` to build your own layout —
   it just needs to return a `PIL.Image` sized `(width, height)`; the
   library handles encoding, streaming, and the keepalive pings.
+- `video_theme.py` — streams any video file you already have to the
+  panel, frame by frame (letterboxed to fit, black bars if the aspect
+  ratio doesn't match). Doesn't ship or fetch any video content itself —
+  point it at your own file. Works well for flat, high-contrast
+  animation (Bad Apple is the classic example) since that compresses to
+  small JPEGs the panel's link can keep up with, but it's fully generic.
+  ```
+  python video_theme.py bad_apple.mp4               # auto-detects the port
+  python video_theme.py bad_apple.mp4 --fps 20       # override playback rate
+  python video_theme.py bad_apple.mp4 --bw           # force black & white
+  python video_theme.py bad_apple.mp4 --audio        # also play the audio (needs ffmpeg + pygame)
+  python video_theme.py bad_apple.mp4 COM5           # explicit port
+  ```
+  Extra dep: `pip install opencv-python-headless`. `--audio` additionally
+  needs `pip install pygame` and `ffmpeg` on PATH; without those it just
+  skips audio and plays silently.
 
 ## Library quick reference
 
