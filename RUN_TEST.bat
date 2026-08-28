@@ -1,9 +1,8 @@
 @echo off
 cd /d "%~dp0"
 set PORT=%1
-if "%PORT%"=="" set PORT=COM3
 set LOG=%~dp0test_output.log
-echo ==== hongtai screen test %DATE% %TIME% (port %PORT%) ====> "%LOG%"
+echo ==== hongtai screen test %DATE% %TIME% (port=%PORT% -- blank means auto-detect) ====> "%LOG%"
 call :run >> "%LOG%" 2>&1
 type "%LOG%"
 echo.
@@ -16,7 +15,7 @@ goto :eof
 :run
 echo.
 echo ==== step 0: serial ports present ====
-python -c "import serial.tools.list_ports as p; [print(x.device, '|', x.hwid, '|', x.description) for x in p.comports()]"
+python list_screens.py
 echo.
 echo ==== step 0b: vendor processes / autostart state ====
 tasklist /FI "IMAGENAME eq XTRM lab.exe"

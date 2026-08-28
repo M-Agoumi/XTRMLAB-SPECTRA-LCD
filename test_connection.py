@@ -1,12 +1,17 @@
 """
 Quick connectivity test. Run this FIRST before anything else.
 
-    python test_connection.py COM3
+    python test_connection.py           # auto-detects the port
+    python test_connection.py COM5      # or specify one explicitly
 
 It just connects, prints whatever the screen tells us about itself
 (real resolution, firmware version, model string, etc.), sets the
 brightness to a comfortable level, and shows one plain test frame
 so you can confirm it's actually alive -- then exits cleanly.
+
+If you have more than one Hongtai-family screen plugged in (or
+auto-detection can't tell), run list_screens.py to see what's
+available and pass the port explicitly.
 
 IMPORTANT: close the vendor "XTRM lab" app first (check the system
 tray) -- only one program can hold the COM port at a time.
@@ -21,13 +26,9 @@ from hongtai_screen import HongtaiScreen
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python test_connection.py <COM_PORT>")
-        print("Example: python test_connection.py COM3")
-        sys.exit(1)
-
-    port = sys.argv[1]
-    screen = HongtaiScreen(port)
+    port = sys.argv[1] if len(sys.argv) > 1 else None
+    screen = HongtaiScreen(port)  # auto-detects if port is None
+    port = screen.port_name
 
     # NOTE: if this ever times out again, the first thing to check is
     # that the port is opened with DTR ASSERTED (see the big note in

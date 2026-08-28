@@ -155,10 +155,11 @@ import io
 import time
 import threading
 from dataclasses import dataclass
-from typing import Optional
+from typing import List, Optional
 
 import serial  # pyserial
 from PIL import Image
+from serial.tools import list_ports
 
 BAUD_RATE = 2_000_000
 SYNC = bytes([0x55, 0xAA])
@@ -171,6 +172,85 @@ CMD_GET_DEVICE_INFO = 6
 CMD_LIVE_PING = 17
 CMD_SET_REGION = 32
 CMD_CLOSE = 33
+
+# Dongguan Hongtai Technology's USB vendor ID -- shared across every rebrand
+# of this hardware (XTRM Lab, SAMA, Thermaltake, ZOTAC, MSI, ASIAHORSE, and
+# dozens of others; ~48 brand names were found in the vendor app's own
+# bundle, each just a different PID + logo on identical hardware/firmware).
+# Matching on VID alone -- not a specific PID -- is what makes port
+# auto-detection work for anyone with a Hongtai-family panel, not just this
+# exact XTRM Lab unit.
+HONGTAI_VID = 0x33C3
+
+# PIDs seen/confirmed so far. Not exhaustive -- there are reportedly ~48
+# rebrands, each with its own PID under the same VID above. A port matching
+# HONGTAI_VID but with an unlisted PID is still treated as a candidate; this
+# dict is only used to print a friendlier label when we recognize it.
+KNOWN_PIDS = {
+    0x7804: "XTRM Lab (confirmed)",
+}
+
+
+@dataclass
+class ScreenPort:
+    """One serial port that looks like it could be a Hongtai-family panel."""
+    device: str          # e.g. "COM3"
+    vid: Optional[int]
+    pid: Optional[int]
+    description: str
+    serial_number: Optional[str]
+
+    @property
+    def label(self) -> str:
+        pid_note = KNOWN_PIDS.get(self.pid, "unrecognized PID -- probably still fine, "
+                                              "just not one we've seen a report for yet")
+        vid_str = f"{self.vid:04X}" if self.vid is not None else "????"
+        pid_str = f"{self.pid:04X}" if self.pid is not None else "????"
+        return f"{self.device}  (VID {vid_str}:{pid_str} -- {pid_note})  {self.description}"
+
+
+def find_hongtai_ports() -> List[ScreenPort]:
+    """
+    Scan every serial port on the system and return the ones whose VID
+    matches Dongguan Hongtai Technology (see HONGTAI_VID above) -- i.e.
+    every port that's plausibly *some* rebrand of this same panel
+    hardware, not just an XTRM Lab one specifically.
+    """
+    found = []
+    for p in list_ports.comports():
+        if p.vid == HONGTAI_VID:
+            found.append(ScreenPort(
+                device=p.device,
+                vid=p.vid,
+                pid=p.pid,
+                description=p.description or "",
+                serial_number=p.serial_number,
+            ))
+    return found
+
+
+def find_hongtai_port() -> str:
+    """
+    Auto-detect a single Hongtai-family panel's COM port. Raises
+    HongtaiScreenError with a clear, actionable message if none or more
+    than one is found (COM3 on one machine is not guaranteed to be COM3,
+    or even the same port, on anyone else's).
+    """
+    candidates = find_hongtai_ports()
+    if not candidates:
+        raise HongtaiScreenError(
+            "no Hongtai-family screen found (scanned all serial ports for "
+            f"VID {HONGTAI_VID:04X}). Run list_screens.py to see every port "
+            "on this system, and pass the port explicitly if it's not being "
+            "detected -- e.g. HongtaiScreen('COM5')."
+        )
+    if len(candidates) > 1:
+        listed = "\n  ".join(c.label for c in candidates)
+        raise HongtaiScreenError(
+            f"found {len(candidates)} Hongtai-family screens, can't auto-pick one:\n  "
+            f"{listed}\nPass the port explicitly, e.g. HongtaiScreen('COM5')."
+        )
+    return candidates[0].device
 
 
 @dataclass
@@ -246,7 +326,19 @@ class HongtaiScreen:
     Thermaltake / ZOTAC / MSI / ASIAHORSE / etc. rebrands).
     """
 
-    def __init__(self, port: str, baudrate: int = BAUD_RATE, timeout: float = 3.0):
+    def __init__(self, port: Optional[str] = None, baudrate: int = BAUD_RATE, timeout: float = 3.0):
+        """
+        `port`: e.g. "COM3". Omit it (or pass None) to auto-detect --
+        this scans for a serial port whose USB VID matches Dongguan
+        Hongtai Technology (see HONGTAI_VID) and uses it if there's
+        exactly one. Auto-detection raises HongtaiScreenError with a
+        clear message if zero or more than one candidate is found, since
+        COM3 on one machine is not guaranteed to be COM3 -- or even the
+        same port -- on anyone else's.
+        """
+        if port is None:
+            port = find_hongtai_port()
+            print(f"  auto-detected panel on {port}")
         self.port_name = port
         self.baudrate = baudrate
         self.timeout = timeout

@@ -3,7 +3,8 @@ Example "starter template" for ongoing custom content: a live clock +
 basic system stats, redrawn once a second, running until you press
 Ctrl+C.
 
-    python demo_clock.py COM3
+    python demo_clock.py               # auto-detects the port
+    python demo_clock.py COM5          # or specify one explicitly
 
 Copy this file and edit render_frame() to build your own layout --
 that function just needs to return a PIL Image sized (info.width,
@@ -94,13 +95,8 @@ def draw_bar(draw, x, y, w, h, percent, label):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python demo_clock.py <COM_PORT>")
-        print("Example: python demo_clock.py COM3")
-        sys.exit(1)
-
-    port = sys.argv[1]
-    screen = HongtaiScreen(port)
+    port = sys.argv[1] if len(sys.argv) > 1 else None
+    screen = HongtaiScreen(port)  # auto-detects if port is None
     info = screen.connect()
     print(f"Connected: {info.width}x{info.height}, firmware {info.version}")
     screen.set_brightness(90)

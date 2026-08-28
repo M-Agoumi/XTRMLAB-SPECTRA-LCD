@@ -18,9 +18,30 @@ superficially resembles it — the handshake succeeds either way, but
 the actual draw commands are different, which is why nothing ever
 appeared on screen with that tool.
 
+## Which COM port?
+
+Every script here auto-detects the panel by USB vendor ID (Hongtai
+Technology's VID, shared across every rebrand of this hardware) — you
+don't need to know or pass a port at all in the normal case:
+
+```
+python list_screens.py
+```
+
+lists every serial port on the machine and flags any that look like a
+Hongtai-family screen. `COM3` is just what it happened to be detected as
+here; it can easily be different on another machine (a different USB
+port, other devices already using COM ports, etc.). If you have more than
+one such screen plugged in, auto-detection can't pick one for you and
+you'll need to pass the port explicitly, e.g. `python test_connection.py COM5`
+or `HongtaiScreen("COM5")` in code — `list_screens.py` will tell you
+exactly when that's the case.
+
 ## Hardware summary
 
-- Controller: Hongtai Technology, USB-serial VID `33C3` PID `7804`
+- Controller: Hongtai Technology, USB-serial VID `33C3` (PID `7804` on
+  this XTRM Lab unit specifically — other rebrands use other PIDs under
+  the same VID, which is what auto-detection matches on)
 - Baud rate: 2,000,000
 - **DTR must be asserted (high).** This is the one setting that decides
   whether the panel talks back at all — with DTR low it receives your
@@ -53,17 +74,25 @@ SmartScreen**, not this panel's software. Ignore it.
 ## Files
 
 - `hongtai_screen.py` — the library. Everything else imports this.
-- `test_connection.py` — run this first. Connects, prints what the
-  screen reports about itself, sets brightness, shows one static test
-  frame for 5 seconds, then disconnects cleanly.
+- `list_screens.py` — lists every serial port on the machine and flags
+  which ones look like a Hongtai-family screen. Run this first if you're
+  not sure a screen will be detected, or if you have more than one.
   ```
-  python test_connection.py COM3
+  python list_screens.py
+  ```
+- `test_connection.py` — run this next. Connects (auto-detecting the
+  port), prints what the screen reports about itself, sets brightness,
+  shows one static test frame for 5 seconds, then disconnects cleanly.
+  ```
+  python test_connection.py           # auto-detects the port
+  python test_connection.py COM5      # or specify one explicitly
   ```
 - `demo_clock.py` — a starter template showing continuous/live custom
   content: a clock plus CPU/RAM bars, redrawn once a second until you
   press Ctrl+C.
   ```
-  python demo_clock.py COM3
+  python demo_clock.py                # auto-detects the port
+  python demo_clock.py COM5           # or specify one explicitly
   ```
   Copy this file and edit `render_frame()` to build your own layout —
   it just needs to return a `PIL.Image` sized `(width, height)`; the
@@ -75,7 +104,7 @@ SmartScreen**, not this panel's software. Ignore it.
 from hongtai_screen import HongtaiScreen
 from PIL import Image
 
-screen = HongtaiScreen("COM3")
+screen = HongtaiScreen()          # auto-detects the port; pass "COM5" etc. to be explicit
 info = screen.connect()          # -> DeviceInfo(width, height, angle, version, uid, model, …)
 screen.set_brightness(80)        # 0-100
 screen.show(Image.new("RGB", (info.width, info.height), "black"))
@@ -97,7 +126,7 @@ screen.run(lambda: my_frame(), fps=1.0)   # blocks; Ctrl+C to stop
 firmware's restart command (key=1) and tries again. To do it by hand:
 
 ```
-python -c "from hongtai_screen import HongtaiScreen; HongtaiScreen('COM3').blind_restart()"
+python -c "from hongtai_screen import HongtaiScreen; HongtaiScreen().blind_restart()"
 ```
 
 That one command is what un-wedges this panel — including from the state
