@@ -165,3 +165,32 @@ herring -- there was never a process holding the port).
 
 Do not reach for `pnputil`, `rtscts=True`, or the PSU switch. None of them
 helped, and the first two actively cost time.
+
+## Fourth fix — write-timeout crash during live streaming (28 Aug 2026, later)
+
+`demo_clock.py` ran fine for a while, then crashed with
+`serial.serialutil.SerialTimeoutException: Write timeout` from inside
+`show()`, and the panel dropped back to idle. Root cause: **the
+background keep-alive pinger thread (started by `start_live()`) and the
+main thread's `show()` both wrote to the same `pyserial` handle with no
+synchronization.** pyserial's Windows backend reuses a single OVERLAPPED
+I/O structure per `Serial` object; two threads calling `write()`
+concurrently can corrupt that shared state, and `GetOverlappedResult()`
+then fails in a way pyserial reports as `SerialTimeoutException('Write
+timeout')` -- even though no `write_timeout` was ever configured (it was
+`None`/blocking by default). This is a data race, not an actual elapsed
+timeout, which is why it only showed up intermittently after the panel
+had already been drawing correctly for a while.
+
+Fix: a `threading.Lock()` (`self._write_lock`) now wraps every
+`self._ser.write()` + `.flush()` call site (`_send_and_wait`,
+`_send_noreply`, `show()`), serializing the pinger thread against
+whatever thread is pushing frames.
+
+Also found and fixed in the same pass: **`connect()`'s auto-restart
+fallback called `self.blind_restart()`, but that method did not exist
+anywhere in `hongtai_screen.py`** -- despite being documented above as
+the actual fix for a wedged panel and given a standalone usage example.
+It's implemented now (opens the port itself with DTR/RTS asserted, sends
+the flush marker + key=1 restart, closes -- no reply required, so it
+works even when the panel answers nothing).

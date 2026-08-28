@@ -257,6 +257,14 @@ class HongtaiScreen:
         self._ping_stop = threading.Event()
         self._quality = 100  # adaptive JPEG quality, walked down as needed
         self.rotate: Optional[int] = None  # override the reported angle if needed
+        # The background keep-alive pinger (started by start_live()) and
+        # whatever thread calls show()/run() both write to the same
+        # pyserial handle. pyserial's Windows backend is NOT safe for
+        # concurrent writes from multiple threads -- two overlapping
+        # write() calls can corrupt the shared OVERLAPPED I/O state and
+        # leave a later write hung until it raises SerialTimeoutException.
+        # This lock serializes every write+flush against the port.
+        self._write_lock = threading.Lock()
 
     @property
     def width(self) -> int:
@@ -275,6 +283,50 @@ class HongtaiScreen:
     # ------------------------------------------------------------------ #
     # connection
     # ------------------------------------------------------------------ #
+    def blind_restart(self, settle_time: float = 3.0):
+        """
+        Fire-and-forget firmware restart (key=1) -- the actual fix for a
+        wedged panel (see "IF THE PANEL IS WEDGED" in the module
+        docstring). This does NOT wait for or need any reply, so it
+        works even when the panel is answering nothing at all: it opens
+        the port itself (DTR/RTS asserted, same as connect()), sends the
+        flush marker and the restart command, then closes.
+
+        Safe to call directly too:
+            python -c "from hongtai_screen import HongtaiScreen; HongtaiScreen('COM3').blind_restart()"
+        """
+        print("  blind_restart: opening the port and sending key=1 (restart), no reply expected ...")
+        ser = None
+        try:
+            ser = serial.Serial()
+            ser.port = self.port_name
+            ser.baudrate = self.baudrate
+            ser.timeout = self.timeout
+            ser.write_timeout = 3
+            ser.dtr = True
+            ser.rts = True
+            ser.open()
+            # re-assert on the open handle, same reasoning as _connect_once
+            ser.dtr = True
+            ser.rts = True
+            time.sleep(0.5)
+            ser.write(RESET_MARKER)
+            ser.flush()
+            time.sleep(0.2)
+            ser.write(_build_frame(CMD_RESTART))
+            ser.flush()
+            time.sleep(0.3)
+        except Exception as e:  # noqa: BLE001
+            print(f"  (blind_restart reported: {e} -- continuing anyway)")
+        finally:
+            if ser is not None:
+                try:
+                    ser.close()
+                except Exception:  # noqa: BLE001
+                    pass
+        print(f"  waiting {settle_time:.0f}s for the panel to come back ...")
+        time.sleep(settle_time)
+
     def connect(self, retries: int = 30, retry_delay: float = 0.3,
                 auto_restart: bool = True) -> DeviceInfo:
         """
@@ -380,8 +432,9 @@ class HongtaiScreen:
         if not self._ser:
             raise HongtaiScreenError("not connected")
         self._ser.reset_input_buffer()
-        self._ser.write(_build_frame(key, payload))
-        self._ser.flush()
+        with self._write_lock:
+            self._ser.write(_build_frame(key, payload))
+            self._ser.flush()
         # read until we see the 0x55 0xAA sync at the start of a reply
         deadline = time.time() + self.timeout
         buf = b""
@@ -402,8 +455,9 @@ class HongtaiScreen:
     def _send_noreply(self, key: int, payload: bytes = b""):
         if not self._ser:
             raise HongtaiScreenError("not connected")
-        self._ser.write(_build_frame(key, payload))
-        self._ser.flush()
+        with self._write_lock:
+            self._ser.write(_build_frame(key, payload))
+            self._ser.flush()
 
     # ------------------------------------------------------------------ #
     # public controls
@@ -517,8 +571,9 @@ class HongtaiScreen:
                 img = img.resize((self.info.panel_width, self.info.panel_height))
 
         data = self._encode_jpeg(img)
-        self._ser.write(data)
-        self._ser.flush()
+        with self._write_lock:
+            self._ser.write(data)
+            self._ser.flush()
 
     # ------------------------------------------------------------------ #
     # convenience
