@@ -26,6 +26,7 @@ drawlab_output.log
 # (video/image locations on your machine) -- machine-specific, not source.
 # The app creates it fresh on first run if it's missing.
 app_config.json
+Launch Hongtai Screen.vbs
 
 # Nothing here ships with a bundled video or "nothing playing" image on
 # purpose (see the Dashboard/Video tabs' file pickers) -- your own picks

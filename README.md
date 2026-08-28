@@ -121,6 +121,30 @@ network listener, which makes Windows show a one-time firewall
 permission prompt the first time it binds. That's expected if you
 actually want it; leave it unticked if you don't want that prompt.
 
+### Launching without a console window
+
+Double-clicking `app.py` directly runs it through `python.exe`, which
+opens a console window to host it -- and closing that console kills the
+whole process (tray icon included), since there's nothing left to run
+it. The app's own close-to-tray behavior only covers its own window
+(the X button); it can't do anything about a console hosting it from
+outside.
+
+Run this once (Windows only):
+
+```
+python make_launcher.py
+```
+
+It writes `Launch Hongtai Screen.vbs` next to `app.py` -- double-click
+that instead and it starts the app the same hidden way "Launch at
+Windows startup" below does, with no console at all, so there's nothing
+to accidentally close -- and, since a `.vbs` file's icon can't be
+changed, also drops a proper "Hongtai Screen" shortcut with its own
+icon (`icon.ico`) on your desktop that points at it, so you get a real
+icon to double-click instead of a generic script file. Pass
+`--no-desktop-icon` to skip that part and only write the `.vbs`.
+
 ### Running automatically at Windows startup
 
 Tick "Launch at Windows startup" near the top of the window (Windows
