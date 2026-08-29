@@ -38,6 +38,9 @@ tab in the app and hit Start; nothing personal is bundled, so the
 Dashboard tab's "nothing playing" picture and the Video tab's clip are
 things you point at your own files (or just leave blank).
 
+Prefer a double-clickable app with nothing to install? See
+[`BUILD.md`](BUILD.md) for building a standalone `Hongtai Screen.exe`.
+
 Only want one theme rather than the full desktop app, or don't want
 every dependency installed? Skip `requirements.txt` and just
 `pip install` that one theme's own line instead — each theme's section
@@ -111,15 +114,35 @@ Brightness always applies live, immediately, while something is
 running -- no Stop/Start needed. On the Dashboard tab specifically, the
 "nothing playing" image and the web mirror's on/off + port also apply
 live, since dashboard_theme.py re-checks them continuously anyway.
-Everything else (which video file, which URL, fps, loop, etc.) needs a
-Stop then Start to take effect, since those mean reopening a different
-file or connection.
+Everything else (which video file, which URL, fps, loop, which gauge
+goes where, the background style, etc.) needs a restart to take
+effect, since those mean rebuilding the static background or reopening
+a different file/connection -- hit **Apply (restart)** next to Start/Stop
+instead of doing Stop then Start yourself; it does both in one click
+and comes back up on the same theme with your new settings.
+
+The window's height now sizes itself to whatever's actually in it
+(so the Log panel is never hidden below the fold); if you resize it
+smaller, drag it back rather than assuming content is missing.
 
 The Dashboard tab's live web mirror (lets you watch the panel from a
 phone on the same network) is off by default -- turning it on opens a
 network listener, which makes Windows show a one-time firewall
 permission prompt the first time it binds. That's expected if you
-actually want it; leave it unticked if you don't want that prompt.
+actually want it; leave it unticked if you don't want that prompt. Once
+it's live, an **Open in browser** button next to the port field opens
+it on this machine directly; it tells you why if the mirror isn't
+actually up yet.
+
+### Desktop shortcut
+
+Click **Create Desktop Shortcut** near the top of the window (next to
+"Launch at Windows startup") any time to drop a "Hongtai Screen" icon
+on your Desktop. Running the standalone `.exe` (see `BUILD.md`), the
+shortcut points straight at it -- already windowless, already has its
+own icon. Running from source, it points at the same hidden launcher
+`make_launcher.py` sets up (see below), writing it first if it doesn't
+exist yet.
 
 ### Launching without a console window
 
@@ -236,21 +259,46 @@ SmartScreen**, not this panel's software. Ignore it.
   Extra dep: `pip install opencv-python-headless`. `--audio` additionally
   needs `pip install pygame` and `ffmpeg` on PATH; without those it just
   skips audio and plays silently.
-- `dashboard_theme.py` — a neon "cyberpunk panel" dashboard: full-circle
-  glowing CPU LOAD / CPU TEMP gauges on the left, GPU LOAD / GPU TEMP on
-  the right, and Spotify (or whatever's playing) album art in the
-  middle with a glowing progress bar and the clock underneath it. Dark
-  background with a faint hex-grid + circuit-trace texture. Each stat
-  degrades independently instead of crashing if its dependency is
-  missing:
+- `dashboard_theme.py` — a neon "cyberpunk panel" dashboard: 8 glowing
+  gauges you assign freely from 14 live stats, Spotify (or whatever's
+  playing) album art in the middle with a glowing progress bar, and the
+  clock underneath it. Background style, color scheme, and even a
+  custom photo are all configurable. Each stat degrades independently
+  instead of crashing if its dependency is missing:
   ```
   python dashboard_theme.py           # auto-detects the port
   python dashboard_theme.py COM5      # or specify one explicitly
   python dashboard_theme.py --default-art cover.jpg   # your own "nothing playing" image
   ```
-  - CPU (left): uses `psutil`, already required above. Temperature only
-    shows if the OS exposes it (mostly a Linux thing — on Windows
-    you'll just see utilization, which is expected).
+  Driving it from code (or the desktop app, which does this for you)
+  passes `slots={...}` and `background={...}` into `run()` — see below.
+
+  **8 customizable gauge slots.** There are 4 "big" corner gauges, 2
+  "secondary" gauges flanking them, and 2 "mini" gauges flanking the
+  clock — every one of the 8 is independently assignable to any of the
+  14 stats below (the Dashboard tab in the desktop app gives each slot
+  its own dropdown, in a two-column layout). The left column keeps its
+  electric-cyan accent and the right column its neon-magenta accent
+  regardless of which stat you put there, so the two sides still read
+  as distinct at a glance:
+
+  | Stat | Source | Notes |
+  |---|---|---|
+  | CPU Load | `psutil` | overall utilization |
+  | CPU Load (Peak Core) | `psutil` | busiest single core, not the average — catches single-threaded spikes the overall number hides |
+  | CPU Freq | `psutil` | current clock speed. On Windows this reads from WMI and many CPUs only report their fixed rated speed there rather than the true live boost/throttle clock — a flat reading (e.g. always 3.4GHz) is a Windows/WMI limitation, not a bug in this app |
+  | GPU Load | NVIDIA via `pynvml`, else the vendor sensor helper | see GPU note below |
+  | GPU Temp | same as GPU Load | |
+  | GPU Power (W) | NVIDIA via `pynvml` | NVIDIA only; N/A otherwise |
+  | RAM Usage | `psutil` | |
+  | Swap Usage | `psutil` | |
+  | VRAM Usage | NVIDIA via `pynvml` | NVIDIA only; N/A otherwise |
+  | Disk Usage | `psutil` | usage of the system drive |
+  | Disk Activity (MB/s) | `psutil` | combined read+write throughput, smoothed |
+  | Network (MB/s) | `psutil` | combined up+down throughput, smoothed |
+  | Processes | `psutil` | total running process count |
+  | Battery | `psutil` | laptops only; N/A on a desktop |
+
   - CPU temp specifically: Windows doesn't expose it through the API
     `psutil` uses (that's why it showed blank/N/A). Instead of a
     separate monitoring tool, this script spawns the XTRM lab app's
@@ -260,10 +308,11 @@ SmartScreen**, not this panel's software. Ignore it.
     to run as Administrator (same as the vendor app) so its driver can
     load; if that helper can't be found or spawned, it falls back to
     psutil, which on Windows usually means "–" instead of a number.
-  - GPU (right): tries an NVIDIA GPU first via `pip install nvidia-ml-py`
-    (importable as `pynvml`); if that's unavailable it falls back to
-    the same `SystemInfos.exe` feed above, which also covers non-NVIDIA
-    GPUs. "N/A" only if neither source has anything.
+  - GPU stats: try an NVIDIA GPU first via `pip install nvidia-ml-py`
+    (importable as `pynvml`); load/temp fall back to the same
+    `SystemInfos.exe` feed above (also covers non-NVIDIA GPUs) if
+    unavailable — VRAM and GPU power are NVIDIA-only and show N/A on
+    anything else.
   - Album art (middle): reads Windows' own now-playing info (the same
     thing the volume flyout shows) via `pip install winsdk` — no
     Spotify API key needed, works with the Spotify desktop app. Needs
@@ -274,38 +323,52 @@ SmartScreen**, not this panel's software. Ignore it.
     (or the desktop app's file picker) to use your own image. Nothing
     is bundled — pick whatever you want, or leave it unset.
 
-  Each of CPU/GPU load and temp gets its own full-circle glowing gauge
-  (electric cyan for CPU, neon magenta for GPU) with major ticks at
-  0/25/50/75/100, minor ticks every 5, and a lit needle, on a dark
-  hex-grid/circuit-trace background instead of flat cards. The gauges
-  are drawn with `pycairo` rather than hand-drawn PIL shapes -- PIL's
+  **Customizable background.** Five styles, five color schemes, or your
+  own photo:
+  - Styles: `default` (hex-grid + circuit traces), `grid` (simple
+    rectangular grid), `starfield` (scattered dots), `radial` (centered
+    glow), `solid` (flat gradient, no overlay), `image` (your own photo
+    — cover-fit and darkened slightly so gauges/text stay legible over
+    it).
+  - Color schemes (ignored in `image` mode): Purple, Ocean Blue,
+    Crimson, Emerald, Monochrome.
+  - The desktop app's Dashboard tab has dropdowns for both, plus a
+    Browse button for a custom image. From code:
+    ```python
+    dashboard_theme.run(background={"mode": "radial", "scheme": "emerald"})
+    dashboard_theme.run(background={"mode": "image", "image_path": r"C:\path\to\photo.jpg"})
+    ```
+
+  Each gauge is a full-circle glowing ring (electric cyan on the left,
+  neon magenta on the right) with major/minor ticks and a lit needle,
+  drawn with `pycairo` rather than hand-drawn PIL shapes -- PIL's
   `draw.arc()` approximates a circle with straight segments, which is
   why the old version looked faceted/jagged up close; cairo draws true
   anti-aliased arcs and real linear/radial gradients, so the ring, the
   tapered gradient needle, and the glowing jewel-like hub all look
   smooth. Only the lit value arc, needle, hub, and value number redraw
   each frame -- the dim track, ticks, and titles are baked into the
-  static background once at startup, so the nicer visuals don't cost
-  extra render time. The album art has a glowing violet border and a
-  live Spotify-style progress bar with `1:23 / 4:06` underneath it.
-  That number comes from a background thread (the Windows now-playing
-  call is a slow round trip and used to stall the whole render loop)
-  and runs on its own free-running clock that ticks forward every
-  second on its own, anchored on the timestamp Windows itself attaches
-  to each position update (not on whenever our poll happened to
-  complete) -- Spotify only pushes a fresh update occasionally, not on
-  every poll, so anchoring on our own poll time made the estimate
-  drift ahead between real updates and then visibly snap back once it
-  drifted too far. It only snaps now when the real value disagrees by
-  more than ~1.2s (an actual pause, seek, or track change). The main
-  loop targets 10Hz and times itself so one slow frame doesn't drag the
-  next ones late.
+  static background once at startup (recomputed whenever you hit Apply
+  or restart), so the nicer visuals don't cost extra render time. The
+  album art has a glowing violet border and a live Spotify-style
+  progress bar with `1:23 / 4:06` underneath it. That number comes from
+  a background thread (the Windows now-playing call is a slow round
+  trip and used to stall the whole render loop) and runs on its own
+  free-running clock that ticks forward every second on its own,
+  anchored on the timestamp Windows itself attaches to each position
+  update (not on whenever our poll happened to complete) -- Spotify
+  only pushes a fresh update occasionally, not on every poll, so
+  anchoring on our own poll time made the estimate drift ahead between
+  real updates and then visibly snap back once it drifted too far. It
+  only snaps now when the real value disagrees by more than ~1.2s (an
+  actual pause, seek, or track change). The main loop targets 10Hz and
+  times itself so one slow frame doesn't drag the next ones late.
 
   Full dependency set for this one:
   `pip install numpy pycairo psutil nvidia-ml-py winsdk` (`numpy` and
-  `pycairo` are required -- they draw the gauges -- the rest degrade
-  independently as described above). `pycairo` installs from a
-  prebuilt wheel on Windows, no separate Cairo install needed.
+  `pycairo` are required -- they draw the gauges and gradients -- the
+  rest degrade independently as described above). `pycairo` installs
+  from a prebuilt wheel on Windows, no separate Cairo install needed.
 - `webpage_theme.py` — mirrors any webpage onto the panel using a
   headless Chromium browser (Playwright), at a viewport sized exactly
   to the panel's resolution so there's no scaling/letterboxing. The
@@ -396,6 +459,14 @@ If the panel is *silent* rather than merely black — nothing replies at all
 panel still says nothing, tries to draw blind without needing a reply.
 
 Never open this device with `rtscts=True` — it hangs pyserial indefinitely.
+
+## Packaging / release files
+
+- [`BUILD.md`](BUILD.md) — building a standalone `Hongtai Screen.exe`
+  with PyInstaller. Only needed if you want that instead of
+  `python app.py`.
+- `hongtai_screen.spec` — the PyInstaller spec `BUILD.md` uses.
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed release to release.
 
 ## Status
 

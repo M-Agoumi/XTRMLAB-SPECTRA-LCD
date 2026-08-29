@@ -49,9 +49,13 @@ prompt (e.g. at every boot before you've clicked "Allow"), just leave
 import argparse
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import threading
+import time
 import queue
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 
@@ -75,7 +79,27 @@ except Exception:  # noqa: BLE001 -- broader than ImportError on purpose: pystra
     # still start without it, just falling back to a normal window.
     pystray = None
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_config.json")
+def _app_base_dir():
+    """Directory the running app actually lives in -- used for anything
+    that must persist next to it across runs (app_config.json, the
+    startup-launcher command below). Under a frozen PyInstaller build,
+    __file__ points inside a temporary extraction folder instead (a
+    fresh one every run), so this checks sys.frozen and uses the real
+    .exe's own folder in that case."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _resource_path(*parts):
+    """Path to a bundled read-only resource (icon.ico) -- inside
+    sys._MEIPASS when frozen (PyInstaller's extraction dir for
+    --add-data files), next to this script otherwise."""
+    base = getattr(sys, "_MEIPASS", None) or _app_base_dir()
+    return os.path.join(base, *parts)
+
+
+CONFIG_PATH = os.path.join(_app_base_dir(), "app_config.json")
 AUTO_DETECT = "(auto-detect)"
 
 # Tab order in the Notebook -- kept in one place since both --theme and
@@ -120,16 +144,20 @@ def enable_startup():
     if path is None:
         raise RuntimeError("Launch-at-startup is only supported on Windows.")
 
-    app_path = os.path.abspath(__file__)
-    py_dir = os.path.dirname(sys.executable)
-    pythonw = os.path.join(py_dir, "pythonw.exe")
-    interpreter = pythonw if os.path.isfile(pythonw) else sys.executable
-
     # VBScript doesn't treat backslash as an escape character, so Windows
     # paths need no special handling -- only the quotes around each path
     # need doubling (VBScript's way of embedding a literal " in a string).
-    cmd = '""{interpreter}"" ""{app}"" --autostart'.format(
-        interpreter=interpreter, app=app_path)
+    if getattr(sys, "frozen", False):
+        # Frozen build: sys.executable IS the app -- one self-contained
+        # .exe, no separate interpreter to pick.
+        cmd = '""{app}"" --autostart'.format(app=sys.executable)
+    else:
+        app_path = os.path.abspath(__file__)
+        py_dir = os.path.dirname(sys.executable)
+        pythonw = os.path.join(py_dir, "pythonw.exe")
+        interpreter = pythonw if os.path.isfile(pythonw) else sys.executable
+        cmd = '""{interpreter}"" ""{app}"" --autostart'.format(
+            interpreter=interpreter, app=app_path)
     vbs = (
         'Set WshShell = CreateObject("WScript.Shell")\n'
         f'WshShell.Run "{cmd}", 0, False\n'
@@ -144,6 +172,102 @@ def disable_startup():
     path = _startup_script_path()
     if path and os.path.isfile(path):
         os.remove(path)
+
+
+def _desktop_dir():
+    """Where Desktop actually is. Not just `~\\Desktop` -- OneDrive's
+    "Known Folder Move" (on by default on a lot of pre-configured
+    Windows machines) relocates it to somewhere like
+    `~\\OneDrive\\Desktop` instead, and `~\\Desktop` then simply doesn't
+    exist. The registry's User Shell Folders key is what Windows itself
+    actually uses to resolve "Desktop", so ask it rather than guessing
+    the plain path. (Same helper as make_launcher.py -- kept as its own
+    copy here so this button works even if make_launcher.py is ever
+    removed from a packaged build.)"""
+    try:
+        import winreg
+        with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer"
+                r"\User Shell Folders") as key:
+            path, _ = winreg.QueryValueEx(key, "Desktop")
+        return os.path.expandvars(path)
+    except OSError:
+        return os.path.join(os.path.expanduser("~"), "Desktop")
+
+
+def create_desktop_shortcut():
+    """Drops a "Hongtai Screen.lnk" shortcut on the Desktop, and returns
+    its path.
+
+    Frozen build (the standalone .exe from BUILD.md): the shortcut
+    points straight at the exe -- it's already windowless and already
+    carries its own icon (baked in at build time via hongtai_screen.spec),
+    nothing else to wire up.
+
+    Running from source (`python app.py`): points at the same hidden
+    "Launch Hongtai Screen.vbs" launcher make_launcher.py writes
+    (written fresh here if missing), using icon.ico for the icon since a
+    .vbs file can't carry a custom one itself -- see make_launcher.py's
+    own docstring for why a second .lnk file is needed for that.
+
+    Raises on failure (missing Desktop folder, non-Windows, cscript
+    error) -- callers show that message rather than silently no-op'ing.
+    """
+    if sys.platform != "win32":
+        raise RuntimeError("Desktop shortcuts are only supported on Windows.")
+
+    desktop = _desktop_dir()
+    if not os.path.isdir(desktop):
+        raise RuntimeError(f"No Desktop folder found at {desktop!r}")
+
+    shortcut_path = os.path.join(desktop, "Hongtai Screen.lnk")
+
+    if getattr(sys, "frozen", False):
+        target = sys.executable
+        working_dir = os.path.dirname(target)
+        icon_spec = f"{target},0"
+    else:
+        app_dir = _app_base_dir()
+        app_path = os.path.abspath(__file__)
+        # Reuse make_launcher's own .vbs writer so both paths always
+        # point at the exact same launcher, instead of two subtly
+        # different copies of the same VBScript living in two files.
+        import make_launcher
+        target = make_launcher._write_run_vbs(app_dir, app_path, "")
+        working_dir = app_dir
+        icon_spec = (f"{ICON_PATH},0" if os.path.isfile(ICON_PATH)
+                     else f"{target},0")
+
+    # Same "no extra dependencies" trick as everywhere else here: hand
+    # WScript.Shell.CreateShortcut to a throwaway helper .vbs run once
+    # via cscript, rather than pulling in pywin32 just for this.
+    helper_script = (
+        'Set WshShell = CreateObject("WScript.Shell")\n'
+        f'Set link = WshShell.CreateShortcut("{shortcut_path}")\n'
+        f'link.TargetPath = "{target}"\n'
+        f'link.WorkingDirectory = "{working_dir}"\n'
+        f'link.IconLocation = "{icon_spec}"\n'
+        'link.Description = "Start the Hongtai/XTRM lab screen app"\n'
+        'link.Save\n'
+    )
+    fd, helper_path = tempfile.mkstemp(suffix=".vbs")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(helper_script)
+        result = subprocess.run(["cscript", "//nologo", helper_path],
+                                 capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"cscript exited {result.returncode}: "
+                f"{result.stderr.strip() or '(no error output)'}")
+    finally:
+        os.remove(helper_path)
+
+    if not os.path.isfile(shortcut_path):
+        raise RuntimeError(
+            f"cscript reported success but {shortcut_path} doesn't exist")
+    return shortcut_path
 
 
 def load_config():
@@ -162,12 +286,42 @@ def save_config(cfg):
         pass
 
 
+ICON_PATH = _resource_path("icon.ico")
+
+
 class App(tk.Tk):
     def __init__(self, autostart=False, autostart_theme=None):
+        # Windows groups a window's taskbar entry (and picks its taskbar
+        # icon) by "AppUserModelID" -- without explicitly setting one, a
+        # python.exe/pythonw.exe-hosted app inherits Python's own AppID,
+        # which is why the taskbar showed a generic python icon instead
+        # of this app's. This has to happen before any window exists
+        # (including Tkinter's own implicit root), so it's here, before
+        # super().__init__(), not after.
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                    "HongtaiScreen.DesktopApp")
+            except Exception:  # noqa: BLE001 -- cosmetic only, never fatal
+                pass
+
         super().__init__()
         self.title("Hongtai Screen Control")
-        self.geometry("760x620")
-        self.minsize(640, 520)
+        # Real geometry is set once by _autosize_window(), after every
+        # widget exists and Tk knows how much room they actually need --
+        # see there for why a hardcoded size used to hide the log.
+
+        # The window/taskbar icon itself -- separate from AppUserModelID
+        # above (that's what picks the taskbar *grouping identity*; this
+        # is the actual picture). iconbitmap needs a real .ico on Windows
+        # (iconphoto's PNG/GIF route doesn't drive the taskbar icon the
+        # same way), so this is a no-op with a quiet log line if icon.ico
+        # isn't sitting next to app.py for some reason -- never fatal.
+        try:
+            self.iconbitmap(ICON_PATH)
+        except Exception as e:  # noqa: BLE001 -- cosmetic only, never fatal
+            print(f"(couldn't set the window icon from {ICON_PATH}: {e})")
 
         self.cfg = load_config()
         self.log_queue = queue.Queue()
@@ -179,6 +333,10 @@ class App(tk.Tk):
                                     # settings (brightness always, Dashboard's
                                     # art/web-mirror) apply live instead of
                                     # only taking effect on the next Start
+        self._pending_restart = False  # set by _on_apply(); consumed by
+                                        # _on_theme_finished() once the
+                                        # worker it told to Stop actually
+                                        # winds down -- see _on_apply()
         self._tray_icon = None  # a running pystray.Icon, once _start_tray()
                                  # succeeds -- see there for when that is
         self._poll_after_id = None  # the pending _poll_log_queue() timer,
@@ -194,6 +352,7 @@ class App(tk.Tk):
         self._auto_resume_tab = self.cfg.get("auto_resume_tab")
 
         self._build_widgets()
+        self._autosize_window()
         self._refresh_ports()
         self._poll_log_queue()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -239,6 +398,33 @@ class App(tk.Tk):
                     self.iconify()
             self.after(300, self._on_start)
 
+    def _autosize_window(self):
+        """Size the window to what its widgets actually need instead of
+        a hardcoded guess. The old fixed "760x620" was shorter than the
+        Dashboard tab's content once it grew past the original 4 gauge
+        dropdowns to 8 plus a background picker -- the window just
+        stayed at 620px, silently cropping the log at the bottom off the
+        visible window with nothing to indicate it was even there (no
+        scrollbar; you had to know to manually resize/maximize).
+        ttk.Notebook sizes itself to the largest of its tabs even when a
+        smaller one is selected, so asking Tk for the required size here
+        (after every widget exists, but before anything is drawn) gets
+        the true size the Dashboard tab needs, not whatever tab happens
+        to be showing.
+
+        Capped to 90% of the screen in case that's smaller than the
+        content (e.g. a small laptop panel) -- resizable() stays on
+        (Tk's default), so a window that got capped can still be
+        dragged bigger, and one that didn't can still be shrunk."""
+        self.update_idletasks()
+        req_w = max(self.winfo_reqwidth(), 760)
+        req_h = max(self.winfo_reqheight(), 520)
+        max_w = int(self.winfo_screenwidth() * 0.9)
+        max_h = int(self.winfo_screenheight() * 0.9)
+        w, h = min(req_w, max_w), min(req_h, max_h)
+        self.geometry(f"{w}x{h}")
+        self.minsize(min(640, w), min(480, h))
+
     # ------------------------------------------------------------------ #
     # layout
     # ------------------------------------------------------------------ #
@@ -279,6 +465,12 @@ class App(tk.Tk):
             startup_cb.configure(state="disabled")
             ttk.Label(startup_row, text="(Windows only)", foreground="#666").pack(side="left", padx=(6, 0))
 
+        shortcut_btn = ttk.Button(startup_row, text="Create Desktop Shortcut",
+                                   command=self._on_create_desktop_shortcut)
+        shortcut_btn.pack(side="left", padx=(14, 0))
+        if sys.platform != "win32":
+            shortcut_btn.configure(state="disabled")
+
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
@@ -298,6 +490,12 @@ class App(tk.Tk):
         self.start_btn.pack(side="left")
         self.stop_btn = ttk.Button(controls, text="Stop", command=self._on_stop, state="disabled")
         self.stop_btn.pack(side="left", padx=(6, 0))
+        # A one-click restart for the settings that need Stop+Start to
+        # apply (gauge layout, background, a new video file, ...) -- see
+        # _on_apply()'s docstring. Only meaningful while something's
+        # actually running, so it tracks stop_btn's enabled state.
+        self.apply_btn = ttk.Button(controls, text="Apply (restart)", command=self._on_apply, state="disabled")
+        self.apply_btn.pack(side="left", padx=(6, 0))
         self.status_var = tk.StringVar(value="Idle")
         ttk.Label(controls, textvariable=self.status_var).pack(side="left", padx=(14, 0))
 
@@ -311,6 +509,7 @@ class App(tk.Tk):
     def _build_dashboard_tab(self):
         f = ttk.Frame(self.notebook, padding=12)
         d = self.cfg.get("dashboard", {})
+        row = 0
 
         # Off by default for a fresh config -- opening this listens for
         # network connections, which makes Windows show a one-time
@@ -323,29 +522,118 @@ class App(tk.Tk):
         ttk.Checkbutton(f, text="Enable live web mirror (view from your phone -- opens a network port,"
                                  "\ntriggers a one-time Windows firewall prompt)",
                         variable=self.dash_web_enable,
-                        command=self._apply_dash_web_settings).grid(row=0, column=0, columnspan=3, sticky="w")
+                        command=self._apply_dash_web_settings).grid(row=row, column=0, columnspan=4, sticky="w")
+        row += 1
 
-        ttk.Label(f, text="Web mirror port:").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(f, text="Web mirror port:").grid(row=row, column=0, sticky="w", pady=(6, 0))
         self.dash_web_port = tk.StringVar(value=str(d.get("web_port", 8765)))
-        ttk.Entry(f, textvariable=self.dash_web_port, width=10).grid(row=1, column=1, sticky="w", pady=(6, 0))
+        ttk.Entry(f, textvariable=self.dash_web_port, width=10).grid(row=row, column=1, sticky="w", pady=(6, 0))
         ttk.Button(f, text="Apply", command=self._apply_dash_web_settings).grid(
-            row=1, column=2, sticky="w", padx=(6, 0))
+            row=row, column=2, sticky="w", padx=(6, 0))
+        ttk.Button(f, text="Open in browser", command=self._open_dash_web_mirror).grid(
+            row=row, column=3, sticky="w", padx=(6, 0))
+        row += 1
 
-        ttk.Label(f, text="\"Nothing playing\" image:").grid(row=2, column=0, sticky="w", pady=(12, 0))
+        ttk.Label(f, text="\"Nothing playing\" image:").grid(row=row, column=0, sticky="w", pady=(12, 0))
+        row += 1
         self.dash_art_path = tk.StringVar(value=d.get("default_art_path", "") or "")
         self.dash_art_path.trace_add("write", self._on_dash_art_change)
-        ttk.Entry(f, textvariable=self.dash_art_path, width=48).grid(
-            row=3, column=0, columnspan=2, sticky="w", pady=(2, 0))
-        ttk.Button(f, text="Browse...", command=self._pick_dash_art).grid(row=3, column=2, sticky="w", padx=(6, 0))
+        ttk.Entry(f, textvariable=self.dash_art_path, width=44).grid(
+            row=row, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        ttk.Button(f, text="Browse...", command=self._pick_dash_art).grid(row=row, column=2, sticky="w", padx=(6, 0))
+        row += 1
         ttk.Button(f, text="Clear (use plain placeholder)", command=lambda: self.dash_art_path.set("")).grid(
-            row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
+            row=row, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        row += 1
 
         ttk.Label(f, text="Nothing is bundled here -- pick your own image, or leave this blank\n"
-                          "and a plain drawn placeholder is used instead.",
-                  foreground="#666").grid(row=5, column=0, columnspan=3, sticky="w", pady=(10, 0))
-        ttk.Label(f, text="Everything above applies live while the Dashboard is running --\n"
-                          "no need to Stop/Start.", foreground="#666").grid(
-            row=6, column=0, columnspan=3, sticky="w", pady=(4, 0))
+                          "and a plain drawn placeholder is used instead. Applies live -- no\n"
+                          "need to Stop/Start.",
+                  foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(10, 0))
+        row += 1
+
+        # --- background -----------------------------------------------
+        ttk.Label(f, text="Background:", font=("", 10, "bold")).grid(
+            row=row, column=0, columnspan=4, sticky="w", pady=(16, 0))
+        row += 1
+
+        bg_cfg = dict(dashboard_theme.DEFAULT_BACKGROUND, **d.get("background", {}))
+        bg_labels = list(dashboard_theme.BACKGROUND_PRESETS.values())
+        self._bg_label_to_key = {v: k for k, v in dashboard_theme.BACKGROUND_PRESETS.items()}
+        self.dash_bg_mode = tk.StringVar(
+            value=dashboard_theme.BACKGROUND_PRESETS.get(bg_cfg["mode"], bg_labels[0]))
+        ttk.Label(f, text="Style:").grid(row=row, column=0, sticky="w", pady=(6, 0))
+        ttk.Combobox(f, textvariable=self.dash_bg_mode, values=bg_labels, state="readonly", width=26).grid(
+            row=row, column=1, columnspan=2, sticky="w", pady=(6, 0))
+        row += 1
+
+        scheme_labels = [v["label"] for v in dashboard_theme.BACKGROUND_COLOR_SCHEMES.values()]
+        self._bg_scheme_label_to_key = {v["label"]: k for k, v in dashboard_theme.BACKGROUND_COLOR_SCHEMES.items()}
+        scheme_key = bg_cfg.get("scheme", dashboard_theme.DEFAULT_SCHEME)
+        self.dash_bg_scheme = tk.StringVar(
+            value=dashboard_theme.BACKGROUND_COLOR_SCHEMES.get(
+                scheme_key, dashboard_theme.BACKGROUND_COLOR_SCHEMES[dashboard_theme.DEFAULT_SCHEME])["label"])
+        ttk.Label(f, text="Color scheme:").grid(row=row, column=0, sticky="w", pady=(6, 0))
+        ttk.Combobox(f, textvariable=self.dash_bg_scheme, values=scheme_labels, state="readonly", width=26).grid(
+            row=row, column=1, columnspan=2, sticky="w", pady=(6, 0))
+        row += 1
+
+        ttk.Label(f, text="Custom image:").grid(row=row, column=0, sticky="w", pady=(6, 0))
+        self.dash_bg_image_path = tk.StringVar(value=bg_cfg.get("image_path") or "")
+        ttk.Entry(f, textvariable=self.dash_bg_image_path, width=34).grid(
+            row=row, column=1, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Button(f, text="Browse...", command=self._pick_dash_bg_image).grid(
+            row=row, column=3, sticky="w", padx=(6, 0))
+        row += 1
+
+        ttk.Label(f, text="Color scheme applies to every Style except \"Custom image\". The\n"
+                          "image itself is only used when Style is \"Custom image\" -- it's\n"
+                          "cropped to fit and darkened a bit so the gauges stay readable.",
+                  foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        row += 1
+
+        # --- gauge layout -----------------------------------------------
+        # Per-slot stat pickers. Labels are what the user sees in the
+        # dropdown; _dashboard_kwargs() translates the selection back to
+        # a dashboard_theme.STAT_DEFS key before handing it to the theme.
+        # Laid out as 2 columns (left-column slots, right-column slots)
+        # side by side rather than 8 rows stacked -- same information,
+        # about half the vertical space, and it mirrors how the slots
+        # actually sit on the panel itself (left/right of the album art).
+        ttk.Label(f, text="Gauge layout:", font=("", 10, "bold")).grid(
+            row=row, column=0, columnspan=4, sticky="w", pady=(16, 0))
+        row += 1
+
+        stat_labels = [v["label"] for v in dashboard_theme.STAT_DEFS.values()]
+        self._stat_label_to_key = {v["label"]: k for k, v in dashboard_theme.STAT_DEFS.items()}
+        saved_slots = dict(dashboard_theme.DEFAULT_SLOTS, **d.get("slots", {}))
+
+        self.dash_slot_vars = {}
+        slot_pairs = [
+            ("top_left", "Top-left (CPU col):", "top_right", "Top-right (GPU col):"),
+            ("bottom_left", "Bottom-left (CPU col):", "bottom_right", "Bottom-right (GPU col):"),
+            ("left_secondary", "Left secondary (by art):", "right_secondary", "Right secondary (by art):"),
+            ("left_mini", "Left mini (by clock):", "right_mini", "Right mini (by clock):"),
+        ]
+
+        def add_slot_picker(slot_key, label, col):
+            ttk.Label(f, text=label).grid(row=row, column=col, sticky="w", pady=(6, 0),
+                                            padx=(20, 0) if col else 0)
+            stat_key = saved_slots.get(slot_key, dashboard_theme.DEFAULT_SLOTS[slot_key])
+            var = tk.StringVar(value=dashboard_theme.STAT_DEFS[stat_key]["label"])
+            self.dash_slot_vars[slot_key] = var
+            ttk.Combobox(f, textvariable=var, values=stat_labels, state="readonly", width=14).grid(
+                row=row, column=col + 1, sticky="w", pady=(6, 0))
+
+        for left_key, left_label, right_key, right_label in slot_pairs:
+            add_slot_picker(left_key, left_label, 0)
+            add_slot_picker(right_key, right_label, 2)
+            row += 1
+
+        ttk.Label(f, text="Gauge layout and background are both baked into the panel image --\n"
+                          "Stop then Start (or just hit Apply below) to see changes. Every\n"
+                          "gauge can show any stat -- pick whatever's most useful to you.",
+                  foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(8, 0))
         return f
 
     def _build_video_tab(self):
@@ -374,8 +662,8 @@ class App(tk.Tk):
 
         ttk.Label(f, text="No video is bundled with this app -- point it at any file you have.",
                   foreground="#666").grid(row=7, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        ttk.Label(f, text="Changing these while running needs Stop then Start again -- a\n"
-                          "different file/rate means reopening the video.",
+        ttk.Label(f, text="Changing these while running needs Stop then Start again (or just\n"
+                          "hit Apply below) -- a different file/rate means reopening the video.",
                   foreground="#666").grid(row=8, column=0, columnspan=3, sticky="w", pady=(4, 0))
         return f
 
@@ -401,7 +689,8 @@ class App(tk.Tk):
                           "playwright install chromium) -- a real page, best kept simple\n"
                           "and landscape (a status page, clock, weather widget, your own .html file).",
                   foreground="#666").grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        ttk.Label(f, text="Changing these while running needs Stop then Start again.",
+        ttk.Label(f, text="Changing these while running needs Stop then Start again (or just\n"
+                          "hit Apply below).",
                   foreground="#666").grid(row=7, column=0, columnspan=3, sticky="w", pady=(4, 0))
         return f
 
@@ -420,6 +709,17 @@ class App(tk.Tk):
             filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.gif"), ("All files", "*.*")])
         if path:
             self.dash_art_path.set(path)
+
+    def _pick_dash_bg_image(self):
+        path = filedialog.askopenfilename(
+            title="Choose a background image",
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.gif"), ("All files", "*.*")])
+        if path:
+            self.dash_bg_image_path.set(path)
+            # Picking a file implies you want it used -- flip Style over
+            # to "Custom image" too instead of leaving it silently ignored
+            # because Style was still set to something else.
+            self.dash_bg_mode.set(dashboard_theme.BACKGROUND_PRESETS["image"])
 
     def _pick_video(self):
         path = filedialog.askopenfilename(
@@ -519,16 +819,59 @@ class App(tk.Tk):
         self.status_var.set(f"Running: {theme_name}")
         self.start_btn.configure(state="disabled")
         self.stop_btn.configure(state="normal")
+        self.apply_btn.configure(state="normal")
         self.notebook.tab(0, state="disabled" if tab_index != 0 else "normal")
 
         self.worker = threading.Thread(target=self._run_safely, args=(target, kwargs), daemon=True)
         self.worker.start()
 
+    # A mid-stream write timeout dying and staying dead until someone
+    # notices the log and clicks Start again -- which then just as
+    # silently reconnects to a panel whose live-video decode path is
+    # still wedged -- was the actual bug behind "the image froze and
+    # never came back": connect()'s own retry/blind_restart logic only
+    # fires a firmware restart when the initial handshake itself gets no
+    # reply at all, but a panel that's wedged mid-stream can still answer
+    # getDeviceInfo just fine, so a plain reconnect "succeeds" (logs
+    # Connected/Streaming again) while the panel keeps ignoring frames --
+    # exactly matching README's "if the panel stops responding" section:
+    # blind_restart() is the actual fix, not just reopening the port.
+    RECOVERY_ATTEMPTS = 3
+
     def _run_safely(self, target, kwargs):
-        try:
-            target(**kwargs)
-        except Exception as e:  # noqa: BLE001 -- surface it in the log instead of a silent thread death
-            self._log(f"ERROR: {e}")
+        stop_event = kwargs.get("stop_event")
+        port = kwargs.get("port")
+
+        for attempt in range(1, self.RECOVERY_ATTEMPTS + 1):
+            try:
+                target(**kwargs)
+                return  # ended on its own: Stop was pressed, or e.g. a
+                         # video without --loop simply finished playing
+            except Exception as e:  # noqa: BLE001 -- surfaced in the log either way
+                if stop_event is not None and stop_event.is_set():
+                    # Already stopping -- an exception racing with that
+                    # (Stop landing mid-write, say) isn't a fault to
+                    # recover from, just noise.
+                    self._log(f"(stopped: {e})")
+                    return
+
+                self._log(f"ERROR: {e}")
+                if attempt >= self.RECOVERY_ATTEMPTS:
+                    self._log(f"Giving up after {self.RECOVERY_ATTEMPTS} "
+                               "attempts -- check the panel/cable, then "
+                               "hit Start again.")
+                    return
+
+                self._log(f"Recovering (attempt {attempt + 1}/"
+                           f"{self.RECOVERY_ATTEMPTS}) -- restarting the "
+                           "panel's firmware, not just reconnecting (see "
+                           "README's \"If the panel stops responding\") ...")
+                try:
+                    hongtai_screen.HongtaiScreen(port).blind_restart(log=self._log)
+                except Exception as restart_err:  # noqa: BLE001
+                    self._log(f"(restart attempt failed: {restart_err} -- "
+                               "trying to reconnect anyway)")
+                time.sleep(1.0)
 
     def _on_screen_connected(self, screen):
         """Called from the worker thread right after connect() succeeds
@@ -576,10 +919,37 @@ class App(tk.Tk):
             return
         # Always disable first -- enable_web_mirror() is a no-op if a
         # mirror is already running, which is exactly what would silently
-        # swallow a port change otherwise.
-        self.active_screen.disable_web_mirror()
+        # swallow a port change otherwise. Both calls route their status/
+        # error lines through self._log so they land in the Log panel --
+        # see enable_web_mirror()'s docstring for why that matters more
+        # than it looks like it should.
+        self.active_screen.disable_web_mirror(log=self._log)
         if self.dash_web_enable.get():
-            self.active_screen.enable_web_mirror(port=port)
+            self.active_screen.enable_web_mirror(port=port, log=self._log)
+
+    def _open_dash_web_mirror(self):
+        """Opens the mirror page in the system's default browser --
+        localhost, not the LAN IP enable_web_mirror() logs, since this
+        machine can always reach itself there regardless of network
+        setup. Checks the *actual* live state (HongtaiScreen.web_mirror_
+        enabled) rather than just the checkbox, since the checkbox can
+        say "on" while nothing's actually listening yet (Dashboard not
+        started, or a bind failure already logged above)."""
+        is_live = self.active_screen is not None and self.active_screen.web_mirror_enabled
+        if not is_live:
+            messagebox.showinfo(
+                "Web mirror",
+                "The web mirror isn't running right now.\n\n"
+                "Make sure the Dashboard is started and \"Enable live web "
+                "mirror\" is checked -- check the Log for a port error if "
+                "you've already done both.")
+            return
+        try:
+            port = self._parse_int(self.dash_web_port.get(), "Web mirror port", default=8765)
+        except ValueError as e:
+            self._log(f"(web mirror: {e})")
+            return
+        webbrowser.open(f"http://localhost:{port}/")
 
     def _on_toggle_startup(self):
         """Ticking this writes (or removes) a small hidden-window launcher
@@ -599,11 +969,43 @@ class App(tk.Tk):
             # Reflect what's actually on disk rather than the failed click.
             self.startup_var.set(is_startup_enabled())
 
+    def _on_create_desktop_shortcut(self):
+        """"Create Desktop Shortcut" button next to the startup checkbox
+        -- see create_desktop_shortcut()'s docstring for what it actually
+        points at (the exe itself in a frozen build, the hidden .vbs
+        launcher when running from source)."""
+        try:
+            shortcut_path = create_desktop_shortcut()
+        except Exception as e:  # noqa: BLE001 -- shown to the user either way
+            self._log(f"(couldn't create desktop shortcut: {e})")
+            messagebox.showerror("Create Desktop Shortcut", str(e))
+            return
+        self._log(f"Desktop shortcut created: {shortcut_path}")
+        messagebox.showinfo(
+            "Create Desktop Shortcut",
+            f'"Hongtai Screen" shortcut added to your Desktop.\n\n{shortcut_path}')
+
+    def _on_apply(self):
+        """One click instead of Stop-then-notice-it-stopped-then-Start,
+        for settings that only take effect on a fresh Start -- gauge
+        layout, background, a changed video file/URL, etc. Stops
+        whatever's running; once _on_theme_finished() sees the worker
+        thread has actually wound down (not just been asked to), it
+        starts things back up again with whatever the tabs currently
+        say -- exactly what a manual Stop then Start would do, just
+        without you having to notice the log settle and click Start
+        yourself."""
+        if self.worker is None or not self.worker.is_alive():
+            return  # nothing running to restart -- Start does this already
+        self._pending_restart = True
+        self._on_stop()
+
     def _on_stop(self):
         if self.stop_event is not None:
             self.stop_event.set()
         self.status_var.set("Stopping...")
         self.stop_btn.configure(state="disabled")
+        self.apply_btn.configure(state="disabled")
         # A deliberate Stop means "don't resume this automatically next
         # launch" -- persisted right away rather than waiting for
         # _on_theme_finished() (which only fires once the worker thread
@@ -621,6 +1023,7 @@ class App(tk.Tk):
         self.status_var.set("Idle")
         self.start_btn.configure(state="normal")
         self.stop_btn.configure(state="disabled")
+        self.apply_btn.configure(state="disabled")
         for i in range(4):
             self.notebook.tab(i, state="normal")
         if self._auto_resume_tab is not None:
@@ -629,6 +1032,16 @@ class App(tk.Tk):
             # is actually running any more, so there's nothing to resume.
             self._auto_resume_tab = None
             self._save_current_config()
+        if self._pending_restart:
+            # _on_apply() stopped this on purpose so it could come back
+            # up with the current settings -- now that the worker thread
+            # has actually wound down (port closed and all, not just
+            # asked to), it's safe to start it again. The short delay
+            # gives the OS a moment to fully release the serial port
+            # before reopening it.
+            self._pending_restart = False
+            self.status_var.set("Restarting...")
+            self.after(300, self._on_start)
 
     # ------------------------------------------------------------------ #
     # per-theme kwarg building
@@ -636,10 +1049,20 @@ class App(tk.Tk):
     def _dashboard_kwargs(self, port, brightness):
         web_port = self._parse_int(self.dash_web_port.get(), "Web mirror port", default=8765)
         art_path = self.dash_art_path.get().strip() or None
+        slots = {slot_key: self._stat_label_to_key.get(var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
+                  for slot_key, var in self.dash_slot_vars.items()}
+        background = self._dash_background_dict()
         return "Dashboard", dashboard_theme.run, dict(
             port=port, web_port=web_port, enable_web=self.dash_web_enable.get(),
-            default_art_path=art_path, brightness=brightness,
+            default_art_path=art_path, brightness=brightness, slots=slots, background=background,
         )
+
+    def _dash_background_dict(self):
+        return {
+            "mode": self._bg_label_to_key.get(self.dash_bg_mode.get(), "default"),
+            "scheme": self._bg_scheme_label_to_key.get(self.dash_bg_scheme.get(), dashboard_theme.DEFAULT_SCHEME),
+            "image_path": self.dash_bg_image_path.get().strip() or None,
+        }
 
     def _video_kwargs(self, port, brightness):
         path = self.video_path.get().strip()
@@ -702,6 +1125,10 @@ class App(tk.Tk):
                 "enable_web": self.dash_web_enable.get(),
                 "web_port": self.dash_web_port.get(),
                 "default_art_path": self.dash_art_path.get().strip() or None,
+                "slots": {slot_key: self._stat_label_to_key.get(
+                              var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
+                          for slot_key, var in self.dash_slot_vars.items()},
+                "background": self._dash_background_dict(),
             },
             "video": {
                 "path": self.video_path.get().strip() or None,
@@ -809,6 +1236,88 @@ class App(tk.Tk):
         self.destroy()
 
 
+_SINGLE_INSTANCE_MUTEX_NAME = "Local\\HongtaiScreenApp_SingleInstance"
+_WINDOW_TITLE = "Hongtai Screen Control"
+_single_instance_mutex_handle = None  # kept alive for the process's whole
+# lifetime on purpose -- see _ensure_single_instance()'s docstring.
+
+
+def _ensure_single_instance():
+    """Windows-only: refuses to let a second copy of this app start, and
+    instead brings the already-running one to the front (even if it's
+    currently hidden in the tray). Without this, launching a second copy
+    used to silently race the first one for the same COM port -- only
+    whichever got there first actually talked to the panel, and every
+    other copy just sat there uselessly failing to connect (or, worse,
+    fighting the first one for it).
+
+    The "is one already running" check is a named kernel mutex (built
+    into ctypes/kernel32 -- no extra dependency), not a lock *file*:
+    a mutex is owned by its process and Windows itself cleans it up the
+    instant that process exits or is killed, so a prior crash can never
+    leave this stuck thinking an instance is running when none actually
+    is (the classic failure mode of a stale PID/lock file).
+
+    Returns True if it's fine to keep starting up (either this is the
+    first copy, or this isn't Windows and the check doesn't apply),
+    False if another instance is already running and this process
+    should exit immediately without opening a window.
+    """
+    if sys.platform != "win32":
+        return True  # this app's Windows-specific features (see
+                      # enable_startup()) are Windows-only already;
+                      # nothing here needs to apply anywhere else.
+
+    import ctypes
+
+    global _single_instance_mutex_handle
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.CreateMutexW(None, False, _SINGLE_INSTANCE_MUTEX_NAME)
+    # GetLastError() (the real Win32 call, not ctypes' own get_last_error()
+    # cache, which needs use_last_error=True at DLL-load time to be
+    # reliable) -- ERROR_ALREADY_EXISTS means CreateMutexW handed back a
+    # handle to an existing mutex rather than creating a new one, i.e.
+    # another copy of this app already holds it.
+    ERROR_ALREADY_EXISTS = 183
+    already_running = kernel32.GetLastError() == ERROR_ALREADY_EXISTS
+    # Never closed and never allowed to go out of scope: holding this
+    # handle open for this process's entire lifetime is exactly what
+    # makes the *next* launch see ERROR_ALREADY_EXISTS. Windows closes it
+    # automatically on process exit either way (clean or crashed).
+    _single_instance_mutex_handle = handle
+
+    if not already_running:
+        return True
+
+    _bring_existing_window_to_front()
+    return False
+
+
+def _bring_existing_window_to_front():
+    """Best-effort: finds the already-running instance's window by its
+    exact title (FindWindowW matches top-level windows regardless of
+    their visibility, so this works even if it's currently withdrawn to
+    the tray) and activates it, so refusing to open a second copy still
+    does something useful instead of the second launch just silently
+    doing nothing."""
+    import ctypes
+    user32 = ctypes.windll.user32
+    hwnd = user32.FindWindowW(None, _WINDOW_TITLE)
+    if not hwnd:
+        try:
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "Hongtai Screen",
+                "Hongtai Screen is already running -- check your system "
+                "tray.")
+        except Exception:  # noqa: BLE001 -- best-effort notice only
+            pass
+        return
+    SW_RESTORE = 9
+    user32.ShowWindow(hwnd, SW_RESTORE)
+    user32.SetForegroundWindow(hwnd)
+
+
 def parse_args():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--autostart", action="store_true",
@@ -824,4 +1333,5 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    App(autostart=args.autostart, autostart_theme=args.theme).mainloop()
+    if _ensure_single_instance():
+        App(autostart=args.autostart, autostart_theme=args.theme).mainloop()

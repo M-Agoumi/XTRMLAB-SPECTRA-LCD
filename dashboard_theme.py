@@ -131,7 +131,7 @@ import time
 import datetime
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 try:
     import cairo
@@ -176,25 +176,193 @@ def _get_cpu_util():
     return state["prev"] + (state["next"] - state["prev"]) * frac
 
 
-def get_cpu_stats(sysinfo_frame=None):
-    return {
-        "util": _get_cpu_util(),
-        "temp": _sensor_value(sysinfo_frame, "cpuLayout", "temperature") or _psutil_cpu_temp(),
-    }
+def get_cpu_stats():
+    """CPU load only now -- CPU temp used to live here too, but it's
+    gone from this dashboard on purpose: the AIO panel shows CPU temp
+    of its own, so duplicating it here was redundant (and see
+    read_systeminfos()'s docstring for a real bug that used to make it
+    show a frozen, wrong number half the time anyway)."""
+    return {"util": _get_cpu_util()}
 
 
-def _psutil_cpu_temp():
-    # psutil's own sensor API -- works on Linux, essentially never on
-    # Windows (see the module docstring for how Windows temps are read
-    # instead, via SystemInfos.exe).
+_ram_state = {"prev": None, "next": None, "sampled_at": 0.0}
+
+
+def get_ram_percent():
+    """Used-memory percentage, smoothed the same way _get_cpu_util() is
+    (psutil's own number updates in coarse steps; interpolating between
+    samples keeps the needle moving smoothly at this theme's 10Hz
+    redraw rate instead of visibly stair-stepping)."""
+    now = time.time()
+    state = _ram_state
+    if now - state["sampled_at"] >= CPU_UTIL_REFRESH:
+        try:
+            raw = psutil.virtual_memory().percent
+        except Exception:  # noqa: BLE001
+            return None
+        state["prev"] = state["next"] if state["next"] is not None else raw
+        state["next"] = raw
+        state["sampled_at"] = now
+    if state["next"] is None:
+        return None
+    if state["prev"] is None:
+        return state["next"]
+    frac = min(1.0, (now - state["sampled_at"]) / CPU_UTIL_REFRESH)
+    return state["prev"] + (state["next"] - state["prev"]) * frac
+
+
+def get_cpu_freq_ghz():
+    """Current CPU clock speed in GHz -- one of this theme's selectable
+    stats (see STAT_DEFS' "cpu_freq" entry for its fixed gauge ceiling,
+    CPU_FREQ_GAUGE_MAX_GHZ). CPU temp itself isn't shown here at all
+    (see get_cpu_stats()'s docstring: the AIO panel already covers it),
+    so this is a different number entirely, not a smaller version of
+    the same one."""
     try:
-        temps = psutil.sensors_temperatures()
-        for entries in temps.values():
-            if entries:
-                return entries[0].current
-    except Exception:  # noqa: BLE001 -- not implemented on this OS at all
-        pass
-    return None
+        freq = psutil.cpu_freq()
+    except Exception:  # noqa: BLE001 -- not available on every platform
+        return None
+    if freq is None:
+        return None
+    return freq.current / 1000
+
+
+def get_disk_usage_percent():
+    """Used-space percentage of the system drive. No smoothing needed
+    here unlike the other gauges -- disk usage barely moves between
+    frames, so raw psutil output is already visually steady."""
+    try:
+        return psutil.disk_usage(os.path.abspath(os.sep)).percent
+    except Exception:  # noqa: BLE001
+        return None
+
+
+NETWORK_GAUGE_MAX_MB_S = 20.0  # the gauge's 100% mark -- roughly 160Mbps
+# combined up+down. A burst above this just pegs the needle at 100% while
+# the printed number keeps showing the real value; tune to your own
+# connection if 20MB/s is way off from what "full" looks like for you.
+_NETWORK_SMOOTHING = 0.3  # 0-1, higher = follows raw jumps more closely
+_net_state = {"prev_bytes": None, "prev_t": None, "smoothed": None}
+
+
+def get_network_rate_mb_s():
+    """Combined upload+download throughput in MB/s. Needs two samples to
+    compute a rate at all (returns None on the very first call), and
+    smooths the result a little -- a raw ~100ms-apart delta is jumpy
+    enough to make the needle twitch distractingly otherwise."""
+    try:
+        counters = psutil.net_io_counters()
+    except Exception:  # noqa: BLE001
+        return None
+    now = time.time()
+    total = counters.bytes_sent + counters.bytes_recv
+    state = _net_state
+    prev_bytes, prev_t = state["prev_bytes"], state["prev_t"]
+    state["prev_bytes"], state["prev_t"] = total, now
+    if prev_bytes is None or now <= prev_t:
+        return None
+    rate = max(0.0, (total - prev_bytes) / (now - prev_t) / (1024 * 1024))
+    state["smoothed"] = rate if state["smoothed"] is None else (
+        state["smoothed"] + (rate - state["smoothed"]) * _NETWORK_SMOOTHING)
+    return state["smoothed"]
+
+
+DISK_IO_GAUGE_MAX_MB_S = 200.0  # same idea as NETWORK_GAUGE_MAX_MB_S's ceiling,
+# just for local disk read+write instead of network -- tune to your drive
+# (a fast NVMe can burst well past this; an old spinning disk far under it).
+_DISK_IO_SMOOTHING = 0.3
+_disk_io_state = {"prev_bytes": None, "prev_t": None, "smoothed": None}
+
+
+def get_disk_io_mb_s():
+    """Combined read+write throughput of the system's disks in MB/s --
+    distinct from get_disk_usage_percent() (how full the drive is);
+    this is how hard it's currently being hammered. Same two-sample/
+    smoothing approach as get_network_rate_mb_s()."""
+    try:
+        counters = psutil.disk_io_counters()
+    except Exception:  # noqa: BLE001
+        return None
+    if counters is None:
+        return None
+    now = time.time()
+    total = counters.read_bytes + counters.write_bytes
+    state = _disk_io_state
+    prev_bytes, prev_t = state["prev_bytes"], state["prev_t"]
+    state["prev_bytes"], state["prev_t"] = total, now
+    if prev_bytes is None or now <= prev_t:
+        return None
+    rate = max(0.0, (total - prev_bytes) / (now - prev_t) / (1024 * 1024))
+    state["smoothed"] = rate if state["smoothed"] is None else (
+        state["smoothed"] + (rate - state["smoothed"]) * _DISK_IO_SMOOTHING)
+    return state["smoothed"]
+
+
+def get_swap_percent():
+    """Used-swap percentage -- RAM's counterpart. No smoothing, same
+    reasoning as get_disk_usage_percent(): it doesn't move fast enough
+    between frames to need it."""
+    try:
+        return psutil.swap_memory().percent
+    except Exception:  # noqa: BLE001
+        return None
+
+
+PROCESS_COUNT_MAX = 400.0  # gauge ceiling -- a "busy but normal" desktop
+# usually sits well under this; tune it if your baseline process count
+# runs a lot higher or lower.
+
+
+def get_process_count():
+    """Total running process count -- a rough, at-a-glance "how busy is
+    this machine overall" number distinct from any single resource's
+    load."""
+    try:
+        return float(len(psutil.pids()))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+_cpu_peak_state = {"prev": None, "next": None, "sampled_at": 0.0}
+
+
+def get_cpu_load_peak_core():
+    """Highest single core's utilization, smoothed the same way
+    _get_cpu_util() smooths the overall average. On a many-core CPU the
+    plain average (get_cpu_stats()) can look moderate while one core is
+    actually pegged (a single-threaded task, for instance) -- this is
+    the number that shows that."""
+    now = time.time()
+    state = _cpu_peak_state
+    if now - state["sampled_at"] >= CPU_UTIL_REFRESH:
+        try:
+            per_core = psutil.cpu_percent(interval=None, percpu=True)
+        except Exception:  # noqa: BLE001
+            return None
+        if not per_core:
+            return None
+        raw = max(per_core)
+        state["prev"] = state["next"] if state["next"] is not None else raw
+        state["next"] = raw
+        state["sampled_at"] = now
+    if state["next"] is None:
+        return None
+    if state["prev"] is None:
+        return state["next"]
+    frac = min(1.0, (now - state["sampled_at"]) / CPU_UTIL_REFRESH)
+    return state["prev"] + (state["next"] - state["prev"]) * frac
+
+
+def get_battery_percent():
+    """Battery charge percentage, if this machine reports one at all --
+    a desktop tower usually won't (returns None, which just shows "--"
+    like any other unavailable stat), but a laptop or a UPS psutil can
+    see will."""
+    try:
+        battery = psutil.sensors_battery()
+    except Exception:  # noqa: BLE001
+        return None
+    return battery.percent if battery else None
 
 
 # ------------------------------------------------------ SystemInfos.exe ---
@@ -253,9 +421,20 @@ def stop_systeminfos():
 
 def read_systeminfos():
     """Read+parse the current frame. Returns None if the helper isn't
-    running yet, hasn't written anything, or the app isn't installed
-    at the expected path."""
+    running yet, hasn't written anything, isn't installed at the
+    expected path, or -- and this is the case that actually matters
+    here -- HAS written something before but has since stopped updating
+    it (e.g. it needs Administrator to load its sensor driver and this
+    app isn't running elevated, so it wrote one valid frame at startup
+    and then silently exited): without a freshness check, a stopped
+    helper's last frame just sits on disk and reads back as if it were
+    live forever, showing a frozen, increasingly-wrong number (the
+    literal "CPU temp always at 41C" bug) instead of "no data". The file
+    is meant to update about once a second either way, so anything more
+    than a few seconds stale is treated as no reading at all."""
     try:
+        if time.time() - os.path.getmtime(SYSTEMINFOS_SHM_PATH) > 3.0:
+            return None
         with open(SYSTEMINFOS_SHM_PATH, "rb") as f:
             head = f.read(4)
             if len(head) < 4:
@@ -312,6 +491,36 @@ def get_gpu_stats(sysinfo_frame=None):
     if util is None and temp is None:
         return None
     return {"util": util, "temp": temp}
+
+
+def get_vram_percent():
+    """GPU memory used, as a percentage -- one of the two gauges flanking
+    the clock. Only available when pynvml found an NVIDIA GPU (_GPU_OK
+    below); None otherwise, which just draws that gauge's dim track."""
+    if not _GPU_OK:
+        return None
+    try:
+        mem = pynvml.nvmlDeviceGetMemoryInfo(_gpu_handle)
+        return mem.used / mem.total * 100
+    except Exception:  # noqa: BLE001
+        return None
+
+
+GPU_POWER_MAX_W = 350.0  # gauge ceiling -- a reasonable high-end-card TDP;
+# tune it down for a lower-power card so the needle actually uses the dial.
+
+
+def get_gpu_power_w():
+    """Live GPU power draw in watts -- pynvml-only (no SystemInfos.exe
+    fallback; the vendor feed this theme otherwise falls back to for
+    non-NVIDIA GPUs doesn't expose this), so this is None on anything
+    but an NVIDIA card, same graceful "--" as any other missing stat."""
+    if not _GPU_OK:
+        return None
+    try:
+        return pynvml.nvmlDeviceGetPowerUsage(_gpu_handle) / 1000.0
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # ----------------------------------------------------------------- winsdk --
@@ -560,6 +769,110 @@ TICKS = (0, 25, 50, 75, 100)
 # angle convention (0 = 3 o'clock, clockwise).
 GAUGE_START = 125
 GAUGE_END = 425
+
+# The 4 big gauges' stat/title/range/format are no longer hardcoded to
+# CPU/GPU load -- each of the 4 slots (top-left, bottom-left, top-right,
+# bottom-right) independently picks any one of these (see app.py's
+# Dashboard tab for the dropdowns, and run()'s `slots=` kwarg). Accent
+# color is NOT part of this registry on purpose: it stays tied to which
+# *column* a slot is in (left=cyan, right=magenta) regardless of which
+# stat currently occupies it, so the two columns keep reading as
+# "CPU-side" / "GPU-side" even after reassigning what's actually shown.
+#
+# Every gauge on the panel -- the 4 big ones AND the 4 smaller ones (the
+# two flanking the album art, the two flanking the clock) -- picks from
+# this same registry; there's nothing special about which stats can go
+# in a "big" vs "small" slot. See SLOT_KINDS below for where each named
+# slot actually sits and how big it is.
+CPU_FREQ_GAUGE_MAX_GHZ = 6.0  # a fixed ceiling, same idea as NETWORK_GAUGE_MAX_MB_S --
+# tune it if your CPU's boost clock is way above (or well below) this.
+STAT_DEFS = {
+    "cpu_load": {"label": "CPU Load", "title": "CPU LOAD", "min": 0, "max": 100,
+                 "fmt": lambda v: f"{v:.0f}%"},
+    "gpu_load": {"label": "GPU Load", "title": "GPU LOAD", "min": 0, "max": 100,
+                 "fmt": lambda v: f"{v:.0f}%"},
+    "ram": {"label": "RAM Usage", "title": "RAM", "min": 0, "max": 100,
+            "fmt": lambda v: f"{v:.0f}%"},
+    "network": {"label": "Network", "title": "NETWORK", "min": 0, "max": NETWORK_GAUGE_MAX_MB_S,
+                "fmt": lambda v: f"{v:.1f}M/s"},
+    "gpu_temp": {"label": "GPU Temp", "title": "GPU TEMP", "min": 0, "max": 100,
+                 "fmt": lambda v: f"{v:.0f}°"},
+    "cpu_freq": {"label": "CPU Freq", "title": "CPU FREQ", "min": 0, "max": CPU_FREQ_GAUGE_MAX_GHZ,
+                 "fmt": lambda v: f"{v:.1f}G"},
+    "disk_usage": {"label": "Disk Usage", "title": "DISK", "min": 0, "max": 100,
+                   "fmt": lambda v: f"{v:.0f}%"},
+    "vram_usage": {"label": "VRAM Usage", "title": "VRAM", "min": 0, "max": 100,
+                   "fmt": lambda v: f"{v:.0f}%"},
+    "swap": {"label": "Swap Usage", "title": "SWAP", "min": 0, "max": 100,
+             "fmt": lambda v: f"{v:.0f}%"},
+    "disk_io": {"label": "Disk Activity", "title": "DISK I/O", "min": 0, "max": DISK_IO_GAUGE_MAX_MB_S,
+                "fmt": lambda v: f"{v:.0f}M/s"},
+    "gpu_power": {"label": "GPU Power", "title": "GPU PWR", "min": 0, "max": GPU_POWER_MAX_W,
+                  "fmt": lambda v: f"{v:.0f}W"},
+    "process_count": {"label": "Processes", "title": "PROCESSES", "min": 0, "max": PROCESS_COUNT_MAX,
+                       "fmt": lambda v: f"{v:.0f}"},
+    "cpu_load_peak": {"label": "CPU Load (Peak Core)", "title": "CPU PEAK", "min": 0, "max": 100,
+                       "fmt": lambda v: f"{v:.0f}%"},
+    "battery": {"label": "Battery", "title": "BATTERY", "min": 0, "max": 100,
+                "fmt": lambda v: f"{v:.0f}%"},
+}
+# 14 stats, 8 slots -- deliberately more of the former than the latter
+# (see STAT_DEFS' own comment above about how it's registered) so
+# picking a layout is a real choice, not just "which of exactly 8
+# things goes in the one slot it fits."
+DEFAULT_SLOTS = {
+    "top_left": "cpu_load", "bottom_left": "ram",
+    "top_right": "gpu_load", "bottom_right": "network",
+    "left_secondary": "cpu_freq", "right_secondary": "gpu_temp",
+    "left_mini": "disk_usage", "right_mini": "vram_usage",
+}
+# Which of the 8 slots are "big" (the 4 main gauges), "secondary" (the
+# pair flanking the album art), or "mini" (the pair flanking the clock)
+# -- drives gauge size and value-font choice generically in
+# build_static_background()/render_frame() instead of hardcoding each
+# slot by name.
+SLOT_KINDS = {
+    "top_left": "big", "bottom_left": "big", "top_right": "big", "bottom_right": "big",
+    "left_secondary": "secondary", "right_secondary": "secondary",
+    "left_mini": "mini", "right_mini": "mini",
+}
+
+# The panel background is its own small registry, same idea as
+# STAT_DEFS -- see _build_background_image() for what each mode
+# actually draws, and app.py's Dashboard tab for the picker + file
+# browse button. "image" needs a real file at image_path to do
+# anything; missing/unreadable silently falls back to "default"
+# rather than erroring the whole theme out. "solid" used to just look
+# like flat black -- BG_TOP/BG_BOTTOM (still used elsewhere as plain
+# matte-fill colors, see fit_album_art()/placeholder_art()) are both
+# extremely dark on purpose, so they read fine as a base *under* the
+# hex grid/circuit texture but had basically no visible gradient of
+# their own once that texture was stripped away. BACKGROUND_COLOR_
+# SCHEMES below replaces that with an actual pick of gradients that
+# read as a gradient with no texture at all.
+BACKGROUND_PRESETS = {
+    "default": "Default (hex grid + circuits)",
+    "grid": "Simple grid",
+    "starfield": "Starfield",
+    "radial": "Radial glow",
+    "solid": "Plain gradient",
+    "image": "Custom image",
+}
+# Applies to every mode above except "image" (which is the photo itself)
+# -- "default"'s hex grid and circuit traces keep their own fixed tint
+# regardless of scheme (they're meant to read as CPU/GPU-side wiring,
+# not as a color choice), but the gradient underneath them, and the
+# starfield/grid/radial modes entirely, all use whichever scheme is
+# picked here.
+BACKGROUND_COLOR_SCHEMES = {
+    "purple": {"label": "Purple", "top": (24, 14, 46), "bottom": (5, 4, 11)},
+    "blue": {"label": "Ocean Blue", "top": (8, 28, 52), "bottom": (2, 5, 12)},
+    "crimson": {"label": "Crimson", "top": (46, 10, 18), "bottom": (10, 3, 5)},
+    "emerald": {"label": "Emerald", "top": (8, 42, 26), "bottom": (2, 8, 5)},
+    "mono": {"label": "Monochrome", "top": (34, 34, 36), "bottom": (6, 6, 7)},
+}
+DEFAULT_SCHEME = "purple"
+DEFAULT_BACKGROUND = {"mode": "default", "scheme": DEFAULT_SCHEME, "image_path": None}
 
 
 def dim_color(color, factor):
@@ -1018,6 +1331,8 @@ class Fonts:
     def __init__(self):
         self.gauge_title = load_font(15)
         self.gauge_value = load_font(26)
+        self.small_title = load_font(11)   # the compact GPU-temp gauge's title
+        self.small_value = load_font(15)   # and its value -- gauge_value is too big for it
         self.tick = load_font(12)
         self.time = load_font(24)
         self.track = load_font(19)
@@ -1026,21 +1341,124 @@ class Fonts:
         self.message = load_font(22)  # the "nothing playing" message -- bigger, meant to be read
 
 
-def build_static_background(width, height, fonts):
-    """Everything that doesn't change frame to frame: the gradient,
-    hex-grid + circuit-trace texture, the panel border, and all four
-    gauges' dim tracks/ticks/titles. Returns (image, layout)."""
-    img = Image.new("RGB", (width, height), BG_TOP)
-    px = img.load()
-    for y in range(height):
-        t = y / max(1, height - 1)
-        row = tuple(int(BG_TOP[i] + (BG_BOTTOM[i] - BG_TOP[i]) * t) for i in range(3))
-        for x in range(width):
-            px[x, y] = row
+def _linear_gradient(width, height, top_color, bottom_color):
+    """Vectorized top-to-bottom gradient via numpy -- the original
+    per-pixel Python double loop (~460k iterations at 960x480) worked
+    but there's no reason to pay that cost now that this runs for every
+    mode, including ones with no texture drawn on top to hide banding."""
+    t = np.linspace(0, 1, height, dtype=np.float32).reshape(height, 1, 1)
+    top = np.array(top_color, dtype=np.float32).reshape(1, 1, 3)
+    bottom = np.array(bottom_color, dtype=np.float32).reshape(1, 1, 3)
+    arr = np.broadcast_to(top + (bottom - top) * t, (height, width, 3))
+    return Image.fromarray(arr.astype(np.uint8), "RGB")
 
+
+def _radial_gradient(width, height, center_color, edge_color):
+    """A soft glow centered on the panel, fading to `edge_color` at the
+    corners -- vectorized the same way as _linear_gradient() above."""
+    yy, xx = np.mgrid[0:height, 0:width]
+    cx, cy = width / 2, height / 2
+    dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+    t = np.clip(dist / math.hypot(cx, cy), 0, 1)[..., np.newaxis]
+    center = np.array(center_color, dtype=np.float32)
+    edge = np.array(edge_color, dtype=np.float32)
+    arr = center + (edge - center) * t
+    return Image.fromarray(arr.astype(np.uint8), "RGB")
+
+
+def draw_starfield(draw, width, height, seed=11, count=140):
+    """A scattering of small static "stars" -- deterministic (fixed
+    seed) so the pattern doesn't visibly change between Starts, same as
+    the hex grid/circuit traces it stands in for as a lighter-weight,
+    less "circuit board" alternative texture."""
+    rng = random.Random(seed)
+    for _ in range(count):
+        x, y = rng.randint(0, width), rng.randint(0, height)
+        r = rng.choice((0.6, 0.6, 0.8, 1.0, 1.4))
+        b = rng.randint(110, 230)
+        draw.ellipse([x - r, y - r, x + r, y + r], fill=(b, b, min(255, b + 15)))
+
+
+def draw_simple_grid(draw, width, height, spacing=44, color=(70, 76, 100)):
+    """A plain rectangular grid -- a calmer alternative to the hex grid
+    for anyone who wants *some* structure without the full "circuit
+    board" look."""
+    for x in range(0, width, spacing):
+        draw.line([(x, 0), (x, height)], fill=color, width=1)
+    for y in range(0, height, spacing):
+        draw.line([(0, y), (width, y)], fill=color, width=1)
+
+
+def _build_background_image(width, height, background):
+    """The part of the panel background that varies by BACKGROUND_PRESETS
+    mode -- everything else in build_static_background() (border, gauges)
+    is drawn on top of whatever this returns.
+
+    "default": a gradient (see BACKGROUND_COLOR_SCHEMES) plus the
+    hex-grid + circuit-trace texture. "grid"/"starfield": the same
+    gradient with a lighter-weight texture instead. "radial": a glow
+    centered on the panel rather than a top-to-bottom gradient. "solid":
+    just the gradient, no texture at all. "image": a user-supplied
+    photo, cover-fit to the panel and darkened -- the gauges/text here
+    are all designed to sit on a near-black background, so a bright
+    photo behind them unmodified would wreck their legibility; a bad or
+    missing path (or an unreadable file) just falls back to "default"
+    silently rather than failing the whole theme."""
+    mode = (background or {}).get("mode", "default")
+    image_path = (background or {}).get("image_path")
+
+    if mode == "image" and image_path:
+        try:
+            src = Image.open(image_path).convert("RGB")
+            img = ImageOps.fit(src, (width, height), method=Image.LANCZOS)
+            overlay = Image.new("RGB", (width, height), (0, 0, 0))
+            return Image.blend(img, overlay, 0.45)
+        except Exception:  # noqa: BLE001 -- bad/missing file, corrupt image, etc.
+            mode = "default"
+
+    scheme = BACKGROUND_COLOR_SCHEMES.get((background or {}).get("scheme"),
+                                            BACKGROUND_COLOR_SCHEMES[DEFAULT_SCHEME])
+    top_color, bottom_color = scheme["top"], scheme["bottom"]
+
+    if mode == "radial":
+        return _radial_gradient(width, height, top_color, bottom_color)
+
+    img = _linear_gradient(width, height, top_color, bottom_color)
+    if mode == "default":
+        draw = ImageDraw.Draw(img)
+        draw_hex_grid(draw, width, height)
+        draw_circuit_traces(draw, width, height)
+    elif mode == "grid":
+        draw_simple_grid(ImageDraw.Draw(img), width, height)
+    elif mode == "starfield":
+        draw_starfield(ImageDraw.Draw(img), width, height)
+    # mode == "solid": the gradient above, with nothing drawn over it.
+    return img
+
+
+def build_static_background(width, height, fonts, slots=None, background=None):
+    """Everything that doesn't change frame to frame: the background
+    (see _build_background_image()/BACKGROUND_PRESETS), the panel
+    border, and all 8 gauges' dim tracks/ticks/titles -- the 4 big ones
+    plus the 2 secondary ones flanking the album art and the 2 mini
+    ones flanking the clock (whichever stat each slot is currently
+    assigned -- see STAT_DEFS/DEFAULT_SLOTS/SLOT_KINDS). Returns
+    (image, layout).
+
+    `slots` maps any of SLOT_KINDS' 8 keys to a STAT_DEFS key; missing
+    entries fall back to DEFAULT_SLOTS -- any stat can go in any slot,
+    big or small. `background` maps "mode" (a BACKGROUND_PRESETS key),
+    "scheme" (a BACKGROUND_COLOR_SCHEMES key), and "image_path"; missing
+    entries fall back to DEFAULT_BACKGROUND. Both are baked into this
+    static image, so changing either mid-stream needs a fresh call to
+    this (i.e. a Stop/Start, or the GUI's Apply button) to take effect
+    -- same as every other "needs a restart" setting in this theme.
+    """
+    slots = dict(DEFAULT_SLOTS, **(slots or {}))
+    background = dict(DEFAULT_BACKGROUND, **(background or {}))
+
+    img = _build_background_image(width, height, background)
     draw = ImageDraw.Draw(img)
-    draw_hex_grid(draw, width, height)
-    draw_circuit_traces(draw, width, height)
 
     margin = int(width * 0.015)
     rounded_rect(draw, [margin, margin, width - margin, height - margin],
@@ -1061,45 +1479,107 @@ def build_static_background(width, height, fonts):
     cpu_cx = margin + col_w / 2 + int(width * 0.015)
     gpu_cx = width - margin - col_w / 2 - int(width * 0.015)
 
-    cpu_load, cpu_temp = col_gauges(cpu_cx)
-    gpu_load, gpu_temp = col_gauges(gpu_cx)
-
-    for g, title, accent in (
-        (cpu_load, "CPU LOAD", ACCENT_CPU),
-        (cpu_temp, "CPU TEMP", ACCENT_CPU),
-        (gpu_load, "GPU LOAD", ACCENT_GPU),
-        (gpu_temp, "GPU TEMP", ACCENT_GPU),
-    ):
-        tile = draw_gauge_static(g, accent)
-        img.paste(tile, _gauge_box(g), tile)
-        draw_tick_labels(draw, g, fonts.tick)
-        draw.text((g["cx"], g["cy"] - g["radius"] * 0.42), title, font=fonts.gauge_title,
-                   fill=(225, 226, 236), anchor="mm")
+    top_left, bottom_left = col_gauges(cpu_cx)
+    top_right, bottom_right = col_gauges(gpu_cx)
 
     mid_x0 = margin + col_w + int(width * 0.03)
     mid_x1 = width - margin - col_w - int(width * 0.03)
+    mid_cx = (mid_x0 + mid_x1) / 2
+
+    # The 2 secondary gauges flank the album art -- there's real empty
+    # space on both sides once the art (a fixed fraction of the middle
+    # column's width, see render_frame()) is narrower than the middle
+    # column itself, which it always is. `lean` pulls each gauge's
+    # center away from the strict left/right midpoint and toward its
+    # gauge column (0.5 = centered between art and column, 1.0 = flush
+    # against the column) -- these sit closer to the big gauges than to
+    # the art.
+    art_size = int(min((mid_x1 - mid_x0) * 0.62, height * 0.42))
+    art_right = mid_cx + art_size / 2
+    art_left = mid_cx - art_size / 2
+    lean = 0.68
+
+    gauge_visible_left = top_right["cx"] - top_right["radius"] - top_right["ring_w"] / 2 - 25
+    gauge_visible_right = top_left["cx"] + top_left["radius"] + top_left["ring_w"] / 2 + 25
+    secondary_radius = top_right["radius"] * 0.52
+    secondary_positions = {
+        "right_secondary": gauge_layout(
+            art_right + (gauge_visible_left - art_right) * lean,
+            (top_right["cy"] + bottom_right["cy"]) / 2, secondary_radius),
+        "left_secondary": gauge_layout(
+            art_left + (gauge_visible_right - art_left) * lean,
+            (top_left["cy"] + bottom_left["cy"]) / 2, secondary_radius),
+    }
+
+    # The 2 mini gauges flank the clock, below the album art -- there's
+    # more vertical room down there than anywhere else on the panel, so
+    # these get to be bigger than the secondary pair above despite being
+    # called "mini". The clock's vertical position is fixed here (rather
+    # than flowing below whatever media info happens to be showing) so
+    # these have a stable spot baked into the static background;
+    # render_frame() draws the clock text at this same y.
+    clock_cy = int(height * 0.885)
+    mini_radius = secondary_radius * 0.85
+    mini_offset = (mid_x1 - mid_x0) * 0.26
+    mini_positions = {
+        "left_mini": gauge_layout(mid_cx - mini_offset, clock_cy, mini_radius),
+        "right_mini": gauge_layout(mid_cx + mini_offset, clock_cy, mini_radius),
+    }
+
+    # Accent stays tied to which *column* (left=CPU cyan, right=GPU
+    # magenta) a slot is in, not to whatever stat is currently assigned
+    # there -- see STAT_DEFS' comment on why. Every slot's name has
+    # "left" or "right" in it for exactly this reason.
+    positions = {
+        "top_left": top_left, "bottom_left": bottom_left,
+        "top_right": top_right, "bottom_right": bottom_right,
+        **secondary_positions, **mini_positions,
+    }
+
+    for slot_key, g in positions.items():
+        kind = SLOT_KINDS[slot_key]
+        accent = ACCENT_CPU if "left" in slot_key else ACCENT_GPU
+        title = STAT_DEFS[slots[slot_key]]["title"]
+        tile = draw_gauge_static(g, accent)
+        img.paste(tile, _gauge_box(g), tile)
+        if kind == "big":
+            # The 4 big gauges get full tick labels and a title tucked
+            # inside the ring; the secondary/mini ones skip tick labels
+            # (no room, and they don't need to be read as precisely) and
+            # get a compact title above the ring instead.
+            draw_tick_labels(draw, g, fonts.tick)
+            draw.text((g["cx"], g["cy"] - g["radius"] * 0.42), title, font=fonts.gauge_title,
+                       fill=(225, 226, 236), anchor="mm")
+        else:
+            label_gap = 16 if kind == "secondary" else 13
+            draw.text((g["cx"], g["cy"] - g["radius"] - label_gap), title, font=fonts.small_title,
+                       fill=(225, 226, 236), anchor="mm")
 
     layout = {
-        "cpu_load": cpu_load, "cpu_temp": cpu_temp,
-        "gpu_load": gpu_load, "gpu_temp": gpu_temp,
+        "positions": positions,
+        "slot_assignments": slots,
+        "clock_cy": clock_cy,
         "mid_x0": mid_x0, "mid_x1": mid_x1, "mid_w": mid_x1 - mid_x0,
     }
     return img, layout
 
 
-def render_frame(background, layout, width, height, fonts, cpu, gpu, media):
+def render_frame(background, layout, width, height, fonts, stats, media):
+    """`stats` is a flat dict keyed by STAT_DEFS key (cpu_load, gpu_load,
+    ram, network, gpu_temp, cpu_freq, disk_usage, vram_usage) -- any key
+    can be missing or None, which just draws that gauge's dim track with
+    no needle and "--" (see draw_gauge_dynamic_tile). All 8 gauges (big
+    and small) read from this same dict via layout["slot_assignments"],
+    since any stat can be assigned to any slot."""
     img = background.copy()
 
-    draw_gauge_dynamic(img, layout["cpu_load"], cpu["util"], 0, 100, ACCENT_CPU,
-                        fonts.gauge_value, lambda v: f"{v:.0f}%")
-    draw_gauge_dynamic(img, layout["cpu_temp"], cpu["temp"], 0, 100, ACCENT_CPU,
-                        fonts.gauge_value, lambda v: f"{v:.0f}°")
-    gpu_util = gpu["util"] if gpu else None
-    gpu_temp = gpu["temp"] if gpu else None
-    draw_gauge_dynamic(img, layout["gpu_load"], gpu_util, 0, 100, ACCENT_GPU,
-                        fonts.gauge_value, lambda v: f"{v:.0f}%")
-    draw_gauge_dynamic(img, layout["gpu_temp"], gpu_temp, 0, 100, ACCENT_GPU,
-                        fonts.gauge_value, lambda v: f"{v:.0f}°")
+    for slot_key, g in layout["positions"].items():
+        stat_key = layout["slot_assignments"][slot_key]
+        stat = STAT_DEFS[stat_key]
+        accent = ACCENT_CPU if "left" in slot_key else ACCENT_GPU
+        value_font = fonts.gauge_value if SLOT_KINDS[slot_key] == "big" else fonts.small_value
+        draw_gauge_dynamic(img, g, stats.get(stat_key), stat["min"], stat["max"],
+                            accent, value_font, stat["fmt"])
 
     # --- middle: album art + progress + track/artist + clock ----------
     mid_x0, mid_w = layout["mid_x0"], layout["mid_w"]
@@ -1168,20 +1648,34 @@ def render_frame(background, layout, width, height, fonts, cpu, gpu, media):
         draw.text((mid_cx, y), "SPOTIFY ART NEEDS WINSDK", font=fonts.track, fill=(238, 238, 244), anchor="ma")
         y += 66
 
+    # Fixed vertical position (not the flowing `y` used above) -- see
+    # build_static_background()'s comment on why: the disk/VRAM gauges
+    # flanking it need a stable spot baked into the static background,
+    # so the clock can no longer drift with how much media info is
+    # showing above it.
     time_str = datetime.datetime.now().strftime("%H:%M:%S")
-    draw.text((mid_cx, y), time_str, font=fonts.time, fill=(235, 235, 242), anchor="ma")
+    draw.text((mid_cx, layout["clock_cy"]), time_str, font=fonts.time, fill=(235, 235, 242), anchor="mm")
 
     return img
 
 
 def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
-        brightness=90, stop_event=None, log=print, screen_factory=HongtaiScreen,
-        on_connected=None):
+        brightness=90, slots=None, background=None, stop_event=None, log=print,
+        screen_factory=HongtaiScreen, on_connected=None):
     """Runs the dashboard until stop_event is set (or forever, if
     stop_event is None -- the CLI entry point below relies on Ctrl+C /
     KeyboardInterrupt instead in that case). Pulled out of main() so a
     GUI can start/stop this theme in a background thread instead of
     only being usable from the command line.
+
+    `slots` picks which stat each of the 4 big gauges shows -- see
+    STAT_DEFS/DEFAULT_SLOTS and build_static_background()'s docstring;
+    defaults to DEFAULT_SLOTS if not given (or only partially given).
+
+    `background` picks the panel background -- see BACKGROUND_PRESETS/
+    DEFAULT_BACKGROUND and build_static_background()'s docstring;
+    defaults to DEFAULT_BACKGROUND if not given (or only partially
+    given, e.g. just {"mode": "solid"}).
 
     `screen_factory` exists purely so a GUI can hand in an already-built
     HongtaiScreen (e.g. if it wants to connect once and let the person
@@ -1214,19 +1708,19 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
         on_connected(screen)
 
     if enable_web:
-        screen.enable_web_mirror(port=web_port)
+        screen.enable_web_mirror(port=web_port, log=log)
 
     start_systeminfos()
     start_media_polling()
     if not os.path.exists(SYSTEMINFOS_EXE):
-        log(f"  (SystemInfos.exe not found at {SYSTEMINFOS_DIR} -- CPU/GPU temp may be limited)")
+        log(f"  (SystemInfos.exe not found at {SYSTEMINFOS_DIR} -- GPU temp may be limited)")
     if not _GPU_OK:
         log("  (no NVIDIA GPU / nvidia-ml-py not available -- falling back to SystemInfos.exe for GPU stats)")
     if not _MEDIA_OK:
         log("  (winsdk not available -- install it for Spotify album art: pip install winsdk)")
 
     fonts = Fonts()
-    background, layout = build_static_background(info.width, info.height, fonts)
+    bg_image, layout = build_static_background(info.width, info.height, fonts, slots, background)
 
     log("Streaming dashboard at 10Hz. Press Ctrl+C to stop." if stop_event is None
         else "Streaming dashboard at 10Hz.")
@@ -1237,10 +1731,25 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
 
             sysinfo_frame = read_systeminfos()
             media = get_media_info()
-            cpu = get_cpu_stats(sysinfo_frame)
             gpu = get_gpu_stats(sysinfo_frame)
+            stats = {
+                "cpu_load": get_cpu_stats()["util"],
+                "gpu_load": gpu["util"] if gpu else None,
+                "gpu_temp": gpu["temp"] if gpu else None,
+                "ram": get_ram_percent(),
+                "network": get_network_rate_mb_s(),
+                "cpu_freq": get_cpu_freq_ghz(),
+                "disk_usage": get_disk_usage_percent(),
+                "vram_usage": get_vram_percent(),
+                "swap": get_swap_percent(),
+                "disk_io": get_disk_io_mb_s(),
+                "gpu_power": get_gpu_power_w(),
+                "process_count": get_process_count(),
+                "cpu_load_peak": get_cpu_load_peak_core(),
+                "battery": get_battery_percent(),
+            }
 
-            img = render_frame(background, layout, info.width, info.height, fonts, cpu, gpu, media)
+            img = render_frame(bg_image, layout, info.width, info.height, fonts, stats, media)
             screen.show(img)
 
             elapsed = time.time() - frame_start
@@ -1252,7 +1761,7 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     except KeyboardInterrupt:
         pass
     finally:
-        screen.close()
+        screen.close(log=log)
         stop_systeminfos()
         log("Stopped, disconnected cleanly.")
 

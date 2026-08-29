@@ -273,22 +273,55 @@ class _MirrorServer(socketserver.ThreadingTCPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def __init__(self, server_address, handler_cls, log=print):
+        # Stashed so handle_error() below (called from deep inside
+        # socketserver's own internals, with no way to pass extra
+        # arguments through) can still route through the same log sink
+        # as everything else -- see enable_web_mirror()'s `log` param.
+        self._log = log
+        super().__init__(server_address, handler_cls)
+
     def handle_error(self, request, client_address):
         """A browser tab that's polling /frame.jpg 10x/second and then
         gets closed, refreshed, or navigated away from resets its
         connection mid-request all the time -- that's completely normal
         for this kind of poll loop, not a bug, but the default handler
-        prints a full traceback for every single one of them. Only print
-        anything for errors that *aren't* just "the other end hung up"."""
-        exc_type = sys.exc_info()[0]
+        prints a full traceback for every single one of them (and does
+        it with a bare print() to stderr, which -- same issue as
+        enable_web_mirror()'s `log` param below -- goes nowhere useful
+        when launched via pythonw.exe with no console). Only log
+        anything for errors that *aren't* just "the other end hung up",
+        and keep it to one line instead of a full traceback."""
+        exc_type, exc, _tb = sys.exc_info()
         if exc_type in (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
             return
-        super().handle_error(request, client_address)
+        self._log(f"  (web mirror: error handling a request from {client_address}: "
+                   f"{exc_type.__name__ if exc_type else '?'}: {exc})")
 
 
 def _make_mirror_handler(screen: "HongtaiScreen"):
     class MirrorHandler(http.server.BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.1"
+        # HTTP/1.0, not 1.1 -- this was the actual cause of "the browser
+        # keeps showing the same frame forever after a Stop/Start (or
+        # Apply)": 1.1's persistent keep-alive connections aren't torn
+        # down by disable_web_mirror()'s shutdown()/server_close() --
+        # those only stop the *listening* socket from accepting new
+        # connections, they don't touch already-open ones. A browser
+        # tab left open across a restart keeps its existing TCP
+        # connection to the OLD server, which is still very much alive
+        # (its handler thread is just sitting there waiting for the
+        # next request on that socket) and still serving the OLD
+        # HongtaiScreen instance's last frame -- forever, since that old
+        # instance stopped receiving new ones the moment it disconnected.
+        # Every request on it still gets a real 200, which is exactly
+        # why it looked like a live, working connection stuck on one
+        # image instead of an obvious error. Forcing HTTP/1.0 means the
+        # connection closes after every single response, so the poll
+        # loop's very next request has to open a fresh connection --
+        # which always goes to whichever server is actually listening
+        # right now. The 10Hz poll rate makes the extra TCP handshake
+        # per request cheap enough not to matter on a LAN/localhost.
+        protocol_version = "HTTP/1.0"
 
         def log_message(self, fmt, *args):  # noqa: A002 -- keep stdout clean
             pass  # the default logs every single poll request (10/s)
@@ -517,7 +550,7 @@ class HongtaiScreen:
     # ------------------------------------------------------------------ #
     # connection
     # ------------------------------------------------------------------ #
-    def blind_restart(self, settle_time: float = 3.0):
+    def blind_restart(self, settle_time: float = 3.0, log=print):
         """
         Fire-and-forget firmware restart (key=1) -- the actual fix for a
         wedged panel (see "IF THE PANEL IS WEDGED" in the module
@@ -526,10 +559,16 @@ class HongtaiScreen:
         the port itself (DTR/RTS asserted, same as connect()), sends the
         flush marker and the restart command, then closes.
 
+        `log` defaults to `print` (the CLI-friendly behavior this always
+        had) but a GUI caller can pass its own log function instead --
+        see app.py's _run_safely(), which calls this mid-recovery from a
+        background thread where plain print() would go nowhere the user
+        can see it.
+
         Safe to call directly too:
             python -c "from hongtai_screen import HongtaiScreen; HongtaiScreen('COM3').blind_restart()"
         """
-        print("  blind_restart: opening the port and sending key=1 (restart), no reply expected ...")
+        log("  blind_restart: opening the port and sending key=1 (restart), no reply expected ...")
         ser = None
         try:
             ser = serial.Serial()
@@ -551,14 +590,14 @@ class HongtaiScreen:
             ser.flush()
             time.sleep(0.3)
         except Exception as e:  # noqa: BLE001
-            print(f"  (blind_restart reported: {e} -- continuing anyway)")
+            log(f"  (blind_restart reported: {e} -- continuing anyway)")
         finally:
             if ser is not None:
                 try:
                     ser.close()
                 except Exception:  # noqa: BLE001
                     pass
-        print(f"  waiting {settle_time:.0f}s for the panel to come back ...")
+        log(f"  waiting {settle_time:.0f}s for the panel to come back ...")
         time.sleep(settle_time)
 
     def connect(self, retries: int = 30, retry_delay: float = 0.3,
@@ -651,7 +690,15 @@ class HongtaiScreen:
     # ------------------------------------------------------------------ #
     # web mirror
     # ------------------------------------------------------------------ #
-    def enable_web_mirror(self, port: int = 8765, quality: int = 80):
+    @property
+    def web_mirror_enabled(self) -> bool:
+        """Whether the web mirror is actually up right now -- a public
+        way for a caller (the GUI's "Open in browser" button, say) to
+        check this without reaching into the private _mirror_enabled
+        flag directly."""
+        return self._mirror_enabled
+
+    def enable_web_mirror(self, port: int = 8765, quality: int = 80, log=print):
         """
         Serve whatever's currently on the panel as a live webpage -- so
         you (or anyone else on the same network, including a phone) can
@@ -664,30 +711,58 @@ class HongtaiScreen:
         This is independent of the adaptive quality show() uses for the
         panel's own serial link, so slowing down the panel's link never
         affects what the browser sees, and vice versa.
+
+        `log`: where the status/diagnostic lines below go -- defaults to
+        plain print() for command-line use, but the GUI passes its own
+        log callback (app.py's self._log, which lands in the on-screen
+        Log panel) instead. This matters more than it looks like it
+        should: a bare print() here writes to a console window that
+        simply doesn't exist when launched via pythonw.exe (see
+        make_launcher.py's docstring) -- the message wasn't wrong, it
+        was just being printed into a void, which is exactly why "the
+        web mirror won't come back" reports had nothing to go on. Route
+        it through `log` and it shows up where you're actually looking.
         """
+        log(f"  (web mirror: enable_web_mirror(port={port}) called -- "
+            f"currently {'already enabled, ignoring' if self._mirror_enabled else 'not enabled'})")
         if self._mirror_enabled:
             return
         self._mirror_quality = quality
         handler = _make_mirror_handler(self)
         try:
-            httpd = _MirrorServer(("0.0.0.0", port), handler)
+            httpd = _MirrorServer(("0.0.0.0", port), handler, log)
         except OSError as e:  # noqa: BLE001 -- e.g. port already in use
-            print(f"  (couldn't start the web mirror on port {port}: {e})")
+            log(f"  (couldn't start the web mirror on port {port}: {e})")
             return
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         self._mirror_httpd = httpd
         self._mirror_enabled = True
 
         ip = _local_ip()
-        print(f"  live web mirror: http://{ip}:{port}/  (or http://localhost:{port}/ on this machine)")
+        log(f"  live web mirror: http://{ip}:{port}/  (or http://localhost:{port}/ on this machine)")
 
-    def disable_web_mirror(self):
+    def disable_web_mirror(self, log=print):
+        log(f"  (web mirror: disable_web_mirror() called -- currently "
+            f"{'enabled' if self._mirror_enabled else 'not enabled, ignoring'})")
         if not self._mirror_enabled:
             return
         try:
+            # shutdown() only stops the serve_forever() loop -- it does
+            # NOT close the listening socket. Without server_close() too,
+            # that socket stays open and bound to `port` for as long as
+            # this process runs (leaked, not reclaimed until the process
+            # itself exits), so the *next* enable_web_mirror() on the
+            # same port fails with "address already in use" even though
+            # nothing is visibly still running -- exactly the "web mirror
+            # never comes back after Stop/Start (or Apply) unless you
+            # change the port" bug. allow_reuse_address on _MirrorServer
+            # only helps with a socket stuck in TIME_WAIT after a proper
+            # close; it does nothing for one that was never closed at all.
             self._mirror_httpd.shutdown()
-        except Exception:  # noqa: BLE001
-            pass
+            self._mirror_httpd.server_close()
+            log("  (web mirror: socket closed)")
+        except Exception as e:  # noqa: BLE001
+            log(f"  (web mirror: error while closing: {e})")
         self._mirror_httpd = None
         self._mirror_enabled = False
 
@@ -699,8 +774,8 @@ class HongtaiScreen:
         with self._mirror_lock:
             self._mirror_jpeg = buf.getvalue()
 
-    def close(self):
-        self.disable_web_mirror()
+    def close(self, log=print):
+        self.disable_web_mirror(log=log)
         self.stop_live()
         if self._ser and self._ser.is_open:
             try:
