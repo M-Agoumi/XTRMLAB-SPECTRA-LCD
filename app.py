@@ -100,6 +100,28 @@ def _resource_path(*parts):
 
 
 CONFIG_PATH = os.path.join(_app_base_dir(), "app_config.json")
+
+# A plain text file next to app_config.json, written to ONLY for
+# --autostart launches (see _write_startup_log()) -- pythonw.exe has no
+# console and an autostart launch usually starts hidden/minimized too,
+# so this is the only way to see what actually happened during a boot
+# launch: whether Windows even ran the Startup script, whether the
+# single-instance check passed, which theme it decided to resume, and
+# any exception along the way. Already covered by .gitignore's blanket
+# "*.log" rule.
+STARTUP_LOG_PATH = os.path.join(_app_base_dir(), "startup_debug.log")
+
+
+def _write_startup_log(msg):
+    """Best-effort append to STARTUP_LOG_PATH. Opened and closed on every
+    call rather than held open, so a line written just before a hard
+    crash or a killed process still actually lands on disk instead of
+    sitting lost in a buffer."""
+    try:
+        with open(STARTUP_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except Exception:  # noqa: BLE001 -- never let logging itself crash the app
+        pass
 AUTO_DETECT = "(auto-detect)"
 
 # Tab order in the Notebook -- kept in one place since both --theme and
@@ -291,6 +313,11 @@ ICON_PATH = _resource_path("icon.ico")
 
 class App(tk.Tk):
     def __init__(self, autostart=False, autostart_theme=None):
+        self._autostart = autostart  # read by _log() -- see STARTUP_LOG_PATH
+        if autostart:
+            _write_startup_log(
+                f"App.__init__ starting (autostart_theme={autostart_theme!r})")
+
         # Windows groups a window's taskbar entry (and picks its taskbar
         # icon) by "AppUserModelID" -- without explicitly setting one, a
         # python.exe/pythonw.exe-hosted app inherits Python's own AppID,
@@ -379,6 +406,11 @@ class App(tk.Tk):
             resume_theme = "dashboard"
         else:
             resume_theme = None  # nothing to resume, and not explicitly asked to autostart
+
+        if autostart:
+            _write_startup_log(
+                f"resume_theme={resume_theme!r}, have_tray={have_tray}, "
+                f"auto_resume_tab(from config)={self._auto_resume_tab!r}")
 
         if resume_theme is not None:
             self.notebook.select(THEME_TAB_ORDER.index(resume_theme))
@@ -754,6 +786,12 @@ class App(tk.Tk):
     # ------------------------------------------------------------------ #
     def _log(self, msg):
         self.log_queue.put(str(msg))
+        if self._autostart:
+            # See STARTUP_LOG_PATH's comment -- the in-memory queue above
+            # is all a normally-launched window needs, but an autostart
+            # launch is usually hidden/minimized with nobody watching it,
+            # so mirror everything to disk too.
+            _write_startup_log(str(msg))
 
     def _poll_log_queue(self):
         drained = False
@@ -1333,5 +1371,30 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    if _ensure_single_instance():
-        App(autostart=args.autostart, autostart_theme=args.theme).mainloop()
+    if args.autostart:
+        # First thing that happens in the whole process -- if this line
+        # never shows up in startup_debug.log after a reboot, Windows
+        # never actually ran the Startup-folder .vbs at all (check Task
+        # Manager's Startup Apps tab -- it can show a script as
+        # "Disabled" even though the file itself is still sitting
+        # there), rather than anything in this script failing.
+        _write_startup_log(f"=== process started, argv={sys.argv!r} ===")
+    try:
+        if _ensure_single_instance():
+            if args.autostart:
+                _write_startup_log("single-instance check passed -- constructing App")
+            App(autostart=args.autostart, autostart_theme=args.theme).mainloop()
+            if args.autostart:
+                _write_startup_log("mainloop() returned -- app closed normally")
+        elif args.autostart:
+            _write_startup_log(
+                "single-instance check FAILED -- another copy's mutex is "
+                "already held (a previous autostart attempt still running "
+                "or stuck, most likely), so this launch exited without "
+                "ever opening a window")
+    except Exception:
+        if args.autostart:
+            import traceback
+            _write_startup_log("UNCAUGHT EXCEPTION during startup:\n"
+                                + traceback.format_exc())
+        raise

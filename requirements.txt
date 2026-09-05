@@ -18,7 +18,7 @@ psutil>=5.9
 numpy>=1.24          # required -- gauge rendering + background gradients
 pycairo>=1.24        # required -- gauge rendering (prebuilt wheel on Windows)
 nvidia-ml-py>=12.0   # optional -- NVIDIA GPU/VRAM/power stats; degrades gracefully without one
-winsdk>=1.0.4        # optional -- Spotify/now-playing album art (Windows 10 1809+)
+winsdk>=1.0.0b10        # optional -- Spotify/now-playing album art (Windows 10 1809+)
 
 # --- video_theme.py: stream a video file to the panel ------------------
 opencv-python-headless>=4.8
