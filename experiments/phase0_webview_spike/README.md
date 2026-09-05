@@ -1,11 +1,8 @@
 # Phase 0 spike
 
-Throwaway code answering ROADMAP.md's Phase 0 question: does a
-pywebview/WebView2 window's memory actually come back when destroyed
-(not hidden) on minimize-to-tray, and how long does re-opening take?
-
-Not part of the shipped app -- safe to delete once Phase 0's numbers
-are in and the go/no-go call is made.
+Throwaway code answering ROADMAP.md's Phase 0 question. Not part of
+the shipped app -- safe to delete once Phase 0's numbers are in and
+the go/no-go call is made.
 
 ## Setup (once)
 
@@ -13,61 +10,71 @@ are in and the go/no-go call is made.
 pip install pywebview pystray psutil pillow
 ```
 
-## Run it
+(the `.bat` wrappers below also do this automatically, so this is only
+needed if you want to run the `.py` files directly instead)
+
+## Round 1: does destroy() reclaim memory? (answered: no)
 
 Double-click, in this order:
 
 1. **`RUN_SPIKE.bat`** -- interactive. A window opens; click
-   "Minimize to tray" in it, watch the console, then right-click the
-   tray icon (cyan dot) -> Show, and repeat a couple times, then Quit.
-   Output is mirrored to `spike_output.log` next to this file.
+   "Minimize to tray", watch the console, then Show/Quit from the tray
+   icon (cyan dot). Output -> `spike_output.log`.
+2. **`RUN_FOLLOWUP_CYCLES.bat`** -- automated, 12 open/destroy cycles,
+   watches for continued growth vs. a plateau. Output -> `cycles_output.log`.
+3. **`RUN_FOLLOWUP_CONTROL.bat`** -- automated, opens one window and
+   never destroys it, for comparison. Output -> `control_output.log`.
 
-2. **`RUN_FOLLOWUP_CYCLES.bat`** -- fully automated, no clicking. Runs
-   12 open/destroy cycles back to back (each window auto-closes after
-   1s) and prints a verdict on whether RAM is still climbing after a
-   dozen cycles or has flattened out. Takes a couple minutes. Output
-   goes to `cycles_output.log`.
+**Result:** confirmed across all three runs. Loading WebView2 into a
+process costs ~65-90MB, once -- and that memory does not come back
+when the window is destroyed, hidden, or left alone. It's a one-time
+runtime-load cost tied to the *process*, not something tied to a
+specific window instance. A small (~1MB/cycle) creep showed up across
+repeated cycles, but it flattens rather than accelerating -- not a
+leak, just allocator noise.
 
-3. **`RUN_FOLLOWUP_CONTROL.bat`** -- fully automated. Opens one window
-   and never destroys it, sampling RAM every 5s for a minute, to see
-   what "just leave it open" settles at for comparison. Output goes to
-   `control_output.log`.
+**Consequence:** since the app needs a hard <100MB background/idle
+budget, and WebView2 alone already costs ~90MB once loaded, it can't
+share a process with the always-on backend (the thing that keeps the
+LCD panel actually displaying content, which has to run continuously
+regardless of whether any UI is open). The plan changed from
+"destroy the window on minimize" to a full **two-process split**:
 
-Send me whichever `.log` file(s) you end up with -- that's simpler than
-copy-pasting console output.
+- **Backend process** -- always running, never imports pywebview/
+  WebView2 at all. Panel connection, render loop, local HTTP API.
+  Expected to cost about what today's app already costs (~84MB).
+- **UI process** -- a completely separate process, spawned only when
+  the window is opened, pointed at the backend's local HTTP API, and
+  **killed outright** (not just closed) when the window closes.
 
-These are written against pywebview's documented APIs but only the
-first one (`spike.py`, via `RUN_SPIKE.bat`) has actually been run so
-far. If `RUN_FOLLOWUP_*` errors out or behaves oddly, paste the log and
-it'll get fixed the same way every other Windows-only issue in this
-project has been.
+## Round 2: does killing the UI process actually clean up everything?
 
-## What the first run already showed
+Killing a whole process should be a much stronger guarantee than
+`destroy()` inside a shared process -- but one thing is genuinely
+unknown until tested: when the UI process itself is killed, do the
+`msedgewebview2.exe` helper processes *it* spawned die with it, or do
+they survive as orphans?
 
-`RUN_SPIKE.bat`'s first run: the giant "1153MB across 13
-msedgewebview2.exe processes" is pre-existing background noise from
-something else on the machine (almost certainly Windows 11's Widgets/
-Search integration) -- it never moved, whether our window was open,
-destroyed, or hadn't been created yet. The number that's actually ours
-("this process") jumped once on first window creation and then stayed
-flat around ~101-102MB regardless of window state, which looks more
-like a one-time WebView2-runtime-loading cost than a per-window leak.
+4. **`RUN_PROCESS_SPLIT.bat`** -- automated, no clicking. Spawns and
+   kills a separate UI process (`ui_child.py`) 4 times, alternating
+   between killing just its PID and killing its whole process tree
+   explicitly, checking for orphaned survivors after each. Output ->
+   `process_split_output.log`. Takes under a minute.
 
-`RUN_FOLLOWUP_CYCLES.bat` and `RUN_FOLLOWUP_CONTROL.bat` exist to
-confirm that read: cycles checks whether RAM keeps climbing over many
-more cycles (a real leak) or plateaus (a one-time cost, as suspected);
-control checks whether a window that's never destroyed at all settles
-at roughly the same number, which would confirm the cost is about
-loading the runtime, not about specific windows piling up.
+Not yet run anywhere but here -- written against psutil/subprocess/
+pywebview's documented behavior. If it errors out, paste the log back.
 
 ## What "done" looks like
 
-If both follow-ups confirm the plateau theory, the practical takeaway
-for ROADMAP.md changes in a good way: destroying the window on minimize
-isn't worth the reopen-delay cost, since it doesn't reclaim anything --
-just **hide** it instead (instant reopen), and plan around a steady
-~100MB footprint for the app's whole lifetime once WebView2 has been
-used at all, rather than the original "84MB in tray, more only while
-the window's open" hope. Not as good as the original hope, but a small,
-bounded, one-time cost rather than the runaway-multi-process scenario
-that would have actually killed this approach.
+If `RUN_PROCESS_SPLIT.bat` shows `tracked-child-tree alive=0/Y` after
+every kill (both PID-only and whole-tree cycles), killing just the
+child PID is enough -- WebView2's own process-lifetime management
+handles the rest, and the real app can do the same. If PID-only cycles
+leave survivors but whole-tree cycles don't, the real app needs to
+explicitly walk and kill the UI process's full descendant tree, not
+just the immediate PID -- a straightforward fix, just one that needs
+to be known about rather than assumed.
+
+Either way, this closes out Phase 0: a two-process design where the
+backend stays comfortably under budget by never touching WebView2 at
+all, and the UI's cost exists only while it's actually open.
