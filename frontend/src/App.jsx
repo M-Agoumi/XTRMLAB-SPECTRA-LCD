@@ -103,11 +103,11 @@ export default function App() {
   // -- keep the theme picker in sync with whatever's ACTUALLY running --
   // covers both a theme resumed automatically on launch (backend_app.py
   // resumes the last-running theme before this page ever loads -- see
-  // ROADMAP.md Phase 2c) and Start/Stop from another tab/device. Without
-  // this the picker just sat on its initial default ("clock") regardless
-  // of reality, and since it's locked while running (see handleStart's
-  // comment above), there was no way to even see, let alone fix, the
-  // mismatch short of Stopping first.
+  // ROADMAP.md Phase 2c) and Start/Stop/switch from another tab/device.
+  // The picker is never locked (see the live-switching note by
+  // handleStart below), so this is just about not leaving it pointed at
+  // the wrong theme after an out-of-band change, not about working
+  // around a lock.
   useEffect(() => {
     if (!state?.running_theme) return;
     const key = Object.entries(api.THEME_LABELS).find(
@@ -148,15 +148,19 @@ export default function App() {
     }
   }, []);
 
+  // Start doubles as "switch": calling it while a different theme is
+  // already running just live-switches to the selected one instead of
+  // erroring -- the backend reuses the existing panel connection
+  // rather than reconnecting (see screen_engine.py). No need to Stop
+  // first any more, so the theme picker and this button are never
+  // locked while something's running.
   const handleStart = () => runAction(() => api.start(theme));
   const handleStop = () => runAction(() => api.stop());
   // Apply restarts whatever theme is CURRENTLY running with the
   // latest saved settings (port, and anything theme-specific) -- it
-  // does not switch to a different theme. That's not a limitation of
-  // this button specifically: app.py's own "Apply (restart)" button
-  // works the same way, which is also why the theme picker below is
-  // locked while something's running -- Stop first to pick a
-  // different one, same as the old app's tabs being locked mid-run.
+  // does not switch to a different theme (use the picker + Start for
+  // that). Also connection-preserving under the hood, same as a
+  // switch.
   const handleApply = () => runAction(() => api.apply());
 
   const handleSaveConfig = () =>
@@ -262,8 +266,7 @@ export default function App() {
             <select
               value={theme}
               onChange={(e) => setTheme(e.target.value)}
-              disabled={busy || running}
-              title={running ? "Stop the running theme to pick a different one" : undefined}
+              disabled={busy}
             >
               {api.THEMES.map((t) => (
                 <option key={t} value={t}>
@@ -272,8 +275,12 @@ export default function App() {
               ))}
             </select>
           </label>
-          <button onClick={handleStart} disabled={busy || running}>
-            Start
+          <button
+            onClick={handleStart}
+            disabled={busy}
+            title={running ? "Switch live to the selected theme -- no reconnect" : undefined}
+          >
+            {running ? "Switch" : "Start"}
           </button>
           <button onClick={handleStop} disabled={busy || !running}>
             Stop

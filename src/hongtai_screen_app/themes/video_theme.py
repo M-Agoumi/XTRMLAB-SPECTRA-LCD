@@ -72,7 +72,7 @@ def extract_audio(video_path, out_wav):
 
 def run(video_path, port=None, fps=None, bw=False, audio=False, loop=False,
         brightness=90, stop_event=None, log=print, screen_factory=HongtaiScreen,
-        on_connected=None):
+        on_connected=None, screen=None):
     """Runs until the video ends (or forever if loop=True), or stop_event
     is set. Pulled out of main() so a GUI can drive this in a background
     thread. `video_path` is always required -- there's no bundled/default
@@ -80,7 +80,11 @@ def run(video_path, port=None, fps=None, bw=False, audio=False, loop=False,
 
     `on_connected(screen)`, if given, is called once right after connect()
     so a GUI can keep a live reference (e.g. for a brightness slider that
-    should apply immediately instead of only on the next Start)."""
+    should apply immediately instead of only on the next Start).
+
+    `screen`, if given, is an ALREADY-CONNECTED HongtaiScreen to render
+    onto directly -- see demo_clock.py's run() docstring for the full
+    explanation (screen_engine.py's live theme-switching relies on this)."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         log(f"Could not open video file: {video_path}")
@@ -92,11 +96,15 @@ def run(video_path, port=None, fps=None, bw=False, audio=False, loop=False,
     log(f"Video: {video_path}  ({frame_count} frames @ {src_fps:.1f}fps source, "
         f"playing at {target_fps:.1f}fps)")
 
-    screen = screen_factory(port)
-    info = screen.connect()
-    log(f"Connected: {info.width}x{info.height}, firmware {info.version}")
-    if on_connected is not None:
-        on_connected(screen)
+    owns_screen = screen is None
+    if owns_screen:
+        screen = screen_factory(port)
+        info = screen.connect()
+        log(f"Connected: {info.width}x{info.height}, firmware {info.version}")
+        if on_connected is not None:
+            on_connected(screen)
+    else:
+        info = screen.info
     screen.set_brightness(brightness)
 
     have_audio = False
@@ -168,8 +176,11 @@ def run(video_path, port=None, fps=None, bw=False, audio=False, loop=False,
                 pygame.mixer.music.stop()
             except Exception:  # noqa: BLE001
                 pass
-        screen.close()
-        log("Done, disconnected cleanly.")
+        if owns_screen:
+            screen.close()
+            log("Done, disconnected cleanly.")
+        else:
+            log("Done.")
 
 
 def main():

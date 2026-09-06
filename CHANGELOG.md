@@ -83,6 +83,27 @@ dashboard designer) this is laying groundwork for.
   generically. The video path is a plain text field rather than a file
   picker, since a browser file input can't hand back a real filesystem
   path for the backend to open.
+- **Phase 3.5 of the v2.0 rewrite — live theme switching, no
+  reconnect.** Not on the original plan: real-hardware testing of
+  Phase 2c/3 surfaced that switching themes fully disconnected and
+  reconnected the panel every time, because each theme module owned
+  its own connect/loop/disconnect lifecycle instead of just producing
+  frames. Fixed at the source: `demo_clock.py`/`video_theme.py`/
+  `webpage_theme.py`/`dashboard_theme.py`'s `run()` now accept an
+  optional pre-connected `screen=`, and skip connecting/disconnecting
+  entirely when given one (plain CLI/GUI use is unaffected). New
+  `screen_engine.py` (`ScreenEngine`) holds one persistent connection
+  across switches and replaces `ThemeWorker` inside `controller.py`
+  only — `app.py`'s Tkinter UI still uses `ThemeWorker`, untouched.
+  `controller.py`'s `start()` no longer errors on "already running";
+  switching to a different theme while one is active now just works,
+  and `apply()` re-applies the running theme's settings without
+  disconnecting either. The frontend's theme picker and Start button
+  are no longer locked while something's running. Verified headlessly
+  with mocked hardware (connection reuse across switches, natural
+  finish still disconnects, error recovery still retries+gives up
+  correctly, an intentional stop mid-error isn't mistaken for a fault)
+  — not yet verified with a real panel.
 
 ## [1.0.0] — 2026-08-29
 

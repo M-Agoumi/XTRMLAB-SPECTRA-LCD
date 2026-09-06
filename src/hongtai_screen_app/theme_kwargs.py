@@ -1,7 +1,8 @@
 """
 theme_kwargs.py -- turns app_config.json's saved settings into the
-(theme_name, target, kwargs) tuple ThemeWorker needs to actually start a
-theme.
+(theme_name, target, kwargs) tuple needed to actually start a theme --
+ThemeWorker for app.py's Tkinter UI, ScreenEngine.switch() for
+controller.py's headless backend.
 
 This is the one piece Phase 1 didn't extract: the Tkinter App class
 still builds these straight from its own tk.StringVar/BooleanVar
