@@ -442,6 +442,27 @@ Windows-only, and unverified from here (no Windows/WebView2 in the
 sandbox) -- next real-machine pass should confirm whether it actually
 fixes the icon or the real fix has to wait for Phase 7's frozen build.
 
+**Fix (real-usage bug in auto-resume):** quitting `backend_app.py`
+while a theme was running never resumed it on the next launch, even
+though this section's own verification above claims resume "matches
+`app.py`'s behavior exactly" -- that check only covered a *plain
+launch* reading a pre-seeded `auto_resume_tab`, not a full
+start-then-quit round trip, so it missed that quitting itself was
+wiping the marker first. Root cause: `ScreenEngine.close()` (process
+shutdown, releases the serial port) and `ScreenEngine.stop()` (an
+explicit Stop) both funneled through the same `_teardown()` ->
+`on_disconnected()` callback, and `AppController._on_screen_
+disconnected()` clears `auto_resume_tab` on every call -- correct for
+an explicit Stop or a theme dying/finishing on its own, wrong for a
+plain quit while something was still running. `_teardown()` now skips
+`on_disconnected()` specifically when `close()` triggered it (it still
+always physically closes the port), so the marker set by the last
+`start()`/`switch()` survives a clean quit. Verified headlessly with a
+fake screen/target standing in for real hardware: quit-while-running
+now preserves and persists `auto_resume_tab` to disk; an explicit
+`stop()` still clears it as before; switching themes still reuses the
+one connection without a spurious disconnect in between.
+
 ### Phase 3 — Port the simple themes — ✅ DONE (pending a real-machine pass)
 
 Video, Webpage and Clock settings forms, added to the frontend
