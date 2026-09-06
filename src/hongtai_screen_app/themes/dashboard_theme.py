@@ -837,6 +837,185 @@ SLOT_KINDS = {
     "left_mini": "mini", "right_mini": "mini",
 }
 
+def gauge_layout(cx, cy, radius):
+    ring_w = max(6, radius * 0.11)
+    pad = int(ring_w * 3 + 24)
+    size = int(radius * 2 + pad * 2)
+    return {"cx": cx, "cy": cy, "radius": radius, "ring_w": ring_w, "pad": pad, "size": size}
+
+
+def _gauge_box(g):
+    """Top-left corner to paste a gauge tile at so it lands centered on
+    (cx, cy) -- both the static and dynamic tiles for a given gauge are
+    the same size, so this box is shared by both."""
+    half = g["size"] / 2
+    return (int(g["cx"] - half), int(g["cy"] - half))
+
+
+# ---------------------------------------------------------------- Phase 4 --
+# elements: slots -> elements (ROADMAP.md Phase 4).
+#
+# DEFAULT_SLOTS/SLOT_KINDS above are still what app.py's Tkinter Dashboard
+# tab reads/writes (its 8 named dropdowns) and are kept exactly as they
+# were -- nothing here changes that UI or its config shape. What changes
+# is the *renderer*: build_static_background()/render_frame() no longer
+# compute 8 fixed gauge positions from a formula keyed by slot name; they
+# walk an arbitrary list of "elements" instead, each with its own
+# position/size/color/opacity (and a stored-but-not-yet-rendered rotation,
+# see draw_gauge_static()'s call site below) rather than one of exactly 3
+# hardcoded "kinds". This is what actually unblocks a future drag/resize
+# design canvas (Phase 5) -- there's now a real per-gauge x/y/radius to
+# drag, instead of a name that only ever meant one of 8 fixed spots.
+#
+# slots_to_elements() is the bridge: it runs the exact same geometry
+# formula build_static_background() used to compute inline (now pulled
+# out into _slot_geometry() below) at a fixed REFERENCE_WIDTH/HEIGHT
+# matching this panel's real resolution, and expresses each gauge's
+# resulting center/radius as a *fraction* of that reference size instead
+# of a formula. That's what "the 8 slots map onto 8 default elements"
+# (ROADMAP.md's migration bullet) means in code: DEFAULT_ELEMENTS below
+# IS that migration, computed once at import time rather than needing a
+# separate migration script or a config schema version bump -- an old
+# app_config.json with only "slots" (or nothing at all) still renders
+# pixel-identically, because theme_kwargs.py falls back to
+# slots_to_elements(cfg["dashboard"].get("slots")) whenever
+# cfg["dashboard"] has no "elements" key yet. Only a future design canvas
+# actually writing custom elements ever changes what's stored.
+REFERENCE_WIDTH = 960
+REFERENCE_HEIGHT = 480
+
+# A gauge element is rendered with full tick labels + its title tucked
+# inside the ring (the old "big" look) once its baked radius is at least
+# this fraction of min(width, height); smaller than that gets the compact
+# "title above the ring, no tick labels" look (the old "secondary"/"mini"
+# look, which is really just "small" -- see the continuous label-gap
+# formula at its call site instead of a second threshold). 0.13 sits
+# between DEFAULT_ELEMENTS' big gauges (~0.17) and its secondary/mini
+# ones (~0.075-0.089) at REFERENCE_WIDTH/HEIGHT, so the default layout's
+# look doesn't change at all -- this just replaces a fixed "kind" string
+# with something derived from an element's actual size, which is the
+# whole point of elements having real geometry instead of a slot name.
+BIG_GAUGE_RADIUS_FRACTION = 0.13
+
+
+def _slot_geometry(width, height):
+    """The pure geometry half of what build_static_background() used to
+    compute inline: where each of the 8 named slots' gauges sit and how
+    big they are, at a given panel size -- no drawing, no stat/accent
+    lookup. Returns {slot_key: gauge_layout(...)}. Used today only by
+    slots_to_elements() (to build DEFAULT_ELEMENTS and to migrate an old
+    "slots"-only config), not by the render path itself any more."""
+    margin = int(width * 0.015)
+    col_w = int(width * 0.235)
+    gauge_area_top = int(height * 0.07)
+    gauge_area_bottom = int(height * 0.93)
+    gap = int(height * 0.03)
+    row_h = (gauge_area_bottom - gauge_area_top - gap) / 2
+    radius = min(col_w * 0.5, row_h * 0.5) * 0.82
+
+    def col_gauges(col_cx):
+        top = gauge_layout(col_cx, gauge_area_top + row_h / 2, radius)
+        bot = gauge_layout(col_cx, gauge_area_top + row_h + gap + row_h / 2, radius)
+        return top, bot
+
+    cpu_cx = margin + col_w / 2 + int(width * 0.015)
+    gpu_cx = width - margin - col_w / 2 - int(width * 0.015)
+
+    top_left, bottom_left = col_gauges(cpu_cx)
+    top_right, bottom_right = col_gauges(gpu_cx)
+
+    mid_x0 = margin + col_w + int(width * 0.03)
+    mid_x1 = width - margin - col_w - int(width * 0.03)
+    mid_cx = (mid_x0 + mid_x1) / 2
+
+    art_size = int(min((mid_x1 - mid_x0) * 0.62, height * 0.42))
+    art_right = mid_cx + art_size / 2
+    art_left = mid_cx - art_size / 2
+    lean = 0.68
+
+    gauge_visible_left = top_right["cx"] - top_right["radius"] - top_right["ring_w"] / 2 - 25
+    gauge_visible_right = top_left["cx"] + top_left["radius"] + top_left["ring_w"] / 2 + 25
+    secondary_radius = top_right["radius"] * 0.52
+    secondary_positions = {
+        "right_secondary": gauge_layout(
+            art_right + (gauge_visible_left - art_right) * lean,
+            (top_right["cy"] + bottom_right["cy"]) / 2, secondary_radius),
+        "left_secondary": gauge_layout(
+            art_left + (gauge_visible_right - art_left) * lean,
+            (top_left["cy"] + bottom_left["cy"]) / 2, secondary_radius),
+    }
+
+    clock_cy = int(height * 0.885)
+    mini_radius = secondary_radius * 0.85
+    mini_offset = (mid_x1 - mid_x0) * 0.26
+    mini_positions = {
+        "left_mini": gauge_layout(mid_cx - mini_offset, clock_cy, mini_radius),
+        "right_mini": gauge_layout(mid_cx + mini_offset, clock_cy, mini_radius),
+    }
+
+    return {
+        "top_left": top_left, "bottom_left": bottom_left,
+        "top_right": top_right, "bottom_right": bottom_right,
+        **secondary_positions, **mini_positions,
+    }
+
+
+def slots_to_elements(slots=None):
+    """Converts the old slot-based picks (`slots`, same shape as
+    DEFAULT_SLOTS -- any of its 8 keys mapped to a STAT_DEFS key, missing
+    entries falling back to DEFAULT_SLOTS) into the new element-list
+    format, using _slot_geometry()'s positions at REFERENCE_WIDTH/HEIGHT
+    expressed as fractions so they still scale correctly to whatever
+    size the connected panel actually reports. Element `id`s are kept as
+    the original slot names purely so a saved layout stays readable and
+    a repeat migration (nothing has switched to "elements" yet) is
+    idempotent -- nothing currently depends on the id being a slot name."""
+    slots = dict(DEFAULT_SLOTS, **(slots or {}))
+    positions = _slot_geometry(REFERENCE_WIDTH, REFERENCE_HEIGHT)
+    base = min(REFERENCE_WIDTH, REFERENCE_HEIGHT)
+    elements = []
+    for z, (slot_key, g) in enumerate(positions.items()):
+        elements.append({
+            "id": slot_key,
+            "type": "gauge",
+            "stat": slots[slot_key],
+            "x": g["cx"] / REFERENCE_WIDTH,
+            "y": g["cy"] / REFERENCE_HEIGHT,
+            "radius": g["radius"] / base,
+            "rotation": 0.0,   # stored/migrated, not yet rendered -- see
+                               # build_static_background()'s call site
+            "color": None,     # None -> derive from x-position, see _element_accent()
+            "opacity": 1.0,
+            "z": z,
+        })
+    return elements
+
+
+DEFAULT_ELEMENTS = slots_to_elements()
+
+
+def _element_accent(el):
+    """An element's gauge color: an explicit `color` (r, g, b) tuple if
+    it has one, otherwise the old left-column-cyan/right-column-magenta
+    split -- generalized from "slot name contains 'left'/'right'" (which
+    no longer exists once a gauge is just an x/y position) to "which
+    half of the panel its center sits in", which reproduces the exact
+    same result for all of DEFAULT_ELEMENTS."""
+    if el.get("color") is not None:
+        return tuple(el["color"])
+    return ACCENT_CPU if el["x"] < 0.5 else ACCENT_GPU
+
+
+def _apply_tile_opacity(tile, opacity):
+    """Scales an RGBA gauge tile's alpha channel by `opacity` (0-1).
+    A no-op copy at opacity=1.0 rather than skipping the call entirely,
+    so callers don't need their own branch for the common case."""
+    if opacity >= 1.0:
+        return tile
+    r, g, b, a = tile.split()
+    a = a.point(lambda v: int(v * max(0.0, opacity)))
+    return Image.merge("RGBA", (r, g, b, a))
+
 # The panel background is its own small registry, same idea as
 # STAT_DEFS -- see _build_background_image() for what each mode
 # actually draws, and app.py's Dashboard tab for the picker + file
@@ -963,20 +1142,6 @@ def draw_circuit_traces(draw, width, height, seed=7, count=16):
         for px, py in (pts[0], pts[-1]):
             draw.ellipse([px - 3, py - 3, px + 3, py + 3], fill=color)
 
-
-def gauge_layout(cx, cy, radius):
-    ring_w = max(6, radius * 0.11)
-    pad = int(ring_w * 3 + 24)
-    size = int(radius * 2 + pad * 2)
-    return {"cx": cx, "cy": cy, "radius": radius, "ring_w": ring_w, "pad": pad, "size": size}
-
-
-def _gauge_box(g):
-    """Top-left corner to paste a gauge tile at so it lands centered on
-    (cx, cy) -- both the static and dynamic tiles for a given gauge are
-    the same size, so this box is shared by both."""
-    half = g["size"] / 2
-    return (int(g["cx"] - half), int(g["cy"] - half))
 
 
 def _surface_to_pil(surface):
@@ -1436,25 +1601,28 @@ def _build_background_image(width, height, background):
     return img
 
 
-def build_static_background(width, height, fonts, slots=None, background=None):
+def build_static_background(width, height, fonts, elements=None, background=None):
     """Everything that doesn't change frame to frame: the background
     (see _build_background_image()/BACKGROUND_PRESETS), the panel
-    border, and all 8 gauges' dim tracks/ticks/titles -- the 4 big ones
-    plus the 2 secondary ones flanking the album art and the 2 mini
-    ones flanking the clock (whichever stat each slot is currently
-    assigned -- see STAT_DEFS/DEFAULT_SLOTS/SLOT_KINDS). Returns
+    border, and every gauge element's dim track/ticks/title. Returns
     (image, layout).
 
-    `slots` maps any of SLOT_KINDS' 8 keys to a STAT_DEFS key; missing
-    entries fall back to DEFAULT_SLOTS -- any stat can go in any slot,
-    big or small. `background` maps "mode" (a BACKGROUND_PRESETS key),
-    "scheme" (a BACKGROUND_COLOR_SCHEMES key), and "image_path"; missing
-    entries fall back to DEFAULT_BACKGROUND. Both are baked into this
-    static image, so changing either mid-stream needs a fresh call to
-    this (i.e. a Stop/Start, or the GUI's Apply button) to take effect
-    -- same as every other "needs a restart" setting in this theme.
+    `elements` is a list of dicts in the shape slots_to_elements()
+    produces (id, type, stat, x, y, radius, rotation, color, opacity, z
+    -- x/y/radius as fractions of width/height/min(width, height), so
+    the same list renders correctly at any panel resolution); defaults
+    to DEFAULT_ELEMENTS if not given. Only `type: "gauge"` elements are
+    drawn -- an unrecognized type is skipped rather than erroring, so a
+    future element type (Phase 6) added by a newer canvas doesn't crash
+    an older renderer reading the same config. `background` maps "mode"
+    (a BACKGROUND_PRESETS key), "scheme" (a BACKGROUND_COLOR_SCHEMES
+    key), and "image_path"; missing entries fall back to
+    DEFAULT_BACKGROUND. Both are baked into this static image, so
+    changing either mid-stream needs a fresh call to this (i.e. a
+    Stop/Start, or the GUI's Apply button) to take effect -- same as
+    every other "needs a restart" setting in this theme.
     """
-    slots = dict(DEFAULT_SLOTS, **(slots or {}))
+    elements = DEFAULT_ELEMENTS if elements is None else elements
     background = dict(DEFAULT_BACKGROUND, **(background or {}))
 
     img = _build_background_image(width, height, background)
@@ -1464,100 +1632,51 @@ def build_static_background(width, height, fonts, slots=None, background=None):
     rounded_rect(draw, [margin, margin, width - margin, height - margin],
                  radius=10, outline=dim_color(PANEL_BORDER, 0.7), width=2)
 
-    col_w = int(width * 0.235)
-    gauge_area_top = int(height * 0.07)
-    gauge_area_bottom = int(height * 0.93)
-    gap = int(height * 0.03)
-    row_h = (gauge_area_bottom - gauge_area_top - gap) / 2
-    radius = min(col_w * 0.5, row_h * 0.5) * 0.82
-
-    def col_gauges(col_cx):
-        top = gauge_layout(col_cx, gauge_area_top + row_h / 2, radius)
-        bot = gauge_layout(col_cx, gauge_area_top + row_h + gap + row_h / 2, radius)
-        return top, bot
-
-    cpu_cx = margin + col_w / 2 + int(width * 0.015)
-    gpu_cx = width - margin - col_w / 2 - int(width * 0.015)
-
-    top_left, bottom_left = col_gauges(cpu_cx)
-    top_right, bottom_right = col_gauges(gpu_cx)
-
-    mid_x0 = margin + col_w + int(width * 0.03)
-    mid_x1 = width - margin - col_w - int(width * 0.03)
-    mid_cx = (mid_x0 + mid_x1) / 2
-
-    # The 2 secondary gauges flank the album art -- there's real empty
-    # space on both sides once the art (a fixed fraction of the middle
-    # column's width, see render_frame()) is narrower than the middle
-    # column itself, which it always is. `lean` pulls each gauge's
-    # center away from the strict left/right midpoint and toward its
-    # gauge column (0.5 = centered between art and column, 1.0 = flush
-    # against the column) -- these sit closer to the big gauges than to
-    # the art.
-    art_size = int(min((mid_x1 - mid_x0) * 0.62, height * 0.42))
-    art_right = mid_cx + art_size / 2
-    art_left = mid_cx - art_size / 2
-    lean = 0.68
-
-    gauge_visible_left = top_right["cx"] - top_right["radius"] - top_right["ring_w"] / 2 - 25
-    gauge_visible_right = top_left["cx"] + top_left["radius"] + top_left["ring_w"] / 2 + 25
-    secondary_radius = top_right["radius"] * 0.52
-    secondary_positions = {
-        "right_secondary": gauge_layout(
-            art_right + (gauge_visible_left - art_right) * lean,
-            (top_right["cy"] + bottom_right["cy"]) / 2, secondary_radius),
-        "left_secondary": gauge_layout(
-            art_left + (gauge_visible_right - art_left) * lean,
-            (top_left["cy"] + bottom_left["cy"]) / 2, secondary_radius),
-    }
-
-    # The 2 mini gauges flank the clock, below the album art -- there's
-    # more vertical room down there than anywhere else on the panel, so
-    # these get to be bigger than the secondary pair above despite being
-    # called "mini". The clock's vertical position is fixed here (rather
-    # than flowing below whatever media info happens to be showing) so
-    # these have a stable spot baked into the static background;
-    # render_frame() draws the clock text at this same y.
-    clock_cy = int(height * 0.885)
-    mini_radius = secondary_radius * 0.85
-    mini_offset = (mid_x1 - mid_x0) * 0.26
-    mini_positions = {
-        "left_mini": gauge_layout(mid_cx - mini_offset, clock_cy, mini_radius),
-        "right_mini": gauge_layout(mid_cx + mini_offset, clock_cy, mini_radius),
-    }
-
-    # Accent stays tied to which *column* (left=CPU cyan, right=GPU
-    # magenta) a slot is in, not to whatever stat is currently assigned
-    # there -- see STAT_DEFS' comment on why. Every slot's name has
-    # "left" or "right" in it for exactly this reason.
-    positions = {
-        "top_left": top_left, "bottom_left": bottom_left,
-        "top_right": top_right, "bottom_right": bottom_right,
-        **secondary_positions, **mini_positions,
-    }
-
-    for slot_key, g in positions.items():
-        kind = SLOT_KINDS[slot_key]
-        accent = ACCENT_CPU if "left" in slot_key else ACCENT_GPU
-        title = STAT_DEFS[slots[slot_key]]["title"]
+    base = min(width, height)
+    resolved = {}
+    ordered = sorted(
+        (el for el in elements if el.get("type", "gauge") == "gauge"),
+        key=lambda el: el.get("z", 0),
+    )
+    for el in ordered:
+        g = gauge_layout(el["x"] * width, el["y"] * height, el["radius"] * base)
+        resolved[el["id"]] = g
+        accent = _element_accent(el)
+        title = STAT_DEFS[el["stat"]]["title"]
         tile = draw_gauge_static(g, accent)
+        tile = _apply_tile_opacity(tile, el.get("opacity", 1.0))
+        # `rotation` is stored and round-trips through config/migration,
+        # but isn't actually applied to the drawing yet -- the needle
+        # and value text drawn per-frame in render_frame() would need to
+        # rotate in lockstep with the ring for a rotated gauge to look
+        # right, and nothing can set a non-zero rotation until Phase 5's
+        # canvas exists anyway. DEFAULT_ELEMENTS' rotation is always 0,
+        # so this doesn't change today's output.
         img.paste(tile, _gauge_box(g), tile)
-        if kind == "big":
-            # The 4 big gauges get full tick labels and a title tucked
-            # inside the ring; the secondary/mini ones skip tick labels
-            # (no room, and they don't need to be read as precisely) and
-            # get a compact title above the ring instead.
+        if g["radius"] >= base * BIG_GAUGE_RADIUS_FRACTION:
+            # Full tick labels + a title tucked inside the ring, same as
+            # the old "big" slots.
             draw_tick_labels(draw, g, fonts.tick)
             draw.text((g["cx"], g["cy"] - g["radius"] * 0.42), title, font=fonts.gauge_title,
                        fill=(225, 226, 236), anchor="mm")
         else:
-            label_gap = 16 if kind == "secondary" else 13
+            # Compact: title above the ring, no tick labels -- gap scales
+            # with the gauge's own radius (continuous, replacing the old
+            # "secondary" vs "mini" kind distinction) rather than a
+            # second hardcoded threshold; see BIG_GAUGE_RADIUS_FRACTION's
+            # comment for how this was calibrated to match the old look.
+            label_gap = g["radius"] * 0.37
             draw.text((g["cx"], g["cy"] - g["radius"] - label_gap), title, font=fonts.small_title,
                        fill=(225, 226, 236), anchor="mm")
 
+    col_w = int(width * 0.235)
+    mid_x0 = margin + col_w + int(width * 0.03)
+    mid_x1 = width - margin - col_w - int(width * 0.03)
+    clock_cy = int(height * 0.885)
+
     layout = {
-        "positions": positions,
-        "slot_assignments": slots,
+        "elements": elements,
+        "resolved": resolved,
         "clock_cy": clock_cy,
         "mid_x0": mid_x0, "mid_x1": mid_x1, "mid_w": mid_x1 - mid_x0,
     }
@@ -1565,20 +1684,25 @@ def build_static_background(width, height, fonts, slots=None, background=None):
 
 
 def render_frame(background, layout, width, height, fonts, stats, media):
-    """`stats` is a flat dict keyed by STAT_DEFS key (cpu_load, gpu_load,
-    ram, network, gpu_temp, cpu_freq, disk_usage, vram_usage) -- any key
-    can be missing or None, which just draws that gauge's dim track with
-    no needle and "--" (see draw_gauge_dynamic_tile). All 8 gauges (big
-    and small) read from this same dict via layout["slot_assignments"],
-    since any stat can be assigned to any slot."""
+    """`stats` is a flat dict keyed by STAT_DEFS key -- any key can be
+    missing or None, which just draws that gauge's dim track with no
+    needle and "--" (see draw_gauge_dynamic_tile). Every gauge element
+    reads from this same dict via its own `stat`, since any stat can be
+    bound to any element; `layout["resolved"]` (built by
+    build_static_background(), keyed by element id) is where each
+    element's actual on-panel position/size ended up."""
     img = background.copy()
+    base = min(width, height)
 
-    for slot_key, g in layout["positions"].items():
-        stat_key = layout["slot_assignments"][slot_key]
-        stat = STAT_DEFS[stat_key]
-        accent = ACCENT_CPU if "left" in slot_key else ACCENT_GPU
-        value_font = fonts.gauge_value if SLOT_KINDS[slot_key] == "big" else fonts.small_value
-        draw_gauge_dynamic(img, g, stats.get(stat_key), stat["min"], stat["max"],
+    for el in layout["elements"]:
+        if el.get("type", "gauge") != "gauge":
+            continue
+        g = layout["resolved"][el["id"]]
+        stat = STAT_DEFS[el["stat"]]
+        accent = _element_accent(el)
+        big = g["radius"] >= base * BIG_GAUGE_RADIUS_FRACTION
+        value_font = fonts.gauge_value if big else fonts.small_value
+        draw_gauge_dynamic(img, g, stats.get(el["stat"]), stat["min"], stat["max"],
                             accent, value_font, stat["fmt"])
 
     # --- middle: album art + progress + track/artist + clock ----------
@@ -1660,7 +1784,7 @@ def render_frame(background, layout, width, height, fonts, stats, media):
 
 
 def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
-        brightness=90, slots=None, background=None, stop_event=None, log=print,
+        brightness=90, slots=None, elements=None, background=None, stop_event=None, log=print,
         screen_factory=HongtaiScreen, on_connected=None, screen=None):
     """Runs the dashboard until stop_event is set (or forever, if
     stop_event is None -- the CLI entry point below relies on Ctrl+C /
@@ -1668,9 +1792,20 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     GUI can start/stop this theme in a background thread instead of
     only being usable from the command line.
 
-    `slots` picks which stat each of the 4 big gauges shows -- see
-    STAT_DEFS/DEFAULT_SLOTS and build_static_background()'s docstring;
-    defaults to DEFAULT_SLOTS if not given (or only partially given).
+    `elements` (ROADMAP.md Phase 4) is the new way to lay the gauges
+    out -- a list of dicts in slots_to_elements()'s shape, with their
+    own x/y/radius/color/opacity instead of one of 8 fixed named spots.
+    If not given, it's derived from `slots` instead (see below), so
+    passing neither still renders today's default layout exactly as
+    before.
+
+    `slots` is the old way (app.py's Tkinter Dashboard tab still reads/
+    writes this shape, and still calls this with `slots=`, never
+    `elements=` -- it's unaffected by any of this): picks which stat
+    each of the 4 big gauges (plus the 4 smaller ones) shows -- see
+    STAT_DEFS/DEFAULT_SLOTS/SLOT_KINDS. Defaults to DEFAULT_SLOTS if not
+    given (or only partially given), and is ignored entirely if
+    `elements` is given.
 
     `background` picks the panel background -- see BACKGROUND_PRESETS/
     DEFAULT_BACKGROUND and build_static_background()'s docstring;
@@ -1729,8 +1864,11 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     if not _MEDIA_OK:
         log("  (winsdk not available -- install it for Spotify album art: pip install winsdk)")
 
+    if elements is None:
+        elements = slots_to_elements(slots)
+
     fonts = Fonts()
-    bg_image, layout = build_static_background(info.width, info.height, fonts, slots, background)
+    bg_image, layout = build_static_background(info.width, info.height, fonts, elements, background)
 
     log("Streaming dashboard at 10Hz. Press Ctrl+C to stop." if stop_event is None
         else "Streaming dashboard at 10Hz.")

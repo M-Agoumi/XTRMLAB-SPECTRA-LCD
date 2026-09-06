@@ -104,6 +104,30 @@ dashboard designer) this is laying groundwork for.
   finish still disconnects, error recovery still retries+gives up
   correctly, an intentional stop mid-error isn't mistaken for a fault)
   — not yet verified with a real panel.
+- **Phase 4 of the v2.0 rewrite — layout model: slots → elements
+  (backend).** `dashboard_theme.py`'s 8 gauges no longer come from a
+  formula keyed by fixed slot names (`top_left`, `left_secondary`, ...);
+  `build_static_background()`/`render_frame()` now walk an arbitrary
+  list of gauge elements, each with its own `x`/`y`/`radius` (resolution-
+  independent fractions), `color`, `opacity`, `z`-order, and a `stat`
+  binding — the data model a future drag/resize design canvas (Phase 5)
+  needs to exist at all. The old "big"/"secondary"/"mini" `SLOT_KINDS`
+  enum is gone; whether a gauge gets full tick labels or the compact
+  look is now derived from its actual baked radius instead. Migration
+  is at read time, not a stored schema bump: `slots_to_elements()`
+  converts old `slots` picks into equivalent elements using the exact
+  same geometry formula that used to be inline, so an existing
+  `app_config.json` renders unchanged. `app.py`'s Tkinter Dashboard tab
+  is completely untouched — it still calls `dashboard_theme.run(slots=
+  ...)` exactly as before; only `theme_kwargs.py` (controller.py's path)
+  was switched to build and pass `elements=` instead. Verified
+  headlessly: a full rendered frame pixel-diffed against a
+  reconstruction of the exact pre-Phase-4 code for the default layout
+  came back 99.94% identical (the remainder a documented, expected
+  sub-pixel label-position shift from replacing two hardcoded label-gap
+  constants with one continuous formula); custom slot overrides, a
+  hand-built custom elements list, and an end-to-end run against a fake
+  screen all verified working. Not yet verified on real hardware.
 
 ## [1.0.0] — 2026-08-29
 
