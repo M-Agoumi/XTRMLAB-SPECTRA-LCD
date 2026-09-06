@@ -100,6 +100,22 @@ export default function App() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [logs]);
 
+  // -- keep the theme picker in sync with whatever's ACTUALLY running --
+  // covers both a theme resumed automatically on launch (backend_app.py
+  // resumes the last-running theme before this page ever loads -- see
+  // ROADMAP.md Phase 2c) and Start/Stop from another tab/device. Without
+  // this the picker just sat on its initial default ("clock") regardless
+  // of reality, and since it's locked while running (see handleStart's
+  // comment above), there was no way to even see, let alone fix, the
+  // mismatch short of Stopping first.
+  useEffect(() => {
+    if (!state?.running_theme) return;
+    const key = Object.entries(api.THEME_LABELS).find(
+      ([, label]) => label === state.running_theme
+    )?.[0];
+    if (key) setTheme(key);
+  }, [state?.running_theme]);
+
   // -- live preview: poll /frame.jpg only while a theme is connected --
   const [frameUrl, setFrameUrl] = useState(null);
   useEffect(() => {
