@@ -128,6 +128,10 @@ def _make_handler(controller: AppController):
                     self._send_json(200, controller.set_startup(bool(body.get("enabled"))))
                 elif path == "/api/shortcut":
                     self._send_json(200, controller.create_desktop_shortcut())
+                elif path == "/api/dashboard/upload_image":
+                    body = self._read_json_body()
+                    self._send_json(200, controller.upload_dashboard_image(
+                        body.get("filename"), body.get("data_base64")))
                 elif path == "/api/dashboard/elements":
                     body = self._read_json_body()
                     self._send_json(200, controller.save_dashboard_elements(body.get("elements")))

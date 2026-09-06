@@ -72,6 +72,7 @@ from .desktop_shortcut import create_desktop_shortcut
 from .single_instance import _ensure_single_instance
 from .theme_worker import ThemeWorker
 from . import tray_icon
+from . import image_store
 
 
 class App(tk.Tk):
@@ -514,19 +515,35 @@ class App(tk.Tk):
         path = filedialog.askopenfilename(
             title="Choose an image for \"nothing playing\"",
             filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.gif"), ("All files", "*.*")])
-        if path:
-            self.dash_art_path.set(path)
+        if not path:
+            return
+        # Copy it into this app's own managed image folder rather than
+        # remembering the browsed path verbatim -- so moving, renaming,
+        # or deleting the original afterward doesn't quietly break the
+        # placeholder (see image_store.py).
+        try:
+            stored_path = image_store.store_image_file(path)
+        except (OSError, ValueError) as e:
+            messagebox.showerror("Couldn't use that image", str(e))
+            return
+        self.dash_art_path.set(stored_path)
 
     def _pick_dash_bg_image(self):
         path = filedialog.askopenfilename(
             title="Choose a background image",
             filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.gif"), ("All files", "*.*")])
-        if path:
-            self.dash_bg_image_path.set(path)
-            # Picking a file implies you want it used -- flip Style over
-            # to "Custom image" too instead of leaving it silently ignored
-            # because Style was still set to something else.
-            self.dash_bg_mode.set(dashboard_theme.BACKGROUND_PRESETS["image"])
+        if not path:
+            return
+        try:
+            stored_path = image_store.store_image_file(path)
+        except (OSError, ValueError) as e:
+            messagebox.showerror("Couldn't use that image", str(e))
+            return
+        self.dash_bg_image_path.set(stored_path)
+        # Picking a file implies you want it used -- flip Style over
+        # to "Custom image" too instead of leaving it silently ignored
+        # because Style was still set to something else.
+        self.dash_bg_mode.set(dashboard_theme.BACKGROUND_PRESETS["image"])
 
     def _pick_video(self):
         path = filedialog.askopenfilename(

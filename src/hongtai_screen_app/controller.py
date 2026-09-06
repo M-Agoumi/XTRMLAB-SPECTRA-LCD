@@ -18,8 +18,11 @@ import sys
 import threading
 from collections import deque
 
+import base64
+
 from . import config_store
 from . import desktop_shortcut
+from . import image_store
 from . import startup_registration
 from . import theme_kwargs
 from .driver import hongtai_screen
@@ -186,6 +189,26 @@ class AppController:
         itself; control_server.py's do_POST already turns a RuntimeError
         into a 400 with the message intact."""
         return {"path": desktop_shortcut.create_desktop_shortcut()}
+
+    def upload_dashboard_image(self, filename, data_b64):
+        """Saves a browser-picked image (base64-encoded, since a
+        browser file input can only hand back the file's *content*, not
+        a real filesystem path the way Tkinter's Browse dialog can) into
+        this app's own managed image folder (image_store.py) and
+        returns its stored path -- the caller then saves THAT path
+        through save_dashboard_background()/save_dashboard_now_playing()/
+        save_dashboard_elements(), same as if it had been typed in
+        directly. Raises ValueError on a missing/invalid `data_b64`, or
+        whatever image_store.store_image_bytes() raises for a file
+        that's too large or doesn't actually decode as an image."""
+        if not data_b64:
+            raise ValueError("no image data given")
+        try:
+            data = base64.b64decode(data_b64, validate=True)
+        except Exception as e:  # noqa: BLE001 -- malformed base64
+            raise ValueError(f"invalid image data: {e}")
+        path = image_store.store_image_bytes(data, filename)
+        return {"path": path}
 
     # ------------------------------------------------------------------ #
     # Dashboard design canvas (ROADMAP.md Phase 5) -- reading/writing

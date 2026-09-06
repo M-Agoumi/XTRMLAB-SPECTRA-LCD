@@ -67,6 +67,31 @@ export function getDashboardMeta() {
   return fetch("/api/dashboard/meta").then(asJson);
 }
 
+export function uploadDashboardImage(file) {
+  // Turns the picked File into a data: URL (FileReader), strips the
+  // "data:image/png;base64," prefix, and posts the raw base64 to the
+  // backend -- a browser file input can only ever hand back a file's
+  // *content*, never a real filesystem path the way Tkinter's Browse
+  // dialog can, so this is the actual "upload" half of "pick an
+  // image": the backend copies the bytes into its own managed image
+  // folder and hands back that copy's path.
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("couldn't read the file"));
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const comma = dataUrl.indexOf(",");
+      const data_base64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+      fetch("/api/dashboard/upload_image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, data_base64 }),
+      }).then(asJson).then(resolve, reject);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export function saveDashboardElements(elements) {
   return fetch("/api/dashboard/elements", {
     method: "POST",
