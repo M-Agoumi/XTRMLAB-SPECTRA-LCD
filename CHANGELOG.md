@@ -281,6 +281,38 @@ dashboard designer) this is laying groundwork for.
   save endpoints already use. Verified with a logic-level test
   confirming `elements`/`presets` survive a save while the
   Tkinter-controlled fields still update correctly.
+- **The dashboard's middle column is no longer just a Spotify display
+  -- it's now a choice: Spotify, Weather, or nothing at all.** Not
+  everyone wants a now-playing display glued to their PC's case (or
+  runs Spotify at all); this adds a "Middle content" setting
+  (`dashboard.middle_content`, default `"spotify"` -- fully backward
+  compatible with every config saved before this) with two new
+  options: `"weather"` shows a current-conditions readout (a hand-drawn
+  glowing icon, temperature, one-line description, feels-like/humidity,
+  and the resolved place name) via new `weather.py`, using Open-Meteo
+  -- free, no signup, no API key, just a typed city/address -- for both
+  geocoding and the actual lookup, polled every 10 minutes from a
+  background thread (same reasoning as the existing Spotify poll
+  thread: a real network round trip has no business happening inline
+  in the 10Hz render loop); `"none"` draws nothing there at all, just
+  the background showing through. Both the web UI's canvas and
+  `app.py`'s Tkinter tab gained a matching "Middle content" section
+  (a Show picker, plus a location/units pair that only appears for
+  Weather), and the "Nothing playing" placeholder section now only
+  shows when Spotify is actually selected, since it's meaningless
+  otherwise. A new merge-safe `controller.save_dashboard_middle_
+  content()` / `POST /api/dashboard/middle_content` applies the
+  selection to the running dashboard immediately (no Stop/Start),
+  mirroring the now-playing settings' live-apply pattern. Verified
+  headlessly (geocoding/current-conditions against a mocked HTTP layer,
+  the poll thread picking up a location/units change without waiting
+  out its own interval, a rendered frame for all three content modes
+  including the no-location and lookup-failure fallbacks, and the
+  merge-safe endpoint round-tripping and rejecting an unknown
+  `middle_content` value) and via a Playwright session against the
+  real built frontend + live backend confirming the section saves, the
+  Weather-only fields show/hide correctly, and the placeholder section
+  hides itself outside Spotify mode, with no console errors.
 
 ## [1.0.0] — 2026-08-29
 

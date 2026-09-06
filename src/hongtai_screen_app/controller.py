@@ -25,6 +25,7 @@ from . import desktop_shortcut
 from . import image_store
 from . import startup_registration
 from . import theme_kwargs
+from . import weather
 from .driver import hongtai_screen
 from .screen_engine import ScreenEngine
 from .themes import dashboard_theme
@@ -253,6 +254,13 @@ class AppController:
                 "not_playing_message": d.get("not_playing_message") or None,
                 "default_message": dashboard_theme.DEFAULT_NOT_PLAYING_MESSAGE,
             },
+            "middleContent": {
+                "value": d.get("middle_content") or "spotify",
+                "options": dict(dashboard_theme.MIDDLE_CONTENT_OPTIONS),
+                "weather_location": d.get("weather_location") or "",
+                "weather_units": d.get("weather_units") or "celsius",
+                "weather_unit_options": dict(weather.UNIT_OPTIONS),
+            },
         }
 
     def save_dashboard_elements(self, elements):
@@ -320,6 +328,40 @@ class AppController:
             dashboard_theme.set_default_art_path(patch.get("default_art_path") or None)
         if "not_playing_message" in patch:
             dashboard_theme.set_not_playing_message(patch.get("not_playing_message"))
+        return result
+
+    def save_dashboard_middle_content(self, patch):
+        """Persists which content fills the dashboard's middle column
+        -- Spotify now-playing (the original, default behavior), the
+        weather (weather.py -- free, no API key, just a place name), or
+        nothing at all for anyone who wants neither glued to their PC's
+        case. Same merge-into-"dashboard" shape and same "applies live
+        immediately" deal as save_dashboard_now_playing() -- dashboard_
+        theme.py re-reads the current selection every frame and
+        weather.py re-reads the current location/units on its own
+        background poll loop, so switching this while the Dashboard is
+        already running takes effect without a Stop/Start. Only
+        `middle_content`/`weather_location`/`weather_units` keys are
+        meaningful here; anything else in `patch` is stored but
+        ignored, same tolerance every other merge-safe dashboard
+        endpoint has."""
+        if not isinstance(patch, dict):
+            raise ValueError("patch must be an object")
+        if "middle_content" in patch and (patch.get("middle_content") or "spotify") not in dashboard_theme.MIDDLE_CONTENT_OPTIONS:
+            raise ValueError(f"unknown middle_content: {patch.get('middle_content')!r}")
+        with self._lock:
+            dashboard_cfg = dict(self.cfg.get("dashboard") or {})
+            dashboard_cfg.update(patch)
+            self.cfg["dashboard"] = dashboard_cfg
+            config_store.save_config(self.cfg)
+            result = dict(self.cfg["dashboard"])
+        if "middle_content" in patch:
+            dashboard_theme.set_middle_content(patch.get("middle_content") or "spotify")
+        if "weather_location" in patch:
+            weather.set_location(patch.get("weather_location"))
+        if "weather_units" in patch:
+            weather.set_units(patch.get("weather_units"))
+        weather.start_polling()
         return result
 
     def save_dashboard_preset(self, name, elements):

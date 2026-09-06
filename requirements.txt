@@ -14,7 +14,10 @@ pillow>=10.0          # ImageOps is used for the Dashboard's custom-image backgr
 # --- demo_clock.py: CPU/RAM bars ---------------------------------------
 psutil>=5.9
 
-# --- dashboard_theme.py: gauges, CPU/GPU stats, Spotify art -----------
+# --- dashboard_theme.py: gauges, CPU/GPU stats, Spotify art, weather --
+# weather.py (the dashboard's optional weather middle-content option)
+# uses only stdlib urllib -- no extra package needed, just a working
+# internet connection to reach Open-Meteo.
 numpy>=1.24          # required -- gauge rendering + background gradients
 pycairo>=1.24        # required -- gauge rendering (prebuilt wheel on Windows)
 nvidia-ml-py>=12.0   # optional -- NVIDIA GPU/VRAM/power stats; degrades gracefully without one

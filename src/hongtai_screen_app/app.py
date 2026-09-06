@@ -73,6 +73,7 @@ from .single_instance import _ensure_single_instance
 from .theme_worker import ThemeWorker
 from . import tray_icon
 from . import image_store
+from . import weather
 
 
 class App(tk.Tk):
@@ -328,6 +329,46 @@ class App(tk.Tk):
             row=row, column=2, sticky="w", padx=(6, 0))
         ttk.Button(f, text="Open in browser", command=self._open_dash_web_mirror).grid(
             row=row, column=3, sticky="w", padx=(6, 0))
+        row += 1
+
+        ttk.Label(f, text="Middle content:", font=("", 10, "bold")).grid(
+            row=row, column=0, columnspan=4, sticky="w", pady=(16, 0))
+        row += 1
+
+        middle_labels = list(dashboard_theme.MIDDLE_CONTENT_OPTIONS.values())
+        self._middle_label_to_key = {v: k for k, v in dashboard_theme.MIDDLE_CONTENT_OPTIONS.items()}
+        self.dash_middle_content = tk.StringVar(
+            value=dashboard_theme.MIDDLE_CONTENT_OPTIONS.get(d.get("middle_content", "spotify"), middle_labels[0]))
+        self.dash_middle_content.trace_add("write", self._on_dash_middle_change)
+        ttk.Label(f, text="Show:").grid(row=row, column=0, sticky="w", pady=(6, 0))
+        ttk.Combobox(f, textvariable=self.dash_middle_content, values=middle_labels,
+                     state="readonly", width=26).grid(row=row, column=1, columnspan=2, sticky="w", pady=(6, 0))
+        row += 1
+
+        ttk.Label(f, text="What goes between the two gauge columns -- Spotify's now-playing\n"
+                          "display (below), a weather readout, or nothing at all.",
+                  foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(0, 4))
+        row += 1
+
+        ttk.Label(f, text="Weather location:").grid(row=row, column=0, sticky="w", pady=(6, 0))
+        self.dash_weather_location = tk.StringVar(value=d.get("weather_location", "") or "")
+        self.dash_weather_location.trace_add("write", self._on_dash_weather_change)
+        ttk.Entry(f, textvariable=self.dash_weather_location, width=26).grid(
+            row=row, column=1, columnspan=2, sticky="w", pady=(6, 0))
+
+        unit_labels = list(weather.UNIT_OPTIONS.values())
+        self._unit_label_to_key = {v: k for k, v in weather.UNIT_OPTIONS.items()}
+        self.dash_weather_units = tk.StringVar(
+            value=weather.UNIT_OPTIONS.get(d.get("weather_units", "celsius"), unit_labels[0]))
+        self.dash_weather_units.trace_add("write", self._on_dash_weather_change)
+        ttk.Combobox(f, textvariable=self.dash_weather_units, values=unit_labels,
+                     state="readonly", width=16).grid(row=row, column=3, sticky="w", padx=(6, 0), pady=(6, 0))
+        row += 1
+
+        ttk.Label(f, text="City, address, or \"lat,lon\" -- looked up via a free weather service\n"
+                          "(Open-Meteo, no account/API key needed). Only used when Show above is\n"
+                          "set to Weather. Applies live -- no need to Stop/Start.",
+                  foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(0, 4))
         row += 1
 
         ttk.Label(f, text="\"Nothing playing\" image:").grid(row=row, column=0, sticky="w", pady=(12, 0))
@@ -702,6 +743,23 @@ class App(tk.Tk):
         # static background.
         dashboard_theme.set_not_playing_message(self.dash_not_playing_message.get())
 
+    def _on_dash_middle_change(self, *_args):
+        # Same "applies live, no restart" reasoning as _on_dash_art_
+        # change() above -- render_frame() calls get_middle_content()
+        # fresh every frame.
+        key = self._middle_label_to_key.get(self.dash_middle_content.get(), "spotify")
+        dashboard_theme.set_middle_content(key)
+
+    def _on_dash_weather_change(self, *_args):
+        # weather.py re-reads its current location/units on its own
+        # background poll loop (see set_location()/set_units()), so
+        # this applies on the next poll rather than needing a restart --
+        # start_polling() is idempotent, safe to call every keystroke.
+        weather.set_location(self.dash_weather_location.get())
+        units_key = self._unit_label_to_key.get(self.dash_weather_units.get(), "celsius")
+        weather.set_units(units_key)
+        weather.start_polling()
+
     def _apply_dash_web_settings(self):
         if not (self.running_tab_index == 0 and self.active_screen is not None):
             return  # nothing running yet -- takes effect on the next Start instead
@@ -843,12 +901,16 @@ class App(tk.Tk):
         web_port = self._parse_int(self.dash_web_port.get(), "Web mirror port", default=8765)
         art_path = self.dash_art_path.get().strip() or None
         not_playing_message = self.dash_not_playing_message.get().strip() or None
+        middle_content = self._middle_label_to_key.get(self.dash_middle_content.get(), "spotify")
+        weather_location = self.dash_weather_location.get().strip() or None
+        weather_units = self._unit_label_to_key.get(self.dash_weather_units.get(), "celsius")
         slots = {slot_key: self._stat_label_to_key.get(var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
                   for slot_key, var in self.dash_slot_vars.items()}
         background = self._dash_background_dict()
         return "Dashboard", dashboard_theme.run, dict(
             port=port, web_port=web_port, enable_web=self.dash_web_enable.get(),
             default_art_path=art_path, not_playing_message=not_playing_message,
+            middle_content=middle_content, weather_location=weather_location, weather_units=weather_units,
             brightness=brightness, slots=slots, background=background,
         )
 
@@ -927,6 +989,9 @@ class App(tk.Tk):
             "web_port": self.dash_web_port.get(),
             "default_art_path": self.dash_art_path.get().strip() or None,
             "not_playing_message": self.dash_not_playing_message.get().strip() or None,
+            "middle_content": self._middle_label_to_key.get(self.dash_middle_content.get(), "spotify"),
+            "weather_location": self.dash_weather_location.get().strip() or None,
+            "weather_units": self._unit_label_to_key.get(self.dash_weather_units.get(), "celsius"),
             "slots": {slot_key: self._stat_label_to_key.get(
                           var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
                       for slot_key, var in self.dash_slot_vars.items()},
