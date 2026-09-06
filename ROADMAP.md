@@ -845,6 +845,17 @@ via a Playwright session against the real built frontend + live
 backend picking a real file for background/now-playing/element,
 confirming the managed path is what's saved and no console errors.
 
+**Fix (data loss): Tkinter's Dashboard tab could wipe out a web-canvas
+layout/presets.** `_save_current_config()` rebuilt the whole
+"dashboard" config dict from scratch out of only the fields Tkinter
+has controls for -- `elements` and `presets` are web-canvas-only
+concepts with no Tkinter UI, so they got silently dropped every time
+Tkinter saved anything (closing to tray, Stop, switching tabs, not
+just an explicit Save). Fixed to merge into the existing "dashboard"
+dict instead of replacing it, matching the merge-safe pattern the web
+UI's own save endpoints already use. Verified with a logic-level test
+confirming `elements`/`presets` survive a Tkinter save unchanged.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files
