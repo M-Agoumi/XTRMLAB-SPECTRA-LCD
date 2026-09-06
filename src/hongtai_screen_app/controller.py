@@ -17,6 +17,7 @@ from collections import deque
 
 from . import config_store
 from . import theme_kwargs
+from .driver import hongtai_screen
 from .theme_worker import ThemeWorker
 
 
@@ -120,10 +121,33 @@ class AppController:
             return dict(self.cfg)
 
     def _selected_port(self):
-        port = self.cfg.get("port", config_store.AUTO_DETECT)
-        if not port or port == config_store.AUTO_DETECT:
+        """app_config.json's "port" is a human-readable *label* (e.g.
+        "COM3  (VID 33C3:7804 -- ...)  USB Serial Device (COM3)"), not
+        an openable device path -- see ScreenPort.label in the driver.
+        app.py's own _selected_port() never opens that string directly
+        either: it rescans find_hongtai_ports() and looks up the
+        matching candidate's real .device (e.g. "COM3") by comparing
+        labels, because the only thing worth persisting across restarts
+        is *which physical port the user picked*, not a device name
+        that can shift across reboots/replugs. This does the same
+        lookup, so a saved selection behaves identically whether it's
+        driven from the Tkinter GUI or this headless controller.
+
+        Returns None (auto-detect) if the saved label doesn't match any
+        port currently plugged in -- same fallback app.py's
+        _refresh_ports() does when the saved selection isn't in the
+        current port list any more."""
+        label = self.cfg.get("port", config_store.AUTO_DETECT)
+        if not label or label == config_store.AUTO_DETECT:
             return None
-        return port
+        for candidate in hongtai_screen.find_hongtai_ports():
+            if candidate.label == label:
+                return candidate.device
+        self._log(
+            f"(saved port selection {label!r} doesn't match any port "
+            f"plugged in right now -- falling back to auto-detect)"
+        )
+        return None
 
     # ------------------------------------------------------------------ #
     # start / stop / apply -- mirrors app.py's _on_start()/_on_stop()/
