@@ -44,21 +44,27 @@ def _parse_float(value, default=None):
         return default
 
 
+def resolve_dashboard_elements(cfg):
+    """The one place that decides which gauge layout a running Dashboard
+    actually uses -- prefers a saved `dashboard.elements` list (what the
+    web UI's design canvas, ROADMAP.md Phase 5, writes) if there is one,
+    otherwise derives one from the old `dashboard.slots` picks (or the
+    defaults) via slots_to_elements(). Shared by dashboard_kwargs() below
+    (what actually starts the theme) and controller.dashboard_meta()
+    (what the canvas reads to initialize itself), so both always agree
+    on "what's the layout right now" -- the canvas would otherwise be
+    able to drift from what Start/Apply actually renders."""
+    d = cfg.get("dashboard", {}) or {}
+    if d.get("elements"):
+        return d["elements"]
+    return dashboard_theme.slots_to_elements(d.get("slots"))
+
+
 def dashboard_kwargs(cfg, port, brightness):
     d = cfg.get("dashboard", {}) or {}
     web_port = _parse_int(d.get("web_port"), default=8765)
     art_path = d.get("default_art_path") or None
-    # ROADMAP.md Phase 4: prefer a saved "elements" layout (what a future
-    # design canvas would write) if there is one; otherwise derive one
-    # from the old "slots" picks (or the defaults) via slots_to_elements()
-    # -- same visual result either way, dashboard_theme.run() just always
-    # renders from elements internally now. app.py's Tkinter Dashboard
-    # tab is untouched: it still saves/reads "slots" directly and calls
-    # run(slots=...) itself, never "elements".
-    if d.get("elements"):
-        elements = d["elements"]
-    else:
-        elements = dashboard_theme.slots_to_elements(d.get("slots"))
+    elements = resolve_dashboard_elements(cfg)
     background = dict(dashboard_theme.DEFAULT_BACKGROUND, **(d.get("background") or {}))
     return "Dashboard", dashboard_theme.run, dict(
         port=port, web_port=web_port, enable_web=bool(d.get("enable_web", False)),

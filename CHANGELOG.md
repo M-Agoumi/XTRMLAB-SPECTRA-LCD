@@ -128,6 +128,29 @@ dashboard designer) this is laying groundwork for.
   constants with one continuous formula); custom slot overrides, a
   hand-built custom elements list, and an end-to-end run against a fake
   screen all verified working. Not yet verified on real hardware.
+- **Phase 5 of the v2.0 rewrite — the dashboard design canvas.** The
+  web UI's Dashboard tab is now a real editor: drag a gauge to move it,
+  drag its corner handle to resize, click to select and edit its stat/
+  color/opacity/position in a property panel, add/delete gauges,
+  reorder them (bring to front/send to back), snap to the canvas
+  center or another gauge's position while dragging, undo/redo
+  (buttons and Ctrl+Z/Ctrl+Y), and save the result — or save it as one
+  of several named presets to switch between later. It edits the exact
+  same element list `dashboard_theme.py` renders (Phase 4), overlaid on
+  the panel's live `/frame.jpg` mirror when connected. New backend
+  endpoints (`/api/dashboard/meta`, `/api/dashboard/elements`,
+  `/api/dashboard/presets[/delete]`) merge into the saved `dashboard`
+  config instead of replacing it wholesale, so saving a layout tweak
+  can't accidentally wipe out `web_port`/`enable_web`/`background`/
+  `slots`. Rotation is stored per-element but has no handle in this
+  canvas yet — `dashboard_theme.py` doesn't render it either, so a
+  control for it would visibly do nothing until that lands. Verified
+  with unit-tested geometry/color helpers, a clean production build,
+  and a full Playwright session against the real built frontend and a
+  live backend — select, drag, add, delete, undo, and preset-save all
+  confirmed working, and the resulting saved layout was fed back
+  through the actual cairo rendering pipeline and rendered correctly.
+  Not yet verified on real hardware.
 
 ## [1.0.0] — 2026-08-29
 
