@@ -48,11 +48,21 @@ def dashboard_kwargs(cfg, port, brightness):
     d = cfg.get("dashboard", {}) or {}
     web_port = _parse_int(d.get("web_port"), default=8765)
     art_path = d.get("default_art_path") or None
-    slots = dict(dashboard_theme.DEFAULT_SLOTS, **(d.get("slots") or {}))
+    # ROADMAP.md Phase 4: prefer a saved "elements" layout (what a future
+    # design canvas would write) if there is one; otherwise derive one
+    # from the old "slots" picks (or the defaults) via slots_to_elements()
+    # -- same visual result either way, dashboard_theme.run() just always
+    # renders from elements internally now. app.py's Tkinter Dashboard
+    # tab is untouched: it still saves/reads "slots" directly and calls
+    # run(slots=...) itself, never "elements".
+    if d.get("elements"):
+        elements = d["elements"]
+    else:
+        elements = dashboard_theme.slots_to_elements(d.get("slots"))
     background = dict(dashboard_theme.DEFAULT_BACKGROUND, **(d.get("background") or {}))
     return "Dashboard", dashboard_theme.run, dict(
         port=port, web_port=web_port, enable_web=bool(d.get("enable_web", False)),
-        default_art_path=art_path, brightness=brightness, slots=slots, background=background,
+        default_art_path=art_path, brightness=brightness, elements=elements, background=background,
     )
 
 

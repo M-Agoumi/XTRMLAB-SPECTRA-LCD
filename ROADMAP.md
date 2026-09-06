@@ -553,23 +553,70 @@ smoke test with no hardware attached. **Confirmed working on real
 hardware**: live switching between real theme streams with no
 disconnect/reconnect flicker.
 
-### Phase 4 — Layout model: slots → elements (backend)
+### Phase 4 — Layout model: slots → elements (backend) — ✅ DONE (pending a real-machine pass)
 
-The core data model change, and the thing that actually unblocks the
-last three phases.
+The core data model change that actually unblocks the last three
+phases: `build_static_background()`/`render_frame()` no longer compute
+8 fixed gauge positions from a formula keyed by a slot name (`top_left`,
+`left_secondary`, ...); they walk an arbitrary list of gauge elements
+instead, each with its own `x`/`y`/`radius` (fractions of width/height/
+min(width, height), so the same list scales correctly to any panel
+resolution), `color` (an explicit override, or `None` to keep the old
+left-column-cyan/right-column-magenta split), `opacity`, `z` (paint
+order), `stat` (a `STAT_DEFS` key, same as before), and a `rotation`
+field that's stored/migrated/round-tripped through config but not
+rendered yet -- correct rotation needs the per-frame needle/value to
+rotate in lockstep with the static ring, and nothing can actually set a
+non-zero rotation until Phase 5's canvas exists to offer it, so
+implementing that now would be untested, unreachable code. The old
+"big"/"secondary"/"mini" `SLOT_KINDS` enum is gone too: whether a gauge
+gets full tick labels + an inside title (the old "big" look) or a
+compact title-above-the-ring look is now derived from the element's
+actual baked radius (`BIG_GAUGE_RADIUS_FRACTION`), and the small-style
+label gap is a continuous function of radius instead of two hardcoded
+constants -- calibrated so the default 8-gauge layout's look doesn't
+change (see below).
 
-Today: `DEFAULT_SLOTS` (8 fixed keys) + `SLOT_KINDS` (big/secondary/mini).
-New: an ordered list of elements, each with type, stat binding, x, y,
-size, rotation, colors, font, opacity, z-order.
+- **Migration, done at read time, not as a stored schema version.**
+  `slots_to_elements(slots)` runs the exact same geometry formula
+  `build_static_background()` used to compute inline (now pulled out
+  into `_slot_geometry()`) at a fixed `REFERENCE_WIDTH`/`REFERENCE_HEIGHT`
+  matching this panel's real resolution, and expresses each gauge's
+  resulting center/radius as a fraction of that reference size.
+  `DEFAULT_ELEMENTS` is this applied to `DEFAULT_SLOTS`. `theme_kwargs.py`
+  reads `dashboard.elements` from config if present, otherwise derives
+  one from `dashboard.slots` (or the defaults) the same way -- so an
+  existing `app_config.json` with only `slots` (or nothing dashboard-
+  related at all) keeps rendering exactly as before, with nothing
+  needing to be written back or bumped. Only a future design canvas
+  actually saving custom elements changes what's stored.
+- **`app.py`'s Tkinter Dashboard tab is completely unaffected.** It
+  still reads/writes `dashboard.slots` directly and still calls
+  `dashboard_theme.run(slots=..., ...)` — that parameter still exists
+  and still works exactly as before. `run()` only derives `elements`
+  from it internally (via `slots_to_elements()`) when no `elements=` was
+  given, which is the *only* thing `app.py`'s call site does not pass.
+- Kept the static-bake optimization exactly as it was — the whole
+  per-element loop (position resolution, static tile draw, tick/title
+  labels) runs once per `build_static_background()` call, and only the
+  live needle/value redraw every frame in `render_frame()`, same as
+  before this phase. Still invalidated by a Stop/Start or the GUI's
+  Apply button, same as any other "needs a restart" dashboard setting.
 
-- `dashboard_theme.py` renders from the element list instead of computed
-  slot geometry.
-- Keep the static-bake optimization (dim tracks, ticks, titles baked
-  once; only live values redraw) — staticness is per-element and
-  independent of position. The bake just has to be invalidated whenever
-  the layout changes.
-- **Config schema version + migration** so existing `app_config.json`
-  files keep working: the 8 slots map onto 8 default elements.
+Verified headlessly: pixel-diffed a full rendered frame from the new
+element-based path against a reconstruction of the exact pre-Phase-4
+formula-based path for the default 8-gauge layout -- 460,800 pixels
+compared, 0.065% differing (a sub-pixel label-position shift from the
+new continuous label-gap formula replacing the old hardcoded 13px/16px
+constants, exactly as expected and documented in code); custom `slots`
+overrides migrate to the right `stat` bindings; a hand-built custom
+`elements` list (arbitrary position/size/explicit color/opacity, plus
+an unrecognized future element type mixed in) bakes and renders without
+error, with the unknown type correctly skipped rather than crashing;
+`theme_kwargs.py` correctly prefers `dashboard.elements` when present
+and falls back to migrating `dashboard.slots` otherwise; and a full
+`dashboard_theme.run()` against a fake screen actually streamed real
+frames end to end. **Not yet verified on real hardware.**
 
 ### Phase 5 — The design canvas
 
