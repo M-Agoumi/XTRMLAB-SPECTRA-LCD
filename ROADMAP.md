@@ -726,12 +726,73 @@ and via a Playwright session against the real built frontend + live
 backend: switching to Custom image, typing a path, and saving all
 worked with no console errors, and the value persisted server-side.
 
-### Phase 6 — Richer elements and options
+### Phase 6 — Richer elements and options — ✅ DONE (pending a real-machine pass)
 
-Where "more complicated options" actually lands, and it's incremental
-once Phase 5 exists: new element types (text labels, bar/line graphs
-with history, images, shapes), per-element fonts, gradients, opacity,
-custom color ramps.
+Three new element types alongside the existing gauge, plus one new
+per-gauge styling option -- all additive to Phase 4's element model
+(`{id, type, x, y, z, opacity, ...type-specific fields}`), so an old
+config with only gauge elements keeps rendering exactly as before.
+
+- **Text labels** (`type: "text"`): a free-standing string, not bound
+  to a stat -- its own `text`/`font_size`/`color`/`align`. Fully
+  static (baked into the background image at Start/Apply time, same
+  as the gauge titles), since the text itself never changes frame to
+  frame.
+- **History graphs** (`type: "graph"`): a line or bar chart
+  (`style`) plotting a bound `stat`'s recent values over
+  `history_seconds`, in its own `width`/`height` box (a rectangle, not
+  a gauge's circle, so it gets independent width/height instead of one
+  shared `radius`). The border+title bakes into the static background
+  like everything else; the actual bars/line are the one genuinely
+  dynamic thing Phase 6 adds -- redrawn every frame in `render_frame()`
+  from a rolling per-element `deque` that `run()`'s loop maintains
+  itself (sized from `history_seconds`/the loop's own 10Hz period,
+  since `render_frame()` has no way to know how much wall-clock time
+  actually elapsed between frames). A `None` sample (stat unavailable)
+  leaves a gap rather than plotting a false zero.
+- **Custom images** (`type: "image"`): an arbitrary photo/logo dropped
+  onto the layout as its own positioned/sized element -- cover-fit and
+  alpha-composited at build time, same tolerance for a bad/missing/
+  unreadable path as the background image and app.py's background
+  picker already have (skipped silently, no crash). The image path is
+  a plain text field in the canvas, same reasoning as the video
+  theme's path field and the background picker's custom-image path --
+  a browser file input can't hand back a real filesystem path.
+- **Gauge gradients** (`color2` on a `type: "gauge"` element): an
+  optional second ring color -- when set, the static track and the lit
+  value arc both sweep from `color` to `color2` instead of the single-
+  color fade every gauge has always had. `None` (the default) keeps
+  today's look exactly as it was; needle/hub stay single-toned to keep
+  the change additive rather than a full gauge-rendering rewrite.
+
+The web UI's design canvas (`DashboardCanvas.jsx`) gained "+ Add
+text"/"+ Add graph"/"+ Add image" buttons alongside "+ Add gauge",
+type-specific SVG representations on the canvas (a labeled box with a
+resize handle for graph/image, draggable text for labels), a resize
+handle that adjusts width+height independently for graph/image and
+font_size for text (rather than one shared radius), and a property
+panel that swaps in the right fields per element's `type` --
+gauge gained the gradient toggle + second color picker alongside its
+existing fields. No backend schema change was needed beyond the
+gradient's `color2` field: `save_dashboard_elements()`'s "is a list"
+validation already accepted an arbitrary element shape, so the new
+types just work.
+
+Verified headlessly: `build_static_background()`/`render_frame()`
+render a mixed layout (one of each new type, plus a gradient gauge)
+with no exceptions, correctly skip a bad image path, and a plain
+`DEFAULT_ELEMENTS` layout (no new types at all) is an exact regression
+check; a full `run()` loop against a fake screen confirms the
+history deque accumulates and feeds `render_frame()` without error.
+A full Playwright session against the real built frontend + live
+backend added one of each new type via the canvas UI, edited the text
+label's content, saved the layout, and confirmed the saved config --
+elements of all three new types plus the gradient field -- round-trips
+through the real `theme_kwargs.dashboard_kwargs()` -> `dashboard_
+theme.build_static_background()`/`render_frame()` pipeline (actual
+cairo rendering, not a stub) and renders correctly, including the
+plotted line graph and the gracefully-skipped empty image path.
+**Not yet verified on real hardware.**
 
 ### Phase 7 — Packaging and cutover
 

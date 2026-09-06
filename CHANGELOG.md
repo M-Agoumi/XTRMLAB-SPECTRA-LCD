@@ -187,6 +187,26 @@ dashboard designer) this is laying groundwork for.
   preserves and persists `auto_resume_tab`; an explicit `stop()` still
   clears it; switching themes still reuses the connection without a
   false disconnect in between.
+- **Phase 6 of the v2.0 rewrite — richer elements and options.** Three
+  new element types alongside the existing gauge -- text labels
+  (a free string, not bound to a stat), history graphs (line/bar chart
+  of a bound stat's recent values, plotted from a rolling deque `run()`
+  maintains), and custom images (an arbitrary photo/logo dropped in as
+  its own positioned element, same tolerant fallback as the background
+  image) -- plus an optional second color (`color2`) on a gauge for a
+  gradient ring instead of the old single-color one. All additive to
+  Phase 4's element model, so an existing config with only gauges keeps
+  rendering unchanged. The design canvas gained matching "+ Add
+  text"/"+ Add graph"/"+ Add image" buttons, type-specific canvas
+  representations and resize behavior, and a property panel that swaps
+  in the right fields per element type. Verified headlessly (mixed-
+  layout render, bad-image-path fallback, a full `run()` loop
+  accumulating graph history without error, and a `DEFAULT_ELEMENTS`
+  regression check) and via a Playwright session against the real
+  built frontend + live backend: adding one of each new type, editing
+  the text label, and saving all worked, and the saved config rendered
+  correctly through the real cairo pipeline afterward. Not yet
+  verified on real hardware.
 
 ## [1.0.0] — 2026-08-29
 

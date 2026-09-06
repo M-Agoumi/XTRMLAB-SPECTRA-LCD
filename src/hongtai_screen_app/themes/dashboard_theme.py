@@ -118,6 +118,7 @@ dependency is missing.
 
 import argparse
 import asyncio
+from collections import deque
 import io
 import json
 import math
@@ -1006,6 +1007,170 @@ def _element_accent(el):
     return ACCENT_CPU if el["x"] < 0.5 else ACCENT_GPU
 
 
+def _element_accent2(el):
+    """A gauge's optional second ring color (ROADMAP.md Phase 6) -- None
+    means "no gradient, single accent color" (today's look, unchanged);
+    set only by an explicit `color2` on the element, never derived like
+    `_element_accent()`'s left/right fallback is, since there's no
+    sensible default second color to guess at."""
+    color2 = el.get("color2")
+    return tuple(color2) if color2 else None
+
+
+# ---------------------------------------------------------------- Phase 6 --
+# Non-gauge elements: text labels, custom images, and stat history
+# graphs. All three share the gauge elements' x/y (a center point, as a
+# fraction of width/height) but not `radius` -- a graph/image also
+# needs its own width/height (fractions of width/height respectively,
+# same normalization idea as radius being a fraction of
+# min(width, height)); text sizes itself from `font_size` (a fraction
+# of height) instead of a box. Every one of these is fully static
+# EXCEPT a graph's plotted history, which is why text/image are drawn
+# once in build_static_background() (baked into the background image,
+# same as the gauge tracks/titles) while a graph's box+title bakes in
+# there too but its bars/line are redrawn every frame in render_frame()
+# from whatever history render_frame() is handed -- see run()'s history
+# deque and _draw_graph_dynamic()'s docstring.
+def _element_color(el, key="color", default=(225, 226, 236)):
+    value = el.get(key)
+    return tuple(value) if value else default
+
+
+def _draw_text_element(img, el, width, height):
+    """A free-standing text label -- not bound to a stat, just whatever
+    string was typed into the canvas. Baked into the static background
+    since the text itself never changes frame to frame (same reasoning
+    as the gauge titles above)."""
+    text = (el.get("text") or "").strip()
+    if not text:
+        return
+    size_px = max(8, int(el.get("font_size", 0.05) * height))
+    font = load_font(size_px, bold=bool(el.get("bold", False)))
+    color = _element_color(el)
+    anchor = {"left": "lm", "center": "mm", "right": "rm"}.get(el.get("align", "center"), "mm")
+    x, y = el["x"] * width, el["y"] * height
+    opacity = el.get("opacity", 1.0)
+    if opacity >= 1.0:
+        # Common case: draw straight onto the (opaque) background,
+        # same as every other piece of static text in this theme --
+        # no need for the extra layer/composite round-trip below.
+        ImageDraw.Draw(img).text((x, y), text, font=font, fill=color, anchor=anchor)
+        return
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(layer).text((x, y), text, font=font, fill=(*color, 255), anchor=anchor)
+    layer = _apply_tile_opacity(layer, opacity)
+    img.paste(layer, (0, 0), layer)
+
+
+def _draw_image_element(img, el, width, height):
+    """A user-supplied photo/logo dropped onto the layout as its own
+    positioned element -- cover-fit into its box (same ImageOps.fit
+    approach as the background image and album art elsewhere in this
+    theme) and alpha-composited at its own opacity. Baked into the
+    static background since it's a fixed picture, not a live reading --
+    a bad/missing/unreadable path is skipped silently rather than
+    erroring the whole theme out, same tolerance the background image
+    and app.py's Tkinter background picker already have."""
+    path = el.get("image_path")
+    if not path:
+        return
+    try:
+        src = Image.open(path).convert("RGBA")
+    except Exception:  # noqa: BLE001 -- bad/missing file, corrupt image, etc.
+        return
+    w = max(4, int(el.get("width", 0.15) * width))
+    h = max(4, int(el.get("height", 0.15) * height))
+    fitted = ImageOps.fit(src, (w, h), method=Image.LANCZOS)
+    fitted = _apply_tile_opacity(fitted, el.get("opacity", 1.0))
+    cx, cy = el["x"] * width, el["y"] * height
+    img.paste(fitted, (int(cx - w / 2), int(cy - h / 2)), fitted)
+
+
+def _graph_box(el, width, height):
+    """A graph element's pixel rect, from its center x/y and its own
+    width/height (fractions of width/height, not of min(width,height) --
+    a graph is a rectangle, not a circle, so there's no reason to tie
+    its two dimensions together the way a gauge's single `radius`
+    does)."""
+    w = max(20.0, el.get("width", 0.22) * width)
+    h = max(14.0, el.get("height", 0.14) * height)
+    cx, cy = el["x"] * width, el["y"] * height
+    x0, y0 = cx - w / 2, cy - h / 2
+    return {"x0": x0, "y0": y0, "x1": x0 + w, "y1": y0 + h, "w": w, "h": h, "cx": cx, "cy": cy}
+
+
+def _draw_graph_static(img, el, box, fonts):
+    """The part of a history graph that doesn't change frame to frame:
+    a dim border box and the bound stat's title above it -- the bars/
+    line themselves are redrawn every frame in render_frame() (see
+    _draw_graph_dynamic()) since they plot values that change."""
+    draw = ImageDraw.Draw(img)
+    accent = _element_color(el, default=ACCENT_CPU)
+    rounded_rect(draw, [box["x0"], box["y0"], box["x1"], box["y1"]], radius=6,
+                 outline=dim_color(accent, 0.7), width=1)
+    stat_def = STAT_DEFS.get(el.get("stat"))
+    title = stat_def["title"] if stat_def else str(el.get("stat", "")).upper()
+    draw.text((box["cx"], box["y0"] - 10), title, font=fonts.small_title,
+              fill=(225, 226, 236), anchor="mb")
+
+
+def _draw_graph_tile(el, box, values, accent):
+    """Renders the actual bars/line for one frame onto a fresh RGBA
+    tile the size of the graph's box, from `values` (oldest first,
+    matching the deque run() maintains -- see its own comment) -- a
+    missing/None sample just leaves a gap instead of drawing a false
+    zero, same "don't lie about missing data" rule draw_gauge_dynamic_
+    tile follows for a gauge with no reading."""
+    w, h = max(1, int(box["w"])), max(1, int(box["h"]))
+    tile = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(tile)
+    stat_def = STAT_DEFS.get(el.get("stat"))
+    min_v = stat_def["min"] if stat_def else 0
+    max_v = stat_def["max"] if stat_def else 100
+    span = max(1e-6, max_v - min_v)
+    pad = 3
+    plot_w, plot_h = max(1, w - pad * 2), max(1, h - pad * 2)
+    n = len(values)
+    if n == 0:
+        return tile
+
+    def y_of(v):
+        frac = max(0.0, min(1.0, (v - min_v) / span))
+        return pad + (1 - frac) * plot_h
+
+    if el.get("style") == "bar":
+        bar_w = plot_w / n
+        for i, v in enumerate(values):
+            if v is None:
+                continue
+            y = y_of(v)
+            x0 = pad + i * bar_w
+            draw.rectangle([x0, y, x0 + max(1.0, bar_w * 0.75), pad + plot_h], fill=(*accent, 210))
+    else:
+        prev = None
+        for i, v in enumerate(values):
+            x = pad + (i / max(1, n - 1)) * plot_w
+            if v is None:
+                prev = None
+                continue
+            point = (x, y_of(v))
+            if prev is not None:
+                draw.line([prev, point], fill=(*accent, 230), width=2)
+            prev = point
+    return tile
+
+
+def _draw_graph_dynamic(img, el, box, values, accent):
+    """Redraws one graph element's bars/line for the current frame and
+    composites it into the (already-static) background copy, respecting
+    the element's own opacity -- same `_apply_tile_opacity()` +
+    `img.paste(tile, ..., tile)` pattern every other dynamic element in
+    this theme uses."""
+    tile = _draw_graph_tile(el, box, values, accent)
+    tile = _apply_tile_opacity(tile, el.get("opacity", 1.0))
+    img.paste(tile, (int(box["x0"]), int(box["y0"])), tile)
+
+
 def _apply_tile_opacity(tile, opacity):
     """Scales an RGBA gauge tile's alpha channel by `opacity` (0-1).
     A no-op copy at opacity=1.0 rather than skipping the call entirely,
@@ -1166,7 +1331,7 @@ def _cairo_rgba(color, alpha=1.0):
     return (color[0] / 255, color[1] / 255, color[2] / 255, alpha)
 
 
-def draw_gauge_static(g, accent):
+def draw_gauge_static(g, accent, accent2=None):
     """The parts that never change: the dim track ring (with a soft drop
     shadow and a gradient sweep for a bit of depth), its crisp edge
     lines, and major/minor tick marks -- all real anti-aliased cairo
@@ -1194,8 +1359,17 @@ def draw_gauge_static(g, accent):
     # what's behind it, and the edge lines/minor ticks got the same
     # treatment.
     track_grad = cairo.LinearGradient(cx - radius, cy - radius, cx + radius, cy + radius)
-    track_grad.add_color_stop_rgba(0, *_cairo_rgba(accent, 0.55))
-    track_grad.add_color_stop_rgba(1, *_cairo_rgba(accent, 0.34))
+    if accent2 is not None:
+        # A user-picked second color (ROADMAP.md Phase 6) -- the ring
+        # sweeps from accent to accent2 corner-to-corner instead of the
+        # single-color near-to-far fade below, same alpha (0.6, splitting
+        # the difference between the single-color version's 0.55/0.34 so
+        # neither end looks washed out against the other).
+        track_grad.add_color_stop_rgba(0, *_cairo_rgba(accent, 0.6))
+        track_grad.add_color_stop_rgba(1, *_cairo_rgba(accent2, 0.6))
+    else:
+        track_grad.add_color_stop_rgba(0, *_cairo_rgba(accent, 0.55))
+        track_grad.add_color_stop_rgba(1, *_cairo_rgba(accent, 0.34))
     ctx.set_source(track_grad)
     ctx.set_line_width(ring_w)
     ctx.arc(cx, cy, radius, a0, a1)
@@ -1236,7 +1410,7 @@ def draw_tick_labels(draw, g, font_tick):
         draw.text((tx, ty), str(t), font=font_tick, fill=(140, 142, 158), anchor="mm")
 
 
-def draw_gauge_dynamic_tile(g, value, min_v, max_v, accent):
+def draw_gauge_dynamic_tile(g, value, min_v, max_v, accent, accent2=None):
     """The parts that change every frame: the lit value arc, the needle,
     and the glowing hub, plus a blurred glow pass underneath them.
     Returns an RGBA tile sized g['size'] (paste at _gauge_box(g)), or
@@ -1275,7 +1449,10 @@ def draw_gauge_dynamic_tile(g, value, min_v, max_v, accent):
             else:
                 grad = cairo.LinearGradient(cx - radius, cy - radius, cx + radius, cy + radius)
                 grad.add_color_stop_rgba(0, *_cairo_rgba(dim_accent, 1))
-                grad.add_color_stop_rgba(1, *_cairo_rgba(accent, 1))
+                # The lit value arc fades toward accent2 if one's set
+                # (matching the static ring's own accent->accent2 sweep
+                # above), otherwise the original single-accent fade.
+                grad.add_color_stop_rgba(1, *_cairo_rgba(accent2 if accent2 is not None else accent, 1))
                 ctx.set_source(grad)
             ctx.set_line_width(ring_w)
             ctx.arc(cx, cy, radius, a0, val_angle)
@@ -1327,8 +1504,8 @@ def draw_gauge_dynamic_tile(g, value, min_v, max_v, accent):
     return out
 
 
-def draw_gauge_dynamic(img, g, value, min_v, max_v, accent, font_value, value_fmt):
-    tile = draw_gauge_dynamic_tile(g, value, min_v, max_v, accent)
+def draw_gauge_dynamic(img, g, value, min_v, max_v, accent, font_value, value_fmt, accent2=None):
+    tile = draw_gauge_dynamic_tile(g, value, min_v, max_v, accent, accent2)
     if tile is not None:
         img.alpha_composite(tile, _gauge_box(g)) if img.mode == "RGBA" else img.paste(tile, _gauge_box(g), tile)
 
@@ -1634,40 +1811,53 @@ def build_static_background(width, height, fonts, elements=None, background=None
 
     base = min(width, height)
     resolved = {}
-    ordered = sorted(
-        (el for el in elements if el.get("type", "gauge") == "gauge"),
-        key=lambda el: el.get("z", 0),
-    )
+    ordered = sorted(elements, key=lambda el: el.get("z", 0))
     for el in ordered:
-        g = gauge_layout(el["x"] * width, el["y"] * height, el["radius"] * base)
-        resolved[el["id"]] = g
-        accent = _element_accent(el)
-        title = STAT_DEFS[el["stat"]]["title"]
-        tile = draw_gauge_static(g, accent)
-        tile = _apply_tile_opacity(tile, el.get("opacity", 1.0))
-        # `rotation` is stored and round-trips through config/migration,
-        # but isn't actually applied to the drawing yet -- the needle
-        # and value text drawn per-frame in render_frame() would need to
-        # rotate in lockstep with the ring for a rotated gauge to look
-        # right, and nothing can set a non-zero rotation until Phase 5's
-        # canvas exists anyway. DEFAULT_ELEMENTS' rotation is always 0,
-        # so this doesn't change today's output.
-        img.paste(tile, _gauge_box(g), tile)
-        if g["radius"] >= base * BIG_GAUGE_RADIUS_FRACTION:
-            # Full tick labels + a title tucked inside the ring, same as
-            # the old "big" slots.
-            draw_tick_labels(draw, g, fonts.tick)
-            draw.text((g["cx"], g["cy"] - g["radius"] * 0.42), title, font=fonts.gauge_title,
-                       fill=(225, 226, 236), anchor="mm")
-        else:
-            # Compact: title above the ring, no tick labels -- gap scales
-            # with the gauge's own radius (continuous, replacing the old
-            # "secondary" vs "mini" kind distinction) rather than a
-            # second hardcoded threshold; see BIG_GAUGE_RADIUS_FRACTION's
-            # comment for how this was calibrated to match the old look.
-            label_gap = g["radius"] * 0.37
-            draw.text((g["cx"], g["cy"] - g["radius"] - label_gap), title, font=fonts.small_title,
-                       fill=(225, 226, 236), anchor="mm")
+        etype = el.get("type", "gauge")
+        if etype == "gauge":
+            g = gauge_layout(el["x"] * width, el["y"] * height, el["radius"] * base)
+            resolved[el["id"]] = g
+            accent = _element_accent(el)
+            accent2 = _element_accent2(el)
+            title = STAT_DEFS[el["stat"]]["title"]
+            tile = draw_gauge_static(g, accent, accent2)
+            tile = _apply_tile_opacity(tile, el.get("opacity", 1.0))
+            # `rotation` is stored and round-trips through config/
+            # migration, but isn't actually applied to the drawing yet
+            # -- the needle and value text drawn per-frame in
+            # render_frame() would need to rotate in lockstep with the
+            # ring for a rotated gauge to look right, and nothing can
+            # set a non-zero rotation until Phase 5's canvas exists
+            # anyway. DEFAULT_ELEMENTS' rotation is always 0, so this
+            # doesn't change today's output.
+            img.paste(tile, _gauge_box(g), tile)
+            if g["radius"] >= base * BIG_GAUGE_RADIUS_FRACTION:
+                # Full tick labels + a title tucked inside the ring,
+                # same as the old "big" slots.
+                draw_tick_labels(draw, g, fonts.tick)
+                draw.text((g["cx"], g["cy"] - g["radius"] * 0.42), title, font=fonts.gauge_title,
+                           fill=(225, 226, 236), anchor="mm")
+            else:
+                # Compact: title above the ring, no tick labels -- gap
+                # scales with the gauge's own radius (continuous,
+                # replacing the old "secondary" vs "mini" kind
+                # distinction) rather than a second hardcoded threshold;
+                # see BIG_GAUGE_RADIUS_FRACTION's comment for how this
+                # was calibrated to match the old look.
+                label_gap = g["radius"] * 0.37
+                draw.text((g["cx"], g["cy"] - g["radius"] - label_gap), title, font=fonts.small_title,
+                           fill=(225, 226, 236), anchor="mm")
+        elif etype == "text":
+            _draw_text_element(img, el, width, height)
+        elif etype == "image":
+            _draw_image_element(img, el, width, height)
+        elif etype == "graph":
+            box = _graph_box(el, width, height)
+            resolved[el["id"]] = box
+            _draw_graph_static(img, el, box, fonts)
+        # Any other/unrecognized type is skipped rather than erroring --
+        # see this function's own docstring for why (a newer canvas's
+        # element type shouldn't crash an older renderer).
 
     col_w = int(width * 0.235)
     mid_x0 = margin + col_w + int(width * 0.03)
@@ -1683,27 +1873,45 @@ def build_static_background(width, height, fonts, elements=None, background=None
     return img, layout
 
 
-def render_frame(background, layout, width, height, fonts, stats, media):
+def render_frame(background, layout, width, height, fonts, stats, media, history=None):
     """`stats` is a flat dict keyed by STAT_DEFS key -- any key can be
     missing or None, which just draws that gauge's dim track with no
     needle and "--" (see draw_gauge_dynamic_tile). Every gauge element
     reads from this same dict via its own `stat`, since any stat can be
     bound to any element; `layout["resolved"]` (built by
     build_static_background(), keyed by element id) is where each
-    element's actual on-panel position/size ended up."""
+    element's actual on-panel position/size ended up.
+
+    `history` (ROADMAP.md Phase 6) is a dict of element id -> a
+    sequence of that element's bound stat's recent values, oldest
+    first -- only graph elements read it, and only run()'s loop
+    actually maintains one (see its own comment on the per-element
+    deques it keeps across frames); every other caller either omits it
+    entirely or passes an empty dict, which just draws each graph's
+    static border with nothing plotted inside it yet."""
     img = background.copy()
     base = min(width, height)
+    history = history or {}
 
     for el in layout["elements"]:
-        if el.get("type", "gauge") != "gauge":
-            continue
-        g = layout["resolved"][el["id"]]
-        stat = STAT_DEFS[el["stat"]]
-        accent = _element_accent(el)
-        big = g["radius"] >= base * BIG_GAUGE_RADIUS_FRACTION
-        value_font = fonts.gauge_value if big else fonts.small_value
-        draw_gauge_dynamic(img, g, stats.get(el["stat"]), stat["min"], stat["max"],
-                            accent, value_font, stat["fmt"])
+        etype = el.get("type", "gauge")
+        if etype == "gauge":
+            g = layout["resolved"][el["id"]]
+            stat = STAT_DEFS[el["stat"]]
+            accent = _element_accent(el)
+            accent2 = _element_accent2(el)
+            big = g["radius"] >= base * BIG_GAUGE_RADIUS_FRACTION
+            value_font = fonts.gauge_value if big else fonts.small_value
+            draw_gauge_dynamic(img, g, stats.get(el["stat"]), stat["min"], stat["max"],
+                                accent, value_font, stat["fmt"], accent2)
+        elif etype == "graph":
+            box = layout["resolved"].get(el["id"])
+            if box is None:
+                continue
+            accent = _element_color(el, default=ACCENT_CPU)
+            _draw_graph_dynamic(img, el, box, history.get(el["id"], ()), accent)
+        # text/image elements are fully static -- baked into
+        # `background` already, nothing to redraw here.
 
     # --- middle: album art + progress + track/artist + clock ----------
     mid_x0, mid_w = layout["mid_x0"], layout["mid_w"]
@@ -1873,6 +2081,20 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     log("Streaming dashboard at 10Hz. Press Ctrl+C to stop." if stop_event is None
         else "Streaming dashboard at 10Hz.")
     target_period = 0.1  # 10Hz
+
+    # One rolling deque per graph element (ROADMAP.md Phase 6), oldest
+    # sample first -- render_frame() only reads these, it never appends
+    # to them, since it has no idea how much wall-clock time actually
+    # elapsed between frames (a busy frame can run long) but this loop
+    # does. `history_seconds` is a per-element setting (like everything
+    # else about it) so one graph can show a longer trend than another;
+    # maxlen is computed from it and target_period rather than assuming
+    # every frame lands exactly on schedule.
+    history = {
+        el["id"]: deque(maxlen=max(2, int(el.get("history_seconds", 20) / target_period)))
+        for el in elements if el.get("type") == "graph"
+    }
+
     try:
         while stop_event is None or not stop_event.is_set():
             frame_start = time.time()
@@ -1897,7 +2119,12 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
                 "battery": get_battery_percent(),
             }
 
-            img = render_frame(bg_image, layout, info.width, info.height, fonts, stats, media)
+            for graph_id, buf in history.items():
+                stat_key = next((el.get("stat") for el in elements
+                                  if el["id"] == graph_id), None)
+                buf.append(stats.get(stat_key) if stat_key else None)
+
+            img = render_frame(bg_image, layout, info.width, info.height, fonts, stats, media, history)
             screen.show(img)
 
             elapsed = time.time() - frame_start

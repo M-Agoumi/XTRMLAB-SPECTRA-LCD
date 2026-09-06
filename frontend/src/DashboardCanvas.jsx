@@ -50,10 +50,42 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function makeId(existing) {
+function makeId(existing, prefix = "el") {
   let n = existing.length + 1;
-  while (existing.some((el) => el.id === `gauge_${n}`)) n += 1;
-  return `gauge_${n}`;
+  while (existing.some((el) => el.id === `${prefix}_${n}`)) n += 1;
+  return `${prefix}_${n}`;
+}
+
+// Default field shapes for each element type ROADMAP.md Phase 6 adds
+// (gauge -- and its optional gradient `color2` -- already existed).
+// Every type shares `id`/`type`/`x`/`y`/`z`/`opacity`; the rest is
+// exactly the shape dashboard_theme.py's element handlers expect, so
+// there's nothing to translate on save -- same "no separate canvas
+// format" reasoning as the gauge elements already worked this way.
+function makeElement(type, elements, meta) {
+  const maxZ = elements.reduce((m, el) => Math.max(m, el.z ?? 0), -1);
+  const base = { x: 0.5, y: 0.5, z: maxZ + 1, opacity: 1.0 };
+  const statKeys = Object.keys(meta.stats);
+  if (type === "gauge") {
+    const used = new Set(elements.filter((e) => e.type === "gauge").map((e) => e.stat));
+    const stat = statKeys.find((k) => !used.has(k)) || statKeys[0];
+    return { id: makeId(elements, "gauge"), type: "gauge", stat, radius: 0.09,
+             rotation: 0, color: null, color2: null, ...base };
+  }
+  if (type === "text") {
+    return { id: makeId(elements, "text"), type: "text", text: "Label",
+             font_size: 0.05, color: [255, 255, 255], align: "center", ...base };
+  }
+  if (type === "graph") {
+    return { id: makeId(elements, "graph"), type: "graph", stat: statKeys[0],
+             style: "line", color: [0, 220, 255], width: 0.22, height: 0.14,
+             history_seconds: 20, ...base };
+  }
+  if (type === "image") {
+    return { id: makeId(elements, "image"), type: "image", image_path: "",
+             width: 0.15, height: 0.15, ...base };
+  }
+  return null;
 }
 
 export default function DashboardCanvas({ frameUrl, connected }) {
@@ -196,13 +228,26 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         setGuides({ x: snapX, y: snapY });
         return prev.map((it) => (it.id === drag.id ? { ...it, x: nx, y: ny } : it));
       }
-      // resize: radius (a fraction of min(REF_W, REF_H), matching how
-      // dashboard_theme.py resolves it) from the pixel distance between
-      // the element's center and the pointer -- computed in pixel space
-      // first since x/y and radius are fractions of different bases
-      // (width vs. min(width, height)).
+      // resize: gauge is a circle so one radius (a fraction of
+      // min(REF_W, REF_H), matching how dashboard_theme.py resolves
+      // it) does it, from the pixel distance between the element's
+      // center and the pointer -- computed in pixel space first since
+      // x/y and radius are fractions of different bases (width vs.
+      // min(width, height)). Graph/image are rectangles with their own
+      // independent width/height instead, resized the same way but on
+      // each axis separately; text has no box at all, so its "handle"
+      // scales font_size off the vertical drag distance instead.
       const dxPx = px * REF_W - el.x * REF_W;
       const dyPx = py * REF_H - el.y * REF_H;
+      if (el.type === "graph" || el.type === "image") {
+        const width = clamp((Math.abs(dxPx) * 2) / REF_W, 0.04, 0.9);
+        const height = clamp((Math.abs(dyPx) * 2) / REF_H, 0.04, 0.9);
+        return prev.map((it) => (it.id === drag.id ? { ...it, width, height } : it));
+      }
+      if (el.type === "text") {
+        const font_size = clamp((Math.abs(dyPx) * 2) / REF_H, 0.02, 0.25);
+        return prev.map((it) => (it.id === drag.id ? { ...it, font_size } : it));
+      }
       const distPx = Math.sqrt(dxPx * dxPx + dyPx * dyPx);
       const radius = clamp(distPx / Math.min(REF_W, REF_H), MIN_RADIUS, MAX_RADIUS);
       return prev.map((it) => (it.id === drag.id ? { ...it, radius } : it));
@@ -227,16 +272,10 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     commit(elements.map((el) => (el.id === selectedId ? { ...el, ...patch } : el)));
   };
 
-  const addGauge = () => {
+  const addElement = (type) => {
     if (!elements || !meta) return;
-    const statKeys = Object.keys(meta.stats);
-    const used = new Set(elements.map((el) => el.stat));
-    const stat = statKeys.find((k) => !used.has(k)) || statKeys[0];
-    const maxZ = elements.reduce((m, el) => Math.max(m, el.z ?? 0), -1);
-    const el = {
-      id: makeId(elements), type: "gauge", stat, x: 0.5, y: 0.5, radius: 0.09,
-      rotation: 0, color: null, opacity: 1.0, z: maxZ + 1,
-    };
+    const el = makeElement(type, elements, meta);
+    if (!el) return;
     commit([...elements, el]);
     setSelectedId(el.id);
   };
@@ -335,12 +374,15 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     <section className="panel">
       <h2>Dashboard layout</h2>
       <p className="hint">
-        Drag a gauge to move it, drag its bottom-right handle to resize, click to select.
+        Drag an element to move it, drag its handle to resize, click to select.
         {connected ? " Shown over the panel's live frame." : " Start the Dashboard to see it over the live frame."}
       </p>
 
       <div className="canvas-toolbar">
-        <button onClick={addGauge}>+ Add gauge</button>
+        <button onClick={() => addElement("gauge")}>+ Add gauge</button>
+        <button onClick={() => addElement("text")}>+ Add text</button>
+        <button onClick={() => addElement("graph")}>+ Add graph</button>
+        <button onClick={() => addElement("image")}>+ Add image</button>
         <button onClick={undo} disabled={historyRef.current.length === 0}>Undo</button>
         <button onClick={redo} disabled={futureRef.current.length === 0}>Redo</button>
         <button onClick={resetToDefaults}>Reset to defaults</button>
@@ -369,11 +411,67 @@ export default function DashboardCanvas({ frameUrl, connected }) {
             <line x1={0} y1={guides.y * REF_H} x2={REF_W} y2={guides.y * REF_H} className="canvas-guide" />
           )}
           {ordered.map((el) => {
+            const isSelected = el.id === selectedId;
+
+            if (el.type === "text") {
+              const x = el.x * REF_W;
+              const y = el.y * REF_H;
+              const fontSize = Math.max(8, (el.font_size ?? 0.05) * REF_H);
+              const color = el.color ? `rgb(${el.color[0]}, ${el.color[1]}, ${el.color[2]})` : "#fff";
+              const anchor = { left: "start", center: "middle", right: "end" }[el.align || "center"] || "middle";
+              const halfW = Math.max(24, ((el.text || "").length * fontSize) / 3.2);
+              return (
+                <g key={el.id}>
+                  {isSelected && (
+                    <rect x={x - (anchor === "start" ? 4 : anchor === "end" ? halfW * 2 - 4 : halfW)}
+                          y={y - fontSize * 0.8} width={halfW * 2} height={fontSize * 1.6}
+                          fill="none" stroke="#ffd85e" strokeDasharray="4 3" />
+                  )}
+                  <text x={x} y={y} textAnchor={anchor} dominantBaseline="middle"
+                        fontSize={fontSize} fill={color} opacity={el.opacity ?? 1}
+                        onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move", userSelect: "none" }}>
+                    {el.text || "(empty text)"}
+                  </text>
+                  {isSelected && (
+                    <rect x={x + halfW - 7} y={y + fontSize * 0.8 - 7} width={14} height={14}
+                          fill="#ffd85e" stroke="#fff" strokeWidth={1}
+                          onPointerDown={onPointerDownHandle(el)} style={{ cursor: "ns-resize" }} />
+                  )}
+                </g>
+              );
+            }
+
+            if (el.type === "graph" || el.type === "image") {
+              const w = (el.width ?? 0.2) * REF_W;
+              const h = (el.height ?? 0.14) * REF_H;
+              const x0 = el.x * REF_W - w / 2;
+              const y0 = el.y * REF_H - h / 2;
+              const accent = el.type === "graph" ? accentFor(el) : "rgb(150, 170, 200)";
+              const label = el.type === "graph" ? (meta.stats[el.stat]?.title || el.stat) : "IMAGE";
+              return (
+                <g key={el.id}>
+                  <rect x={x0} y={y0} width={w} height={h}
+                        fill={accent} fillOpacity={0.1 * (el.opacity ?? 1)}
+                        stroke={accent} strokeOpacity={el.opacity ?? 1}
+                        strokeWidth={isSelected ? 3 : 1.5}
+                        strokeDasharray={isSelected ? "6 3" : undefined}
+                        onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                  <text x={x0 + w / 2} y={y0 + h / 2} textAnchor="middle" dominantBaseline="middle"
+                        fill="#fff" fontSize={12} style={{ pointerEvents: "none" }}>
+                    {label}
+                  </text>
+                  <rect x={x0 + w - 7} y={y0 + h - 7} width={14} height={14}
+                        fill={accent} stroke="#fff" strokeWidth={1}
+                        onPointerDown={onPointerDownHandle(el)} style={{ cursor: "nwse-resize" }} />
+                </g>
+              );
+            }
+
+            // gauge (the original element type)
             const cx = el.x * REF_W;
             const cy = el.y * REF_H;
             const r = el.radius * Math.min(REF_W, REF_H);
             const accent = accentFor(el);
-            const isSelected = el.id === selectedId;
             const title = meta.stats[el.stat]?.title || el.stat;
             return (
               <g key={el.id}>
@@ -408,59 +506,211 @@ export default function DashboardCanvas({ frameUrl, connected }) {
 
       {selected && (
         <div className="canvas-props">
-          <div className="row">
-            <label>
-              Stat
-              <select value={selected.stat} onChange={(e) => updateSelected({ stat: e.target.value })}>
-                {Object.entries(meta.stats).map(([key, s]) => (
-                  <option key={key} value={key}>{s.label}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Opacity
-              <input
-                type="range" min={20} max={100}
-                value={Math.round((selected.opacity ?? 1) * 100)}
-                onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })}
-              />
-            </label>
-          </div>
-          <div className="row">
-            <label className="row-inline">
-              <input
-                type="checkbox"
-                checked={selected.color !== null}
-                onChange={(e) => updateSelected({ color: e.target.checked ? hexToRgb("#ffffff") : null })}
-              />
-              Custom color
-            </label>
-            {selected.color !== null && (
-              <input
-                type="color"
-                value={rgbToHex(selected.color)}
-                onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })}
-              />
-            )}
-            <label>
-              X %
-              <input type="number" min={0} max={100} style={{ width: "5em" }}
-                     value={Math.round(selected.x * 100)}
-                     onChange={(e) => updateSelected({ x: clamp(Number(e.target.value) / 100, 0, 1) })} />
-            </label>
-            <label>
-              Y %
-              <input type="number" min={0} max={100} style={{ width: "5em" }}
-                     value={Math.round(selected.y * 100)}
-                     onChange={(e) => updateSelected({ y: clamp(Number(e.target.value) / 100, 0, 1) })} />
-            </label>
-            <label>
-              Radius %
-              <input type="number" min={2} max={45} style={{ width: "5em" }}
-                     value={Math.round(selected.radius * 100)}
-                     onChange={(e) => updateSelected({ radius: clamp(Number(e.target.value) / 100, MIN_RADIUS, MAX_RADIUS) })} />
-            </label>
-          </div>
+          {selected.type === "text" && (
+            <>
+              <div className="row">
+                <label className="grow">
+                  Text
+                  <input type="text" value={selected.text || ""}
+                         onChange={(e) => updateSelected({ text: e.target.value })} />
+                </label>
+                <label>
+                  Align
+                  <select value={selected.align || "center"} onChange={(e) => updateSelected({ align: e.target.value })}>
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </select>
+                </label>
+              </div>
+              <div className="row">
+                <label>
+                  Color
+                  <input type="color" value={rgbToHex(selected.color || [255, 255, 255])}
+                         onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
+                </label>
+                <label>
+                  Font size %
+                  <input type="number" min={2} max={25} style={{ width: "5em" }}
+                         value={Math.round((selected.font_size ?? 0.05) * 100)}
+                         onChange={(e) => updateSelected({ font_size: clamp(Number(e.target.value) / 100, 0.02, 0.25) })} />
+                </label>
+                <label>
+                  Opacity
+                  <input type="range" min={20} max={100}
+                         value={Math.round((selected.opacity ?? 1) * 100)}
+                         onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
+                </label>
+              </div>
+            </>
+          )}
+
+          {selected.type === "graph" && (
+            <>
+              <div className="row">
+                <label>
+                  Stat
+                  <select value={selected.stat} onChange={(e) => updateSelected({ stat: e.target.value })}>
+                    {Object.entries(meta.stats).map(([key, s]) => (
+                      <option key={key} value={key}>{s.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Style
+                  <select value={selected.style || "line"} onChange={(e) => updateSelected({ style: e.target.value })}>
+                    <option value="line">Line</option>
+                    <option value="bar">Bar</option>
+                  </select>
+                </label>
+                <label>
+                  History (seconds)
+                  <input type="number" min={2} max={120} style={{ width: "5em" }}
+                         value={selected.history_seconds ?? 20}
+                         onChange={(e) => updateSelected({ history_seconds: Math.max(2, Number(e.target.value)) })} />
+                </label>
+              </div>
+              <div className="row">
+                <label>
+                  Color
+                  <input type="color" value={rgbToHex(selected.color || [0, 220, 255])}
+                         onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
+                </label>
+                <label>
+                  Opacity
+                  <input type="range" min={20} max={100}
+                         value={Math.round((selected.opacity ?? 1) * 100)}
+                         onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
+                </label>
+              </div>
+            </>
+          )}
+
+          {selected.type === "image" && (
+            <div className="row">
+              <label className="grow">
+                Image path
+                <input type="text" value={selected.image_path || ""}
+                       onChange={(e) => updateSelected({ image_path: e.target.value })}
+                       placeholder="C:\Users\you\Pictures\logo.png" />
+              </label>
+              <label>
+                Opacity
+                <input type="range" min={20} max={100}
+                       value={Math.round((selected.opacity ?? 1) * 100)}
+                       onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
+              </label>
+            </div>
+          )}
+
+          {(!selected.type || selected.type === "gauge") && (
+            <>
+              <div className="row">
+                <label>
+                  Stat
+                  <select value={selected.stat} onChange={(e) => updateSelected({ stat: e.target.value })}>
+                    {Object.entries(meta.stats).map(([key, s]) => (
+                      <option key={key} value={key}>{s.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Opacity
+                  <input
+                    type="range" min={20} max={100}
+                    value={Math.round((selected.opacity ?? 1) * 100)}
+                    onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })}
+                  />
+                </label>
+              </div>
+              <div className="row">
+                <label className="row-inline">
+                  <input
+                    type="checkbox"
+                    checked={selected.color !== null}
+                    onChange={(e) => updateSelected({ color: e.target.checked ? hexToRgb("#ffffff") : null })}
+                  />
+                  Custom color
+                </label>
+                {selected.color !== null && (
+                  <input
+                    type="color"
+                    value={rgbToHex(selected.color)}
+                    onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })}
+                  />
+                )}
+                <label className="row-inline">
+                  <input
+                    type="checkbox"
+                    checked={!!selected.color2}
+                    onChange={(e) => updateSelected({ color2: e.target.checked ? hexToRgb("#ff2ee0") : null })}
+                  />
+                  Gradient (2nd color)
+                </label>
+                {selected.color2 && (
+                  <input
+                    type="color"
+                    value={rgbToHex(selected.color2)}
+                    onChange={(e) => updateSelected({ color2: hexToRgb(e.target.value) })}
+                  />
+                )}
+              </div>
+              <div className="row">
+                <label>
+                  X %
+                  <input type="number" min={0} max={100} style={{ width: "5em" }}
+                         value={Math.round(selected.x * 100)}
+                         onChange={(e) => updateSelected({ x: clamp(Number(e.target.value) / 100, 0, 1) })} />
+                </label>
+                <label>
+                  Y %
+                  <input type="number" min={0} max={100} style={{ width: "5em" }}
+                         value={Math.round(selected.y * 100)}
+                         onChange={(e) => updateSelected({ y: clamp(Number(e.target.value) / 100, 0, 1) })} />
+                </label>
+                <label>
+                  Radius %
+                  <input type="number" min={2} max={45} style={{ width: "5em" }}
+                         value={Math.round(selected.radius * 100)}
+                         onChange={(e) => updateSelected({ radius: clamp(Number(e.target.value) / 100, MIN_RADIUS, MAX_RADIUS) })} />
+                </label>
+              </div>
+            </>
+          )}
+
+          {selected.type && selected.type !== "gauge" && (
+            <div className="row">
+              <label>
+                X %
+                <input type="number" min={0} max={100} style={{ width: "5em" }}
+                       value={Math.round(selected.x * 100)}
+                       onChange={(e) => updateSelected({ x: clamp(Number(e.target.value) / 100, 0, 1) })} />
+              </label>
+              <label>
+                Y %
+                <input type="number" min={0} max={100} style={{ width: "5em" }}
+                       value={Math.round(selected.y * 100)}
+                       onChange={(e) => updateSelected({ y: clamp(Number(e.target.value) / 100, 0, 1) })} />
+              </label>
+              {(selected.type === "graph" || selected.type === "image") && (
+                <>
+                  <label>
+                    Width %
+                    <input type="number" min={4} max={90} style={{ width: "5em" }}
+                           value={Math.round((selected.width ?? 0.2) * 100)}
+                           onChange={(e) => updateSelected({ width: clamp(Number(e.target.value) / 100, 0.04, 0.9) })} />
+                  </label>
+                  <label>
+                    Height %
+                    <input type="number" min={4} max={90} style={{ width: "5em" }}
+                           value={Math.round((selected.height ?? 0.14) * 100)}
+                           onChange={(e) => updateSelected({ height: clamp(Number(e.target.value) / 100, 0.04, 0.9) })} />
+                  </label>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="row">
             <button onClick={bringToFront}>Bring to front</button>
             <button onClick={sendToBack}>Send to back</button>
