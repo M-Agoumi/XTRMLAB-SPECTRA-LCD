@@ -50,6 +50,11 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
+function basename(path) {
+  if (!path) return "";
+  return path.split(/[\\/]/).pop();
+}
+
 function makeId(existing, prefix = "el") {
   let n = existing.length + 1;
   while (existing.some((el) => el.id === `${prefix}_${n}`)) n += 1;
@@ -103,6 +108,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
   const [npDraft, setNpDraft] = useState(null);
   const [npStatus, setNpStatus] = useState(null);
   const [npError, setNpError] = useState(null);
+  const [uploadingId, setUploadingId] = useState(null); // "background" | "nowPlaying" | an element id, or null
 
   const historyRef = useRef([]);
   const futureRef = useRef([]);
@@ -313,6 +319,29 @@ export default function DashboardCanvas({ frameUrl, connected }) {
       () => setStatus("Layout saved -- takes effect on the next Start/Apply."),
       (e) => setError(e.message)
     );
+
+  // Shared by every "pick an image" field on this canvas (background,
+  // now-playing placeholder, an image element) -- a browser file input
+  // can only hand back the picked file's bytes, never a real
+  // filesystem path, so this always goes through an actual upload:
+  // the backend copies it into its own managed image folder
+  // (image_store.py) and hands back that copy's path, which is what
+  // actually gets saved. `uploadingId` just drives a "Uploading..."
+  // label near whichever field is mid-upload.
+  const uploadImage = (id, file, onStored, onError) => {
+    if (!file) return;
+    setUploadingId(id);
+    api.uploadDashboardImage(file).then(
+      (r) => {
+        setUploadingId(null);
+        onStored(r.path);
+      },
+      (e) => {
+        setUploadingId(null);
+        onError(e.message);
+      }
+    );
+  };
 
   const updateBgDraft = (patch) => {
     setBgStatus(null);
@@ -614,10 +643,10 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           {selected.type === "image" && (
             <div className="row">
               <label className="grow">
-                Image path
-                <input type="text" value={selected.image_path || ""}
-                       onChange={(e) => updateSelected({ image_path: e.target.value })}
-                       placeholder="C:\Users\you\Pictures\logo.png" />
+                Image
+                <input type="file" accept="image/*"
+                       onChange={(e) => uploadImage(selected.id, e.target.files[0],
+                         (path) => updateSelected({ image_path: path }), setError)} />
               </label>
               <label>
                 Opacity
@@ -625,6 +654,10 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                        value={Math.round((selected.opacity ?? 1) * 100)}
                        onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
               </label>
+              {selected.image_path && (
+                <span className="hint">{basename(selected.image_path)}</span>
+              )}
+              {uploadingId === selected.id && <span className="hint">Uploading…</span>}
             </div>
           )}
 
@@ -776,19 +809,21 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           {bgDraft.mode === "image" && (
             <div className="row">
               <label className="grow">
-                Image path
+                Image
                 <input
-                  type="text"
-                  value={bgDraft.image_path || ""}
-                  onChange={(e) => updateBgDraft({ image_path: e.target.value })}
-                  placeholder="C:\Users\you\Pictures\background.jpg"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => uploadImage("background", e.target.files[0],
+                    (path) => updateBgDraft({ image_path: path }), setBgError)}
                 />
               </label>
+              {bgDraft.image_path && <span className="hint">{basename(bgDraft.image_path)}</span>}
+              {uploadingId === "background" && <span className="hint">Uploading…</span>}
             </div>
           )}
           <p className="hint">
             {bgDraft.mode === "image"
-              ? "Full path to an image file on this PC -- falls back to the default background if it can't be opened."
+              ? "Pick an image on this PC -- it's copied into this app's own folder, so moving or deleting the original afterward won't break it. Falls back to the default background if none is set."
               : "The color scheme tints the gradient and, for Grid/Starfield/Radial, the whole background."}
           </p>
           <div className="row">
@@ -806,12 +841,19 @@ export default function DashboardCanvas({ frameUrl, connected }) {
             <label className="grow">
               Placeholder image
               <input
-                type="text"
-                value={npDraft.default_art_path || ""}
-                onChange={(e) => updateNpDraft({ default_art_path: e.target.value })}
-                placeholder="C:\Users\you\Pictures\logo.png (blank = plain drawn placeholder)"
+                type="file"
+                accept="image/*"
+                onChange={(e) => uploadImage("nowPlaying", e.target.files[0],
+                  (path) => updateNpDraft({ default_art_path: path }), setNpError)}
               />
             </label>
+            {npDraft.default_art_path && (
+              <>
+                <span className="hint">{basename(npDraft.default_art_path)}</span>
+                <button type="button" onClick={() => updateNpDraft({ default_art_path: "" })}>Clear</button>
+              </>
+            )}
+            {uploadingId === "nowPlaying" && <span className="hint">Uploading…</span>}
           </div>
           <div className="row">
             <label className="grow">

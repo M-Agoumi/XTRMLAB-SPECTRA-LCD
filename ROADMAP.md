@@ -818,6 +818,33 @@ title, and the merge-safe endpoint round-trips without touching other
 dashboard config) and via a Playwright session against the real built
 frontend + live backend confirming the section saves and persists.
 
+**Fix: image settings now store a managed copy, and are picked, not
+typed.** Every image setting (dashboard background, the "nothing
+playing" placeholder, a Phase 6 image element) used to store whatever
+path a user typed or browsed to, verbatim -- fragile, since moving,
+renaming, or deleting that file afterward silently breaks the feature
+with no obvious explanation (the render code's tolerant catch-and-
+fall-back was exactly what made this easy to overlook). New
+`image_store.py` copies a picked image into an app-owned, per-user
+folder (`%LOCALAPPDATA%\HongtaiScreen\images\`, created on first use)
+the moment it's picked, content-hash deduplicated and PIL-validated,
+and it's that copy's path that gets saved -- the original file can
+move or disappear afterward with no effect. The web UI's three
+plain-text "type a path" fields are now real file pickers: picking a
+file uploads its bytes to a new `POST /api/dashboard/upload_image`
+(`controller.upload_dashboard_image()`), which stores it and hands
+back the managed path for the existing merge-safe endpoints to save,
+with the stored file's name shown as a caption and a Clear button on
+the placeholder-image field. `app.py`'s Tkinter Browse dialogs now
+route the real path `askopenfilename()` returns through
+`image_store.store_image_file()` and keep the returned managed-copy
+path instead of the raw browsed one, so Tkinter gets the same fix.
+Verified headlessly (dedup, validation, survives deleting the
+original, full upload -> save round-trip for all three locations) and
+via a Playwright session against the real built frontend + live
+backend picking a real file for background/now-playing/element,
+confirming the managed path is what's saved and no console errors.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files

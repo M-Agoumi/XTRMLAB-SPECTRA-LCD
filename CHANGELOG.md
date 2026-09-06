@@ -232,6 +232,39 @@ dashboard designer) this is laying groundwork for.
   merge-safe endpoint without disturbing other dashboard config) and
   via a Playwright session against the real built frontend + live
   backend confirming the new section saves and persists correctly.
+- **Every image setting now stores a managed copy instead of a raw
+  path, and is picked, not typed.** Dashboard background, the
+  "nothing playing" placeholder, and a Phase 6 image element all used
+  to store whatever path a user typed or browsed to, verbatim -- fine
+  until that file got moved, renamed, or deleted, at which point the
+  feature silently fell back to a placeholder with no obvious
+  explanation why. New `image_store.py` copies a picked image into
+  this app's own per-user folder (`%LOCALAPPDATA%\HongtaiScreen\
+  images\`, created on first use), deduplicated by content hash so
+  re-picking the same file reuses the existing copy, validated via
+  PIL so a non-image or oversized (>25MB) file is rejected up front
+  with a clear error instead of failing silently later at render
+  time. It's that stored copy's path that ends up in
+  `app_config.json` -- the original file can move or disappear
+  afterward with zero effect. The web UI's three plain-text "type a
+  path" fields are now real `<input type="file">` pickers: picking a
+  file uploads its bytes to a new `POST /api/dashboard/upload_image`
+  (`controller.upload_dashboard_image()`), which stores it via
+  `image_store` and hands back the managed path for the existing
+  merge-safe save endpoints to persist, same as before. Each field
+  shows the stored file's name as a caption, and the placeholder-image
+  field gained a Clear button. `app.py`'s Tkinter Browse dialogs
+  (`_pick_dash_art`/`_pick_dash_bg_image`) now route the real path
+  `askopenfilename()` returns through `image_store.store_image_file()`
+  and keep the returned managed-copy path instead of the raw browsed
+  one, so Tkinter gets the same fix. Verified headlessly (folder
+  auto-creation, content-hash dedup, stored copy survives deleting the
+  original, rejects a non-image and an oversized file with a clear
+  `ValueError`, and the full upload -> save round-trip for background/
+  now-playing/element) and via a Playwright session against the real
+  built frontend + live backend picking a real file for all three
+  locations, confirming the upload, the managed path being what's
+  saved, the Clear button, and no console errors.
 
 ## [1.0.0] — 2026-08-29
 
