@@ -75,6 +75,14 @@ export function saveDashboardElements(elements) {
   }).then(asJson);
 }
 
+export function saveDashboardBackground(background) {
+  return fetch("/api/dashboard/background", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ background }),
+  }).then(asJson);
+}
+
 export function saveDashboardPreset(name, elements) {
   return fetch("/api/dashboard/presets", {
     method: "POST",
