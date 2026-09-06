@@ -60,14 +60,21 @@ from ..driver.hongtai_screen import HongtaiScreen
 
 
 def run(url, port=None, interval=0.1, reload_every=None, brightness=90,
-        stop_event=None, log=print, screen_factory=HongtaiScreen, on_connected=None):
+        stop_event=None, log=print, screen_factory=HongtaiScreen, on_connected=None,
+        screen=None):
     """Runs until stop_event is set (or forever if stop_event is None --
     the CLI entry point relies on Ctrl+C instead). Pulled out of main()
     so a GUI can drive this theme in a background thread.
 
     `on_connected(screen)`, if given, is called once right after connect()
     so a GUI can keep a live reference (e.g. for a brightness slider that
-    should apply immediately instead of only on the next Start)."""
+    should apply immediately instead of only on the next Start).
+
+    `screen`, if given, is an ALREADY-CONNECTED HongtaiScreen to render
+    onto directly -- see demo_clock.py's run() docstring for the full
+    explanation (screen_engine.py's live theme-switching relies on this).
+    The Playwright browser itself is still opened and closed fresh every
+    call either way -- only the panel connection is ever shared."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -76,12 +83,16 @@ def run(url, port=None, interval=0.1, reload_every=None, brightness=90,
         log("    playwright install chromium")
         return
 
-    screen = screen_factory(port)
-    info = screen.connect()
-    log(f"Connected: {info.width}x{info.height}, firmware {info.version}")
+    owns_screen = screen is None
+    if owns_screen:
+        screen = screen_factory(port)
+        info = screen.connect()
+        log(f"Connected: {info.width}x{info.height}, firmware {info.version}")
+        if on_connected is not None:
+            on_connected(screen)
+    else:
+        info = screen.info
     screen.set_brightness(brightness)
-    if on_connected is not None:
-        on_connected(screen)
 
     with sync_playwright() as p:
         try:
@@ -89,7 +100,8 @@ def run(url, port=None, interval=0.1, reload_every=None, brightness=90,
         except Exception as e:  # noqa: BLE001 -- almost always "chromium not installed"
             log(f"Could not launch Chromium ({e}).")
             log("If this is the first time using this theme, run: playwright install chromium")
-            screen.close()
+            if owns_screen:
+                screen.close()
             return
 
         page = browser.new_page(viewport={"width": info.width, "height": info.height})
@@ -101,7 +113,8 @@ def run(url, port=None, interval=0.1, reload_every=None, brightness=90,
         except Exception as e:  # noqa: BLE001
             log(f"Couldn't load {url}: {e}")
             browser.close()
-            screen.close()
+            if owns_screen:
+                screen.close()
             return
 
         # Hide scrollbars so they don't show up as artifacts in the capture.
@@ -141,8 +154,11 @@ def run(url, port=None, interval=0.1, reload_every=None, brightness=90,
         finally:
             browser.close()
 
-    screen.close()
-    log("Stopped, disconnected cleanly.")
+    if owns_screen:
+        screen.close()
+        log("Stopped, disconnected cleanly.")
+    else:
+        log("Stopped.")
 
 
 def main():

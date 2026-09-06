@@ -95,20 +95,35 @@ def draw_bar(draw, x, y, w, h, percent, label):
 
 
 def run(port=None, brightness=90, stop_event=None, log=print, screen_factory=HongtaiScreen,
-        on_connected=None):
+        on_connected=None, screen=None):
     """Runs until stop_event is set (or forever if stop_event is None --
     the CLI entry point relies on Ctrl+C instead). Pulled out of main()
     so a GUI can drive this theme in a background thread.
 
     `on_connected(screen)`, if given, is called once right after connect()
     so a GUI can keep a live reference (e.g. for a brightness slider that
-    should apply immediately instead of only on the next Start)."""
-    screen = screen_factory(port)
-    info = screen.connect()
-    log(f"Connected: {info.width}x{info.height}, firmware {info.version}")
+    should apply immediately instead of only on the next Start).
+
+    `screen`, if given, is an ALREADY-CONNECTED HongtaiScreen to render
+    onto directly -- `port`/`screen_factory`/`on_connected` are all
+    ignored in that case, and this function does not close it when it
+    returns (the caller owns its lifetime). This is what lets
+    screen_engine.py switch themes without reopening the serial port:
+    the engine connects once, then calls run() for whichever theme is
+    active with the same screen object, over and over across switches.
+    Plain CLI/GUI use (screen=None, the default) is unaffected -- this
+    behaves exactly as before, connecting and disconnecting its own
+    screen every time."""
+    owns_screen = screen is None
+    if owns_screen:
+        screen = screen_factory(port)
+        info = screen.connect()
+        log(f"Connected: {info.width}x{info.height}, firmware {info.version}")
+        if on_connected is not None:
+            on_connected(screen)
+    else:
+        info = screen.info
     screen.set_brightness(brightness)
-    if on_connected is not None:
-        on_connected(screen)
 
     log("Streaming live clock at 10Hz." + ("" if stop_event is not None else " Press Ctrl+C to stop."))
     target_period = 0.1  # 10Hz -- times itself so a slow frame doesn't push later ones late
@@ -126,8 +141,11 @@ def run(port=None, brightness=90, stop_event=None, log=print, screen_factory=Hon
     except KeyboardInterrupt:
         pass
     finally:
-        screen.close()
-        log("Stopped, disconnected cleanly.")
+        if owns_screen:
+            screen.close()
+            log("Stopped, disconnected cleanly.")
+        else:
+            log("Stopped.")
 
 
 def main():

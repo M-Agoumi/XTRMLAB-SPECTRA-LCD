@@ -479,6 +479,82 @@ theme_kwargs.py error) -- i.e. the whole settings-form-to-running-theme
 path works end to end. Not yet checked by eye in a real browser against
 a real video file/URL and real hardware.
 
+### Phase 3.5 — Live theme switching (no reconnect) — ✅ DONE (pending a real-machine pass)
+
+Not on the original plan -- added after testing Phase 2c/3 on real
+hardware surfaced a design smell: every theme module (`dashboard_theme.py`,
+`video_theme.py`, `webpage_theme.py`, `demo_clock.py`) connected its own
+`HongtaiScreen`, ran its own render loop, and closed its own connection,
+so switching themes meant fully disconnecting one and reconnecting the
+other from scratch even though the panel doesn't care which theme is
+driving it -- it just wants a stream of frames on an open serial port.
+Producing a frame is a theme's job; owning the connection never needed
+to be, and each theme's own `screen_factory` docstring already said as
+much (aspirationally -- nothing actually let a caller hand in a
+pre-connected screen until now).
+
+**Theme modules (`demo_clock.py`, `video_theme.py`, `webpage_theme.py`,
+`dashboard_theme.py`):** `run()` now takes an optional `screen=`. When
+given an already-connected `HongtaiScreen`, a theme skips
+`screen_factory(port)`/`.connect()`/`on_connected()` entirely, reads
+`info` straight off it, and -- critically -- never closes it in
+`finally`. `port`/`screen_factory`/`on_connected` are ignored in that
+case. Plain CLI/GUI use (`screen=None`, the default, what `app.py` and
+the CLI entry points still do) is unaffected: connects and disconnects
+its own screen exactly like before. `dashboard_theme.py`'s
+`start_media_polling()`/`start_systeminfos()` were both confirmed
+already idempotent (guarded by module-level flags), so switching away
+from and back to Dashboard repeatedly doesn't spawn duplicate
+subprocess/polling threads.
+
+**New `screen_engine.py` (`ScreenEngine`), replacing `ThemeWorker` for
+`controller.py` only** (`app.py`'s Tkinter UI keeps `ThemeWorker`
+untouched -- this is additive, not a breaking change to the existing
+GUI). One dedicated background thread owns the connection for the
+controller's whole lifetime: `switch(label, target, kwargs, port)`
+interrupts whatever's running (via its `stop_event`) and starts the new
+target against the *same* connection, connecting only if nothing was
+connected yet; `stop()` interrupts and fully disconnects. A theme
+ending on its own (a non-looping video finishing, a page load
+failure) still disconnects, same as the old per-theme behavior. Errors
+that aren't from an intentional stop/switch get `ThemeWorker`'s same
+recovery treatment -- `blind_restart()` (a real firmware restart, not
+just a reconnect), then reconnect and retry, up to `RECOVERY_ATTEMPTS`
+(3) -- and give up with a logged message if the panel never comes back.
+
+**`controller.py`:** now builds one `ScreenEngine` at construction
+instead of a `ThemeWorker` per `start()`. `start()` no longer raises
+"already running" -- calling it while a different theme is active *is*
+a live switch, handled by `ScreenEngine.switch()`. `apply()` no longer
+stops-then-waits-then-restarts (the old `_pending_restart` +
+`_watch_loop` dance, now deleted entirely); it just re-switches to the
+currently-active theme with freshly-read config, which reuses the
+connection like any other switch. `/api/start`, `/api/stop`,
+`/api/apply` on `control_server.py` needed zero changes -- the new
+behavior falls straight out of what `controller.py` already called.
+
+**Frontend (`App.jsx`):** the theme picker and Start button are no
+longer locked while a theme is running -- Start's label becomes
+"Switch" once something's active, and picking a different theme + Start
+now switches live instead of requiring Stop first.
+
+Verified headlessly with fake/mocked hardware (no real panel needed for
+any of this): a switch reuses the same connection with zero reconnects
+and fires `on_connected` only once across multiple switches; a natural
+finish (theme's `run()` returning on its own) disconnects and fires
+`on_finished`; a simulated failure not caused by an intentional
+stop/switch retries with `blind_restart()` between attempts and gives
+up after `RECOVERY_ATTEMPTS`; an error that races with an intentional
+stop is treated as "stopped", not as a fault needing recovery; and
+`controller.py`'s `start()`/`apply()`/`stop()` drive all of the above
+correctly end to end (switching live, Apply without disconnecting, Stop
+actually disconnecting), plus a full `control_server.py` boot-and-query
+smoke test with no hardware attached. **Not yet verified on real
+hardware**: an actual live switch between two real theme streams (does
+the panel's decode path handle a mid-stream target swap cleanly?), and
+whether `blind_restart()`'s real serial recovery path behaves the same
+under this engine as it did under `ThemeWorker`.
+
 ### Phase 4 — Layout model: slots → elements (backend)
 
 The core data model change, and the thing that actually unblocks the

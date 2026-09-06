@@ -1661,7 +1661,7 @@ def render_frame(background, layout, width, height, fonts, stats, media):
 
 def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
         brightness=90, slots=None, background=None, stop_event=None, log=print,
-        screen_factory=HongtaiScreen, on_connected=None):
+        screen_factory=HongtaiScreen, on_connected=None, screen=None):
     """Runs the dashboard until stop_event is set (or forever, if
     stop_event is None -- the CLI entry point below relies on Ctrl+C /
     KeyboardInterrupt instead in that case). Pulled out of main() so a
@@ -1687,6 +1687,12 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     things like the brightness slider can apply instantly (screen.set_
     brightness() is safe to call from another thread; see the write lock
     in hongtai_screen.py) instead of only taking effect on the next Start.
+
+    `screen`, if given, is an ALREADY-CONNECTED HongtaiScreen to render
+    onto directly -- `port`/`screen_factory`/`on_connected` are all
+    ignored in that case, and this function does not close it when it
+    returns. See demo_clock.py's run() docstring for the full
+    explanation (screen_engine.py's live theme-switching relies on this).
     """
     if cairo is None:
         log("This theme needs pycairo to draw the gauges, and it isn't installed")
@@ -1700,12 +1706,16 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
 
     set_default_art_path(default_art_path)
 
-    screen = screen_factory(port)
-    info = screen.connect()
-    log(f"Connected: {info.width}x{info.height}, firmware {info.version}")
+    owns_screen = screen is None
+    if owns_screen:
+        screen = screen_factory(port)
+        info = screen.connect()
+        log(f"Connected: {info.width}x{info.height}, firmware {info.version}")
+        if on_connected is not None:
+            on_connected(screen)
+    else:
+        info = screen.info
     screen.set_brightness(brightness)
-    if on_connected is not None:
-        on_connected(screen)
 
     if enable_web:
         screen.enable_web_mirror(port=web_port, log=log)
@@ -1761,9 +1771,12 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     except KeyboardInterrupt:
         pass
     finally:
-        screen.close(log=log)
+        if owns_screen:
+            screen.close(log=log)
+            log("Stopped, disconnected cleanly.")
+        else:
+            log("Stopped.")
         stop_systeminfos()
-        log("Stopped, disconnected cleanly.")
 
 
 def main():
