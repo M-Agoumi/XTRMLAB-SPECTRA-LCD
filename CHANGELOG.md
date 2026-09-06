@@ -68,6 +68,14 @@ dashboard designer) this is laying groundwork for.
   second one. Now anchored on `paths.py`'s own file location instead,
   so every entry point agrees on the same directory.
 
+- Worked around a Windows-only cosmetic gap in Phase 2c: pywebview's
+  `icon=` only works on GTK/Qt (Linux); on Windows it's meant to come
+  from freezing the app into a `.exe` with a baked-in icon resource
+  (Phase 7's job). Until then, `scripts/run_ui.py` pushes `icon.ico`
+  onto the window's `HWND` directly via `WM_SETICON` once it's shown,
+  using the same `FindWindowW`-by-title approach `single_instance.py`
+  already uses. Best-effort and unverified on a real machine yet.
+
 ## [1.0.0] — 2026-08-29
 
 First tagged release. Everything below shipped before this tag existed

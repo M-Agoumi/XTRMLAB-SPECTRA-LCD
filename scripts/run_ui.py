@@ -36,9 +36,7 @@ def main(argv=None):
     ap.add_argument("--height", type=int, default=720)
     ap.add_argument("--title", default="Hongtai Screen")
     ap.add_argument("--icon", default=None,
-                     help="path to a .ico for the window/taskbar icon (Windows) -- "
-                          "optional, and silently skipped on a pywebview version "
-                          "that doesn't support it")
+                     help="path to a .ico for the window/taskbar icon")
     args = ap.parse_args(argv)
 
     try:
@@ -47,16 +45,50 @@ def main(argv=None):
         print("pywebview isn't installed -- run: pip install pywebview", file=sys.stderr)
         raise SystemExit(1)
 
-    webview.create_window(args.title, args.url, width=args.width, height=args.height)
+    window = webview.create_window(args.title, args.url, width=args.width, height=args.height)
+
+    if args.icon:
+        # pywebview's own `icon=` on start() only does anything on GTK/Qt
+        # (Linux) -- per its docs, on every other platform "icon is set
+        # during freezing" i.e. baked into a PyInstaller .exe (see
+        # packaging/hongtai_screen.spec's own `icon=`), which is what
+        # ROADMAP.md Phase 7 eventually does. Running as a plain
+        # `python.exe script.py` in the meantime, there's no .exe of
+        # ours to bake an icon into, so Windows shows python.exe's own
+        # icon in the title bar/taskbar instead. Worked around here the
+        # same way single_instance.py already finds another window (by
+        # its exact title, via FindWindowW) -- once the window is
+        # showing, push the .ico onto it directly with WM_SETICON, which
+        # is what both the title bar and the taskbar button actually
+        # read. Best-effort and Windows-only; never blocks the window
+        # from opening if anything here goes wrong.
+        def _apply_windows_icon():
+            if sys.platform != "win32":
+                return
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                IMAGE_ICON, LR_LOADFROMFILE = 1, 0x00000010
+                WM_SETICON, ICON_SMALL, ICON_BIG = 0x0080, 0, 1
+                hwnd = user32.FindWindowW(None, args.title)
+                if not hwnd:
+                    return
+                for icon_slot, size in ((ICON_SMALL, 16), (ICON_BIG, 32)):
+                    hicon = user32.LoadImageW(0, args.icon, IMAGE_ICON, size, size, LR_LOADFROMFILE)
+                    if hicon:
+                        user32.SendMessageW(hwnd, WM_SETICON, icon_slot, hicon)
+            except Exception:  # noqa: BLE001 -- cosmetic only, never fatal
+                pass
+
+        try:
+            window.events.shown += _apply_windows_icon
+        except Exception:  # noqa: BLE001 -- older pywebview without .events.shown
+            pass
+
     try:
-        if args.icon:
-            webview.start(icon=args.icon)
-        else:
-            webview.start()
+        webview.start(icon=args.icon) if args.icon else webview.start()
     except TypeError:
-        # Older pywebview without the `icon` kwarg on start() -- the
-        # window/taskbar icon just falls back to whatever default
-        # WebView2 uses instead of failing the whole launch over it.
+        # Older pywebview without the `icon` kwarg on start() at all.
         webview.start()
 
 
