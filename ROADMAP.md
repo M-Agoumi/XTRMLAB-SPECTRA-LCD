@@ -373,7 +373,7 @@ straight to the driver as if it were an openable device path, instead
 of translating it back to the real `COM3`-style path the way `app.py`
 already does -- fixed to do the same rescan-and-match `app.py` uses.
 
-#### Phase 2c — UI process spawn/kill wiring — ✅ DONE (pending a real-machine pass)
+#### Phase 2c — UI process spawn/kill wiring — ✅ DONE
 
 The actual two-process design Phase 0 validated, wired up end to end
 for the first time: `backend_app.py` (`scripts/run_v2_app.py`) is a
@@ -408,6 +408,39 @@ reports `False` off Windows) -- that path, `run_ui.py` actually
 opening a window, WebView2 availability, and the real spawn/kill
 memory numbers all still need one real-machine pass, same caveat every
 other phase has had.
+
+**Confirmed on the real machine, and the two-process design works as
+designed:** tray icon (Show/Stop screen/Quit) all work; the window
+opens as a genuinely separate process, and that process fully exits
+when the window is closed. Memory: backend **~80MB**, UI process
+**~40MB** while open -- both comfortably under Phase 0's 100MB
+background cap, and the UI process in particular came in far under
+Phase 0's ~390MB estimate (that spike's throwaway window loaded a
+blank/trivial page; this one's a small React app talking to a live
+API, evidently not enough extra weight to move the needle much against
+WebView2's own baseline). One real gap the first test caught: starting
+via `scripts/run_backend.py` instead of `scripts/run_v2_app.py` looks
+almost identical from the browser (same control API, same frontend)
+but has no tray icon, no startup/shortcut endpoints, and no
+live-brightness wiring at all -- worth remembering these are two
+different entry points for two different purposes (`run_backend.py`:
+curl-testing the API alone; `run_v2_app.py`: the actual app), not
+interchangeable.
+
+One known, accepted limitation: the popup window's title-bar/taskbar
+icon still shows Python's own default rather than `icon.ico`.
+pywebview's `icon=` on `webview.start()` is GTK/Qt (Linux) only by its
+own design -- on Windows "icon is set during freezing" (i.e. baked
+into a PyInstaller `.exe`'s resources, which `packaging/hongtai_screen.spec`
+already does, and which is what Phase 7's cutover ships). Worked
+around in the meantime with the same `FindWindowW`-by-title trick
+`single_instance.py` already uses elsewhere in this codebase: once the
+window is shown, `run_ui.py` pushes `icon.ico` onto its `HWND`
+directly via `WM_SETICON` (both `ICON_SMALL`/`ICON_BIG`), which is
+what the title bar and taskbar button actually read. Best-effort,
+Windows-only, and unverified from here (no Windows/WebView2 in the
+sandbox) -- next real-machine pass should confirm whether it actually
+fixes the icon or the real fix has to wait for Phase 7's frozen build.
 
 ### Phase 3 — Port the simple themes
 
