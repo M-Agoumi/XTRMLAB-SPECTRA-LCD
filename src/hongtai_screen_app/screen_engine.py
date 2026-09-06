@@ -72,8 +72,16 @@ class ScreenEngine:
         #   reconnect) -- NOT fired again on every switch(), since a
         #   switch reuses the existing connection.
         # on_disconnected(): fired once the screen is actually closed --
-        #   an explicit stop(), giving up after RECOVERY_ATTEMPTS, or
-        #   close(). Never fired for a switch() (nothing gets closed).
+        #   an explicit stop(), a theme ending on its own, or giving up
+        #   after RECOVERY_ATTEMPTS. Never fired for a switch() (nothing
+        #   gets closed), and deliberately NOT fired for close() either
+        #   (see _teardown()): close() means the whole process is
+        #   exiting, not that the user asked to stop, and
+        #   AppController._on_screen_disconnected() treats this callback
+        #   as "nothing to auto-resume next launch" -- which would be
+        #   wrong here, since something *was* still running right up
+        #   until the process quit and should come back on the next
+        #   launch, exactly like app.py's Tkinter app already preserves.
         # on_finished(label): fired when the given theme's run() returns
         #   on its own (e.g. a non-looping video reaching its last
         #   frame) rather than being interrupted by switch()/stop().
@@ -174,12 +182,26 @@ class ScreenEngine:
 
     def _teardown(self):
         """Closes the live connection, if there is one, and resets
-        "what's running" state. Safe to call when already torn down."""
+        "what's running" state. Safe to call when already torn down.
+
+        Skips on_disconnected() when this teardown is happening because
+        close() is shutting the whole engine down (self._shutdown is
+        already True by the time _teardown() runs in that case -- see
+        close()): the port still needs to be physically released either
+        way, but "the process is exiting" is not the same event as "the
+        user stopped the theme" or "it gave up/finished on its own",
+        and on_disconnected() is what AppController uses to decide
+        there's nothing left to auto-resume next launch. Firing it here
+        was wiping that resume marker on every clean quit/restart, so
+        quitting while something was running "forgot" it by the next
+        launch instead of coming back up the way app.py's Tkinter app
+        always has."""
         with self._lock:
             screen = self._screen
             self._screen = None
             self._current_label = None
             self._current_stop_event = None
+            shutting_down = self._shutdown
         if screen is None:
             return
         try:
@@ -187,7 +209,7 @@ class ScreenEngine:
         except Exception as e:  # noqa: BLE001 -- surfaced in the log either way
             self.log(f"(disconnect error: {e})")
         self.log("Stopped, disconnected cleanly.")
-        if self.on_disconnected is not None:
+        if self.on_disconnected is not None and not shutting_down:
             try:
                 self.on_disconnected()
             except Exception:  # noqa: BLE001 -- a callback bug shouldn't wedge the engine

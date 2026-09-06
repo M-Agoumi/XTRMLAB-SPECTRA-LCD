@@ -169,6 +169,24 @@ dashboard designer) this is laying groundwork for.
   real built frontend and a live backend: switching to Custom image,
   typing a path, and saving all worked with no console errors, and the
   save persisted correctly server-side.
+- **Fixed a real-usage bug in the v2 backend's auto-resume**: quitting
+  `backend_app.py` (the v2 tray app) while a theme was running never
+  came back up on the next launch, even though `app.py`'s Tkinter app
+  has always preserved that. Root cause: `ScreenEngine.close()`
+  (called on process shutdown, to release the serial port) and
+  `ScreenEngine.stop()` (an explicit Stop) both funneled through the
+  same `_teardown()` -> `on_disconnected()` callback, which
+  `AppController` treats as "nothing left to auto-resume" and clears
+  `auto_resume_tab` accordingly -- correct for an explicit Stop, wrong
+  for a plain quit while something was still running. `_teardown()`
+  now skips firing `on_disconnected()` when the teardown is happening
+  because `close()` is shutting the whole engine down (it still
+  physically closes the port either way), so the last theme started
+  is what the next launch resumes, exactly as `app.py` already does.
+  Verified headlessly with a fake screen/target: quitting mid-run
+  preserves and persists `auto_resume_tab`; an explicit `stop()` still
+  clears it; switching themes still reuses the connection without a
+  false disconnect in between.
 
 ## [1.0.0] — 2026-08-29
 
