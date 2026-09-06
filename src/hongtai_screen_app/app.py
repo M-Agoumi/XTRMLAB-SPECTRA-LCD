@@ -911,21 +911,33 @@ class App(tk.Tk):
     # config persistence
     # ------------------------------------------------------------------ #
     def _save_current_config(self):
+        # Merge into the existing "dashboard" dict rather than replacing
+        # it wholesale -- this tab only has controls for a subset of its
+        # keys (enable_web/web_port/default_art_path/not_playing_message/
+        # slots/background). "elements" and "presets" are owned by the
+        # web UI's design canvas (see controller.py's
+        # save_dashboard_elements()/save_dashboard_preset()) and never
+        # have Tkinter controls at all -- overwriting the dict from
+        # scratch here would silently wipe out any layout/presets saved
+        # from the web canvas the moment this Tkinter window saves
+        # anything (Stop, closing to tray, changing any other tab...).
+        dashboard_cfg = dict(self.cfg.get("dashboard") or {})
+        dashboard_cfg.update({
+            "enable_web": self.dash_web_enable.get(),
+            "web_port": self.dash_web_port.get(),
+            "default_art_path": self.dash_art_path.get().strip() or None,
+            "not_playing_message": self.dash_not_playing_message.get().strip() or None,
+            "slots": {slot_key: self._stat_label_to_key.get(
+                          var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
+                      for slot_key, var in self.dash_slot_vars.items()},
+            "background": self._dash_background_dict(),
+        })
         self.cfg.update({
             "port": self.port_var.get(),
             "brightness": self.brightness_var.get(),
             "active_tab": self.notebook.index(self.notebook.select()),
             "auto_resume_tab": self._auto_resume_tab,
-            "dashboard": {
-                "enable_web": self.dash_web_enable.get(),
-                "web_port": self.dash_web_port.get(),
-                "default_art_path": self.dash_art_path.get().strip() or None,
-                "not_playing_message": self.dash_not_playing_message.get().strip() or None,
-                "slots": {slot_key: self._stat_label_to_key.get(
-                              var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
-                          for slot_key, var in self.dash_slot_vars.items()},
-                "background": self._dash_background_dict(),
-            },
+            "dashboard": dashboard_cfg,
             "video": {
                 "path": self.video_path.get().strip() or None,
                 "loop": self.video_loop.get(),

@@ -265,6 +265,22 @@ dashboard designer) this is laying groundwork for.
   built frontend + live backend picking a real file for all three
   locations, confirming the upload, the managed path being what's
   saved, the Clear button, and no console errors.
+- **Fixed data loss: saving anything from Tkinter's Dashboard tab could
+  silently wipe out a layout/presets saved from the web canvas.**
+  `app.py`'s `_save_current_config()` rebuilt the entire "dashboard"
+  config dict from scratch out of its own controls (`enable_web`,
+  `web_port`, `default_art_path`, `not_playing_message`, `slots`,
+  `background`) every time it saved -- which happens on far more than
+  just an explicit Save (closing the window to tray, Stop, switching
+  themes). Since `elements` and `presets` only ever exist as web-canvas
+  concepts with no Tkinter controls at all, they got dropped from the
+  dict every single time, silently discarding any custom layout or
+  saved preset the moment the Tkinter app touched its config next.
+  Fixed to merge its own fields into the existing "dashboard" dict
+  instead of replacing it, the same merge-safe pattern the web UI's
+  save endpoints already use. Verified with a logic-level test
+  confirming `elements`/`presets` survive a save while the
+  Tkinter-controlled fields still update correctly.
 
 ## [1.0.0] — 2026-08-29
 
