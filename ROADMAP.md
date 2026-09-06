@@ -326,7 +326,7 @@ run from a fresh checkout now writes `app_config.json` at the repo
 root regardless of entry point, and a stray `scripts/app_config.json`
 is no longer created.
 
-#### Phase 2b — Frontend scaffold — ✅ DONE (pending a look on the real machine)
+#### Phase 2b — Frontend scaffold — ✅ DONE
 
 A minimal Vite + React shell (`frontend/`) that talks to the Phase 2a
 API: connection status, the live preview (`/frame.jpg`, polled at
@@ -362,17 +362,52 @@ bundle's `index.html` and its hashed JS asset are served correctly by
 rest of the API keep working unchanged alongside the static handler;
 a raw-socket path-traversal attempt (`GET /../pyproject.toml`, past
 `urlparse` which doesn't normalize `..` itself) correctly 404s instead
-of returning a repo file. Not yet checked by eye on a real screen --
-whether the layout/preview/controls actually look and feel right in a
-real browser against real hardware is still open.
+of returning a repo file. Confirmed on the real machine: the page loads at
+`http://127.0.0.1:8899/`, and start/stop/apply/theme/port/brightness
+all work from the browser the same way they do from `curl`/the
+Tkinter app. One real bug surfaced by that pass and fixed as part of
+closing out this phase (see Phase 2a's writeup above, which this
+inherited): `controller.py`'s `_selected_port()` was passing
+`app_config.json`'s saved port *label* (a whole descriptive string)
+straight to the driver as if it were an openable device path, instead
+of translating it back to the real `COM3`-style path the way `app.py`
+already does -- fixed to do the same rescan-and-match `app.py` uses.
 
-#### Phase 2c — UI process spawn/kill wiring (not started)
+#### Phase 2c — UI process spawn/kill wiring — ✅ DONE (pending a real-machine pass)
 
-The actual pywebview window pointed at the Phase 2b frontend, spawned
-by the tray icon's "Show" and killed outright on close -- the two-
-process design Phase 0 validated. Needs the real machine throughout
-(WebView2, tray integration, process lifecycle) -- the part of Phase 2
-least verifiable from here.
+The actual two-process design Phase 0 validated, wired up end to end
+for the first time: `backend_app.py` (`scripts/run_v2_app.py`) is a
+new, parallel entry point -- **not yet what `app.py`/Desktop shortcuts/
+Startup point at; that switch is Phase 7's job** -- that starts the
+control API, a tray icon, and resumes whatever theme was last running
+(same logic as `app.py`'s own launch-time resume). Its tray's "Show"
+spawns `scripts/run_ui.py` (a tiny, dependency-free pywebview window
+pointed at the backend's own URL) as a genuinely separate OS process,
+tracked by its `Popen` handle; "Show" again while one is already open
+is a no-op rather than opening a second window; "Quit" `terminate()`s
+it along with shutting down the server and controller. `run_ui.py` is
+deliberately importless from the app's own package -- pywebview (and,
+transitively, WebView2) only ever gets loaded in that one process,
+never in the always-on backend, which is the entire point of Phase 0's
+two-process split: destroying a pywebview window doesn't release its
+~90MB of overhead within the same process, so ending the whole process
+is the only way to actually reclaim it.
+
+Verified everything headlessly that doesn't require an actual
+WebView2/tray/display: `BackendApp` resumes the last-running theme on
+a plain launch (checked with a saved `auto_resume_tab`, matching
+`app.py`'s behavior exactly); the control server starts and stops
+cleanly under its orchestration; `_on_show()` spawns exactly one
+subprocess and a second call while the first is still alive is
+correctly a no-op (verified with `subprocess.Popen` stubbed, since
+there's no `pywebview`/display here to actually open a window against);
+`shutdown()` actually terminates the tracked UI subprocess and stops
+the server (confirmed the API stops responding afterward). Tray icon
+creation itself is a no-op here (`pystray`'s `available()` correctly
+reports `False` off Windows) -- that path, `run_ui.py` actually
+opening a window, WebView2 availability, and the real spawn/kill
+memory numbers all still need one real-machine pass, same caveat every
+other phase has had.
 
 ### Phase 3 — Port the simple themes
 
