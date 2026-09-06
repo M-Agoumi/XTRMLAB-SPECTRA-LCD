@@ -442,12 +442,42 @@ Windows-only, and unverified from here (no Windows/WebView2 in the
 sandbox) -- next real-machine pass should confirm whether it actually
 fixes the icon or the real fix has to wait for Phase 7's frozen build.
 
-### Phase 3 — Port the simple themes
+### Phase 3 — Port the simple themes — ✅ DONE (pending a real-machine pass)
 
-Video, Webpage and Clock settings forms. Boring, low-risk, and at the
-end of it the new UI does everything the old one does except the
-Dashboard's slot pickers — meaning it's daily-drivable and the old app
-becomes the fallback rather than the primary.
+Video, Webpage and Clock settings forms, added to the frontend
+(`App.jsx`) as a "Theme settings" panel that swaps its fields based on
+whichever theme is selected -- mirroring `app.py`'s own per-tab
+settings fields and hint text exactly (Video: file path, loop/B&W/
+audio checkboxes, FPS override; Webpage: URL, screenshot interval,
+full-reload interval; Clock: nothing beyond port/brightness, just an
+info line; Dashboard: an explicit "not in the web UI yet, Phase 4"
+note rather than silently doing nothing).
+
+**No backend changes needed at all.** `update_config()`'s shallow
+per-key merge (Phase 2a) and `theme_kwargs.py`'s parsing straight out
+of `app_config.json` (also Phase 2a) already handled arbitrary
+`video`/`webpage` settings from day one -- this phase is purely
+frontend, POSTing `{"video": {...}}` / `{"webpage": {...}}` patches in
+exactly the shape `app.py`'s own `_save_current_config()` already
+persists (path/fps as a string or null, url/interval as strings,
+reload_every as a string or null), so a config file edited by either
+UI stays fully compatible with the other's expectations.
+
+One deliberate deviation from `app.py`: no "Browse..." file picker for
+the video path. A browser's native file input can't hand back a full
+filesystem path (a sandboxed security restriction, not a bug), and the
+backend needs an absolute path to open with OpenCV -- so this is a
+plain text field the same way the port field already is, with a
+placeholder showing the expected format.
+
+Verified headlessly against a running `run_backend.py`: saved video
+settings (path/loop/bw/audio/fps) and webpage settings (url/interval/
+reload_every) via `POST /api/config` in the exact shape the frontend
+sends, then confirmed `POST /api/start` for both `video` and `webpage`
+successfully builds their kwargs and starts a worker (no
+theme_kwargs.py error) -- i.e. the whole settings-form-to-running-theme
+path works end to end. Not yet checked by eye in a real browser against
+a real video file/URL and real hardware.
 
 ### Phase 4 — Layout model: slots → elements (backend)
 
