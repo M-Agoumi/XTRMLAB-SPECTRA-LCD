@@ -243,14 +243,87 @@ before this is fully closed out -- same caveat as Phase 1 had.
 
 ### Phase 2 — Control API + UI process
 
-Generalize the mirror's HTTP server into the backend's own local
-server: frontend bundle, control endpoints (state, config get/set,
-start/stop/apply), a log stream (SSE or WebSocket), and the frame feed.
+Split into sub-steps rather than landing all at once, since the
+frontend/process-spawn parts can't be verified from the sandbox at all
+(no display, no Node runtime tested here, no WebView2) -- each one
+lands and gets reviewed before the next starts.
 
-React app shell with port/brightness/startup controls, the log panel,
-and the live preview. The UI runs as its own process (per the Phase 0
-two-process design): the tray icon (in the backend) spawns it on
-"Show" and kills it on close/minimize.
+#### Phase 2a — Backend control API — ✅ DONE (pending on-hardware confirmation)
+
+New, additive, fully headless -- does **not** touch the Tkinter app.
+Three new modules in `src/hongtai_screen_app/`:
+
+- `theme_kwargs.py` — the one thing Phase 1 didn't extract: pure
+  functions that turn `app_config.json`'s saved settings into the
+  `(theme_name, target, kwargs)` tuple `ThemeWorker` needs, reading
+  straight from the config dict instead of Tk widgets (every field is
+  already stored in canonical form -- `dashboard.slots` values are
+  `STAT_DEFS` keys, not display labels -- so no translation layer is
+  needed). The Tkinter app's own inline kwarg-builders are **not**
+  switched to call these yet -- see the module's docstring for why
+  (it would mean reordering when `self.cfg` gets synced from widget
+  state, a GUI behavior change outside this pass's scope).
+- `controller.py` — `AppController`: the same start/stop/apply/config
+  logic `app.py`'s `App` class drives, minus every Tk widget touch.
+  Owns a `ThemeWorker`, a log ring-buffer + pub/sub (so a new SSE
+  client catches up on recent lines and then keeps receiving new
+  ones), and a background watcher thread standing in for what
+  `_poll_log_queue()` does in the GUI (notice the worker died, reset
+  state, or restart if `apply()` asked for it). Thread-safe -- callable
+  concurrently from multiple HTTP handler threads.
+- `control_server.py` — the actual HTTP API, `ThreadingHTTPServer`
+  bound to **127.0.0.1 only** (never the LAN, unlike the opt-in web
+  mirror): `GET /api/state`, `GET`/`POST /api/config`,
+  `POST /api/start` (optional `{"theme": ...}` body), `POST /api/stop`,
+  `POST /api/apply`, `GET /api/logs/stream` (SSE, plain HTTP/1.0 with
+  no Content-Length -- the connection just stays open), and
+  `GET /frame.jpg`. No extra dependencies -- same `http.server`
+  approach the driver's own mirror already uses.
+- `scripts/run_backend.py` — runs the control API standalone, no
+  Tkinter at all, so it can actually be tried with curl before any
+  frontend exists: `python scripts/run_backend.py`.
+
+One small, additive change to the driver itself:
+`hongtai_screen.enable_frame_capture()`/`disable_frame_capture()`/
+`get_mirror_frame_jpeg()` -- keeps the latest frame as JPEG bytes in
+memory for a same-process caller (the control API's `/frame.jpg`)
+without opening a second network listener the way
+`enable_web_mirror()` does (that stays LAN-facing and opt-in, for the
+phone-mirror use case specifically). Both share the same underlying
+buffer; either one being on is enough to populate it.
+
+Verified headlessly end to end (no hardware needed for any of this):
+state/config get and set, start (theme name via the request body),
+double-start correctly rejected (400), config patch + apply actually
+picking up the new value (started Clock, patched brightness, called
+apply, confirmed the restarted worker's state reflected the new
+brightness), stop, and an unknown theme name rejected (400) --  all via
+real HTTP requests against a running server, not mocked. The SSE log
+stream was verified separately: a client connected before `start()` was
+called received the worker's live error/recovery log lines in real
+time, matching exactly what the Tkinter app's Log panel would show for
+the same run. `scripts/run_backend.py` itself was run as a real
+subprocess, queried over HTTP, and shut down cleanly via SIGINT.
+Nothing here has been run against real hardware yet (no COM port in
+the sandbox) -- the `connected`/`screen_info` fields and
+`/frame.jpg` actually returning image bytes still need one real-machine
+pass.
+
+#### Phase 2b — Frontend scaffold (not started)
+
+A minimal Vite + React shell that talks to the Phase 2a API: the log
+panel, port/brightness/start/stop/apply controls, and the live preview
+via `/frame.jpg`. Needs Node/npm, and can only really be checked by
+eye (a screenshot or the real machine), so it's kept as its own step
+rather than folded into 2a.
+
+#### Phase 2c — UI process spawn/kill wiring (not started)
+
+The actual pywebview window pointed at the Phase 2b frontend, spawned
+by the tray icon's "Show" and killed outright on close -- the two-
+process design Phase 0 validated. Needs the real machine throughout
+(WebView2, tray integration, process lifecycle) -- the part of Phase 2
+least verifiable from here.
 
 ### Phase 3 — Port the simple themes
 
