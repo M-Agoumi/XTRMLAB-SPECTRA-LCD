@@ -479,7 +479,7 @@ theme_kwargs.py error) -- i.e. the whole settings-form-to-running-theme
 path works end to end. Not yet checked by eye in a real browser against
 a real video file/URL and real hardware.
 
-### Phase 3.5 — Live theme switching (no reconnect) — ✅ DONE (pending a real-machine pass)
+### Phase 3.5 — Live theme switching (no reconnect) — ✅ DONE, confirmed on hardware
 
 Not on the original plan -- added after testing Phase 2c/3 on real
 hardware surfaced a design smell: every theme module (`dashboard_theme.py`,
@@ -549,11 +549,9 @@ stop is treated as "stopped", not as a fault needing recovery; and
 `controller.py`'s `start()`/`apply()`/`stop()` drive all of the above
 correctly end to end (switching live, Apply without disconnecting, Stop
 actually disconnecting), plus a full `control_server.py` boot-and-query
-smoke test with no hardware attached. **Not yet verified on real
-hardware**: an actual live switch between two real theme streams (does
-the panel's decode path handle a mid-stream target swap cleanly?), and
-whether `blind_restart()`'s real serial recovery path behaves the same
-under this engine as it did under `ThemeWorker`.
+smoke test with no hardware attached. **Confirmed working on real
+hardware**: live switching between real theme streams with no
+disconnect/reconnect flicker.
 
 ### Phase 4 — Layout model: slots → elements (backend)
 
