@@ -19,17 +19,33 @@ approach the driver's own mirror server already takes. SSE (the log
 stream) is plain HTTP/1.0: no Content-Length, the connection just
 stays open and the handler keeps writing `data: ...` lines to it until
 the client disconnects or the server shuts down.
+
+**Also serves the built frontend (ROADMAP.md Phase 2b), same origin.**
+Any GET that isn't one of the API routes above falls through to
+frontend/dist/ (Vite's build output -- see frontend/vite.config.js).
+This is deliberate, not just convenient: the whole point of the
+Phase 2 architecture is a UI process that talks to this backend over
+HTTP, and serving the UI from the same process/port it's already
+calling means there's no cross-origin request to worry about in
+production at all (dev-mode `npm run dev` uses Vite's own proxy
+instead, see vite.config.js). If frontend/dist/ hasn't been built yet,
+GET / falls back to the placeholder page below instead of erroring.
 """
 import json
+import mimetypes
+import os
 import sys
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from .controller import AppController
+from .paths import _app_base_dir
 
 DEFAULT_PORT = 8899
+
+FRONTEND_DIST = os.path.join(_app_base_dir(), "frontend", "dist")
 
 
 def _make_handler(controller: AppController):
@@ -76,6 +92,8 @@ def _make_handler(controller: AppController):
                     self._handle_log_stream()
                 elif path == "/frame.jpg":
                     self._handle_frame()
+                elif self._try_serve_static(path):
+                    pass
                 elif path == "/":
                     self._handle_index()
                 else:
@@ -107,6 +125,34 @@ def _make_handler(controller: AppController):
                 self._send_error_json(400, str(e))
             except Exception as e:  # noqa: BLE001
                 self._send_error_json(500, str(e))
+
+        # -- static frontend build (frontend/dist/) ------------------------
+        def _try_serve_static(self, path):
+            """Serves a file out of FRONTEND_DIST for `path`, returning
+            True if it did. Returns False (without writing a response)
+            whenever there's nothing to serve -- FRONTEND_DIST doesn't
+            exist (frontend not built yet) or the requested file isn't
+            in it -- so the caller falls through to its normal
+            "/" -> placeholder / else -> 404 handling instead."""
+            if not os.path.isdir(FRONTEND_DIST):
+                return False
+            rel = unquote(path.lstrip("/")) or "index.html"
+            full = os.path.normpath(os.path.join(FRONTEND_DIST, rel))
+            dist_root = os.path.normpath(FRONTEND_DIST)
+            # Reject anything that escapes FRONTEND_DIST (e.g. "/../..").
+            if full != dist_root and not full.startswith(dist_root + os.sep):
+                return False
+            if not os.path.isfile(full):
+                return False
+            content_type, _ = mimetypes.guess_type(full)
+            with open(full, "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type or "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return True
 
         # -- individual endpoints ------------------------------------------
         def _handle_frame(self):
@@ -144,9 +190,10 @@ def _make_handler(controller: AppController):
                 controller.unsubscribe_log(q)
 
         def _handle_index(self):
-            # Placeholder until Phase 2b serves the real built frontend
-            # from here -- just enough to confirm the API is up when
-            # opened in a browser by hand.
+            # Only reached when frontend/dist/ doesn't exist yet (not
+            # built, or a fresh checkout) -- _try_serve_static() above
+            # handles "/" once a real build is present. Just enough to
+            # confirm the API is up when opened in a browser by hand.
             body = (
                 "<!doctype html><html><body style=\"font-family:sans-serif\">"
                 "<h3>Hongtai Screen -- control API</h3>"

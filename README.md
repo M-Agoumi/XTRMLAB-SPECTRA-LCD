@@ -63,8 +63,13 @@ src/hongtai_screen_app/     -- the actual implementation
                                  webpage_theme.py, demo_clock.py
 scripts/                    -- standalone tools, run directly:
     list_screens.py, test_connection.py, blind_draw.py,
-    diag2_lines.py, make_launcher.py, and a thin CLI wrapper for
-    each theme (dashboard_theme.py, video_theme.py, etc.)
+    diag2_lines.py, make_launcher.py, run_backend.py, and a thin
+    CLI wrapper for each theme (dashboard_theme.py, video_theme.py,
+    etc.)
+frontend/                   -- optional React UI for the control API
+    (ROADMAP.md Phase 2) -- src/ is the app; dist/ is the built
+    bundle, committed so no Node toolchain is needed to just run
+    the app (see below)
 assets/                     -- icon.ico
 packaging/                  -- hongtai_screen.spec (PyInstaller)
 experiments/                -- throwaway spikes, see ROADMAP.md
@@ -74,6 +79,32 @@ experiments/                -- throwaway spikes, see ROADMAP.md
 `sys.path` itself, same trick every script under `scripts/` uses to
 reach the package. See **Files** below for what each module in
 `src/hongtai_screen_app/` actually does.
+
+### The control API + web UI (optional, alongside the Tkinter app)
+
+`python scripts/run_backend.py` runs a second, independent way to
+drive the panel: a local HTTP API (`127.0.0.1:8899` by default) with
+start/stop/apply/config endpoints, a live log stream, and the same
+`app_config.json` the Tkinter app uses. Opening
+`http://127.0.0.1:8899/` in a browser while it's running serves the
+committed `frontend/dist/` build — a small page with connection
+status, a live preview, and start/stop/apply/theme/port/brightness
+controls, talking to that same API. Don't run this alongside `python
+app.py` against the same COM port — same as running two copies of the
+GUI, they'll fight over the panel.
+
+Only touching `frontend/src/` requires Node — rebuild and re-commit
+the bundle with:
+
+```
+cd frontend
+npm install
+npm run build      # writes frontend/dist/, which control_server.py serves
+```
+
+`npm run dev` instead runs a separate Vite dev server with hot reload,
+proxying API calls to a `run_backend.py` you run alongside it (see
+`frontend/vite.config.js`).
 
 ## Which COM port?
 
