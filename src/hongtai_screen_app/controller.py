@@ -219,6 +219,12 @@ class AppController:
                 key: {"label": meta["label"], "title": meta["title"]}
                 for key, meta in dashboard_theme.STAT_DEFS.items()
             },
+            "background": dict(dashboard_theme.DEFAULT_BACKGROUND, **(d.get("background") or {})),
+            "backgroundPresets": dict(dashboard_theme.BACKGROUND_PRESETS),
+            "backgroundSchemes": {
+                key: {"label": scheme["label"]}
+                for key, scheme in dashboard_theme.BACKGROUND_COLOR_SCHEMES.items()
+            },
         }
 
     def save_dashboard_elements(self, elements):
@@ -237,6 +243,28 @@ class AppController:
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
             return dict(self.cfg["dashboard"])
+
+    def save_dashboard_background(self, background):
+        """Persists the panel background (preset mode, color scheme,
+        and/or custom image path) -- same merge-into-"dashboard" shape
+        as save_dashboard_elements(), and the same "needs a restart"
+        deal: it's baked into the static background image at Start/
+        Apply time (see build_static_background()'s docstring), not
+        re-rendered live. Doesn't validate image_path exists or mode/
+        scheme are known keys -- dashboard_theme.py already falls back
+        to the default background silently if the image can't be
+        opened or a key is unrecognized, same tolerance app.py's own
+        Tkinter picker has always relied on."""
+        if not isinstance(background, dict):
+            raise ValueError("background must be an object")
+        with self._lock:
+            dashboard_cfg = dict(self.cfg.get("dashboard") or {})
+            existing = dict(dashboard_cfg.get("background") or {})
+            existing.update(background)
+            dashboard_cfg["background"] = existing
+            self.cfg["dashboard"] = dashboard_cfg
+            config_store.save_config(self.cfg)
+            return dict(self.cfg["dashboard"]["background"])
 
     def save_dashboard_preset(self, name, elements):
         name = (name or "").strip()

@@ -687,6 +687,24 @@ correctly. **Not yet verified on real hardware** -- specifically,
 editing live over an actual panel's `/frame.jpg` mirror rather than
 the "no screen connected" placeholder.
 
+**Fix (feature-parity gap):** the canvas above covered gauge layout
+but the web UI still had no way to set the panel background -- style
+preset, color scheme, or a custom image -- something `app.py`'s
+Tkinter Dashboard tab has always had. Added a Background section
+under the canvas (style + scheme selects, plus a plain text image-path
+field when "Custom image" is picked -- no native file browse, same
+reasoning as the video theme's path field in Phase 3), backed by a new
+`controller.save_dashboard_background()` / `POST /api/dashboard/
+background` that merges into the `dashboard` dict the same way the
+elements/preset endpoints do, and `dashboard_meta()` now also returns
+the resolved background plus `BACKGROUND_PRESETS`/
+`BACKGROUND_COLOR_SCHEMES` label metadata. Verified headlessly
+(endpoint round-trip, `theme_kwargs.dashboard_kwargs()` picks up the
+saved value with `web_port`/`elements`/`presets` all left untouched)
+and via a Playwright session against the real built frontend + live
+backend: switching to Custom image, typing a path, and saving all
+worked with no console errors, and the value persisted server-side.
+
 ### Phase 6 — Richer elements and options
 
 Where "more complicated options" actually lands, and it's incremental

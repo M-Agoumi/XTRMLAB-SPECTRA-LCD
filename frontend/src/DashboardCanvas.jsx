@@ -65,6 +65,9 @@ export default function DashboardCanvas({ frameUrl, connected }) {
   const [presetName, setPresetName] = useState("");
   const [presetToLoad, setPresetToLoad] = useState("");
   const [guides, setGuides] = useState({ x: null, y: null });
+  const [bgDraft, setBgDraft] = useState(null);
+  const [bgStatus, setBgStatus] = useState(null);
+  const [bgError, setBgError] = useState(null);
 
   const historyRef = useRef([]);
   const futureRef = useRef([]);
@@ -77,6 +80,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
       (m) => {
         setMeta(m);
         setElements(m.elements);
+        setBgDraft(m.background);
         historyRef.current = [];
         futureRef.current = [];
         setSelectedId(null);
@@ -267,6 +271,23 @@ export default function DashboardCanvas({ frameUrl, connected }) {
       (e) => setError(e.message)
     );
 
+  const updateBgDraft = (patch) => {
+    setBgStatus(null);
+    setBgDraft((prev) => ({ ...prev, ...patch }));
+  };
+
+  const saveBackground = () => {
+    if (!bgDraft) return;
+    setBgError(null);
+    api.saveDashboardBackground(bgDraft).then(
+      (bg) => {
+        setBgDraft(bg);
+        setBgStatus("Background saved -- takes effect on the next Start/Apply.");
+      },
+      (e) => setBgError(e.message)
+    );
+  };
+
   const saveAsPreset = () => {
     const name = presetName.trim();
     if (!name) return;
@@ -445,6 +466,61 @@ export default function DashboardCanvas({ frameUrl, connected }) {
             <button onClick={sendToBack}>Send to back</button>
             <button onClick={deleteSelected}>Delete</button>
           </div>
+        </div>
+      )}
+
+      {bgDraft && (
+        <div className="canvas-props">
+          <h2>Background</h2>
+          <div className="row">
+            <label>
+              Style
+              <select
+                value={bgDraft.mode}
+                onChange={(e) => updateBgDraft({ mode: e.target.value })}
+              >
+                {Object.entries(meta.backgroundPresets).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </label>
+            {bgDraft.mode !== "image" && (
+              <label>
+                Color scheme
+                <select
+                  value={bgDraft.scheme}
+                  onChange={(e) => updateBgDraft({ scheme: e.target.value })}
+                >
+                  {Object.entries(meta.backgroundSchemes).map(([key, s]) => (
+                    <option key={key} value={key}>{s.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+          {bgDraft.mode === "image" && (
+            <div className="row">
+              <label className="grow">
+                Image path
+                <input
+                  type="text"
+                  value={bgDraft.image_path || ""}
+                  onChange={(e) => updateBgDraft({ image_path: e.target.value })}
+                  placeholder="C:\Users\you\Pictures\background.jpg"
+                />
+              </label>
+            </div>
+          )}
+          <p className="hint">
+            {bgDraft.mode === "image"
+              ? "Full path to an image file on this PC -- falls back to the default background if it can't be opened."
+              : "The color scheme tints the gradient and, for Grid/Starfield/Radial, the whole background."}
+          </p>
+          <div className="row">
+            <button onClick={saveBackground}>Save background</button>
+          </div>
+          {bgStatus && <p className="hint settings-saved">{bgStatus}</p>}
+          {bgError && <p className="error">{bgError}</p>}
         </div>
       )}
 

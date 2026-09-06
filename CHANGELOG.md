@@ -151,6 +151,24 @@ dashboard designer) this is laying groundwork for.
   confirmed working, and the resulting saved layout was fed back
   through the actual cairo rendering pipeline and rendered correctly.
   Not yet verified on real hardware.
+- **Fixed a Phase 5 gap**: the design canvas covered gauge layout but
+  dropped the background picker (style preset, color scheme, custom
+  image path) that `app.py`'s Tkinter Dashboard tab already had --
+  the web UI had no way to set a custom background image at all. Added
+  a Background section under the canvas with the same options, plus a
+  new merge-safe `save_dashboard_background()`/`/api/dashboard/
+  background` endpoint (same "merge into the dashboard dict, don't
+  replace it" shape as the elements/preset endpoints) and
+  `dashboard_meta()` now also returns the resolved background and the
+  preset/scheme label metadata so the frontend never needs to hardcode
+  `dashboard_theme.py`'s constants. The image path is a plain text
+  field, same reasoning as the video theme's path field in Phase 3 --
+  a browser file input can't hand back a real filesystem path. Verified
+  headlessly (endpoint round-trip, `theme_kwargs.dashboard_kwargs()`
+  picks up the saved value) and via a Playwright session against the
+  real built frontend and a live backend: switching to Custom image,
+  typing a path, and saving all worked with no console errors, and the
+  save persisted correctly server-side.
 
 ## [1.0.0] — 2026-08-29
 
