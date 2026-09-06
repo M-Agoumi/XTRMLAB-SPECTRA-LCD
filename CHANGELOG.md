@@ -207,6 +207,31 @@ dashboard designer) this is laying groundwork for.
   the text label, and saving all worked, and the saved config rendered
   correctly through the real cairo pipeline afterward. Not yet
   verified on real hardware.
+- **Fixed a feature-parity gap: the "nothing playing" placeholder
+  image was never exposed in the web UI, and its message was never
+  configurable in either app.** `app.py`'s Tkinter Dashboard tab has
+  always let you pick a custom placeholder image for when Spotify
+  isn't playing, applied live via `dashboard_theme.set_default_art_
+  path()` -- but that setting was never carried over to the web UI at
+  all. Separately, the text shown in place of the track title
+  ("Life is like a door never trust a cow because the sun can't
+  swim") has always been a single hardcoded line, not a real setting,
+  in either app. Both are now real, live-applying settings:
+  `dashboard_theme.py` gained `set_not_playing_message()`/
+  `get_not_playing_message()` (same pattern as the existing art-path
+  pair -- re-read every frame, so editing it takes effect on the very
+  next frame, no Stop/Start), a new merge-safe `controller.
+  save_dashboard_now_playing()` / `POST /api/dashboard/now_playing`
+  applies both settings to the running dashboard immediately (not just
+  on the next Start), and the web UI's canvas gained a "Nothing
+  playing" placeholder section (image path + message, both plain text
+  fields) alongside Background. `app.py`'s Tkinter tab gained a
+  matching message field next to its existing image-path one. Verified
+  headlessly (the message falls back to the default when cleared,
+  applies live in a rendered frame, and round-trips through the
+  merge-safe endpoint without disturbing other dashboard config) and
+  via a Playwright session against the real built frontend + live
+  backend confirming the new section saves and persists correctly.
 
 ## [1.0.0] — 2026-08-29
 

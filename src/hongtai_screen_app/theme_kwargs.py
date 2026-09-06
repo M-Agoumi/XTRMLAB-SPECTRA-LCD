@@ -64,11 +64,13 @@ def dashboard_kwargs(cfg, port, brightness):
     d = cfg.get("dashboard", {}) or {}
     web_port = _parse_int(d.get("web_port"), default=8765)
     art_path = d.get("default_art_path") or None
+    not_playing_message = d.get("not_playing_message") or None
     elements = resolve_dashboard_elements(cfg)
     background = dict(dashboard_theme.DEFAULT_BACKGROUND, **(d.get("background") or {}))
     return "Dashboard", dashboard_theme.run, dict(
         port=port, web_port=web_port, enable_web=bool(d.get("enable_web", False)),
-        default_art_path=art_path, brightness=brightness, elements=elements, background=background,
+        default_art_path=art_path, not_playing_message=not_playing_message,
+        brightness=brightness, elements=elements, background=background,
     )
 
 

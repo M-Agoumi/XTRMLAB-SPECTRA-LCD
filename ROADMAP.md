@@ -794,6 +794,30 @@ cairo rendering, not a stub) and renders correctly, including the
 plotted line graph and the gracefully-skipped empty image path.
 **Not yet verified on real hardware.**
 
+**Fix (feature-parity gap): the "nothing playing" placeholder.**
+`app.py`'s Tkinter Dashboard tab has always let you set a custom
+placeholder image for when Spotify isn't playing (`default_art_path`,
+applied live -- `dashboard_theme` re-checks it every frame, no Stop/
+Start needed), but that setting never made it into the web UI at all.
+Separately, the message shown in place of the track title has always
+been one hardcoded line ("Life is like a door never trust a cow
+because the sun can't swim"), never an actual setting in either app.
+Both are now real: `dashboard_theme.py` gained `set_not_playing_
+message()`/`get_not_playing_message()` mirroring the existing art-path
+pair (same "re-read every frame" live-apply behavior, `DEFAULT_NOT_
+PLAYING_MESSAGE` as the fallback), a new merge-safe `controller.
+save_dashboard_now_playing()` / `POST /api/dashboard/now_playing`
+applies both to the running dashboard immediately in addition to
+persisting them, and the canvas gained a "Nothing playing" placeholder
+section (plain text fields for the image path and the message,
+alongside Background) -- `app.py` gained a matching message field
+next to its existing image-path one. Verified headlessly (message
+falls back to the default when cleared, a forced-`_MEDIA_OK` render
+confirms a custom message actually shows up in place of the track
+title, and the merge-safe endpoint round-trips without touching other
+dashboard config) and via a Playwright session against the real built
+frontend + live backend confirming the section saves and persists.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files
