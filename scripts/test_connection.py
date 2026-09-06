@@ -1,8 +1,8 @@
 """
 Quick connectivity test. Run this FIRST before anything else.
 
-    python test_connection.py           # auto-detects the port
-    python test_connection.py COM5      # or specify one explicitly
+    python scripts/test_connection.py           # auto-detects the port
+    python scripts/test_connection.py COM5      # or specify one explicitly
 
 It just connects, prints whatever the screen tells us about itself
 (real resolution, firmware version, model string, etc.), sets the
@@ -17,12 +17,15 @@ IMPORTANT: close the vendor "XTRM lab" app first (check the system
 tray) -- only one program can hold the COM port at a time.
 """
 
+import os
 import sys
 import time
 
 from PIL import Image, ImageDraw, ImageFont
 
-from hongtai_screen import HongtaiScreen
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+
+from hongtai_screen_app.driver.hongtai_screen import HongtaiScreen
 
 
 def main():

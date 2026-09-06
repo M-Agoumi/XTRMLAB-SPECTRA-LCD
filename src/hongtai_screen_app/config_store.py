@@ -7,7 +7,7 @@ file through the same functions.
 """
 import json
 
-from app_paths import CONFIG_PATH
+from .paths import CONFIG_PATH
 
 AUTO_DETECT = "(auto-detect)"
 

@@ -9,7 +9,7 @@ lets Phase 2's control API drive the same worker with no UI at all.
 import threading
 import time
 
-import hongtai_screen
+from .driver import hongtai_screen
 
 # A mid-stream write timeout dying and staying dead until someone
 # notices the log and clicks Start again -- which then just as

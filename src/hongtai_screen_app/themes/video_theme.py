@@ -33,7 +33,7 @@ import os
 import cv2
 from PIL import Image
 
-from hongtai_screen import HongtaiScreen
+from ..driver.hongtai_screen import HongtaiScreen
 
 
 def fit_frame(frame_bgr, target_w, target_h, bw=False):

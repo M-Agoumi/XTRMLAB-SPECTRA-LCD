@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 
-from app_paths import _app_base_dir, ICON_PATH
+from .paths import _app_base_dir, ICON_PATH
 
 
 def _desktop_dir():
@@ -18,9 +18,8 @@ def _desktop_dir():
     `~\\OneDrive\\Desktop` instead, and `~\\Desktop` then simply doesn't
     exist. The registry's User Shell Folders key is what Windows itself
     actually uses to resolve "Desktop", so ask it rather than guessing
-    the plain path. (Same helper as make_launcher.py -- kept as its own
-    copy here so this works even if make_launcher.py is ever removed
-    from a packaged build.)"""
+    the plain path. (scripts/make_launcher.py reuses this exact
+    function -- see there.)"""
     try:
         import winreg
         with winreg.OpenKey(
@@ -33,6 +32,41 @@ def _desktop_dir():
         return os.path.join(os.path.expanduser("~"), "Desktop")
 
 
+def write_run_vbs(app_dir, app_path, extra=""):
+    """Writes "Launch Hongtai Screen.vbs" into `app_dir` -- a hidden-
+    window launcher that runs `app_path` (plus any `extra` CLI args)
+    through pythonw.exe via VBScript's WshShell.Run(..., 0, False),
+    which is what actually gives a 0-windows launch (a .bat file here
+    would still flash a console briefly, which plain Python can't
+    suppress on its own without extra dependencies). Returns the
+    written .vbs's path.
+
+    Used by create_desktop_shortcut() below (the shortcut points at
+    this launcher, not at app_path directly, so double-clicking it
+    never opens a console window) and by scripts/make_launcher.py (a
+    standalone setup helper for anyone who'd rather not go through the
+    GUI's button) -- single source of truth for both, rather than two
+    subtly different copies of the same VBScript living in two files."""
+    py_dir = os.path.dirname(sys.executable)
+    pythonw = os.path.join(py_dir, "pythonw.exe")
+    interpreter = pythonw if os.path.isfile(pythonw) else sys.executable
+
+    # VBScript doesn't treat backslash as an escape character, so
+    # Windows paths need no special handling here -- only the quotes
+    # around each path need doubling (VBScript's way of embedding a
+    # literal " in a string).
+    cmd = '""{interpreter}"" ""{app}""{extra}'.format(
+        interpreter=interpreter, app=app_path, extra=extra)
+    vbs = (
+        'Set WshShell = CreateObject("WScript.Shell")\n'
+        f'WshShell.Run "{cmd}", 0, False\n'
+    )
+    out_path = os.path.join(app_dir, "Launch Hongtai Screen.vbs")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(vbs)
+    return out_path
+
+
 def create_desktop_shortcut():
     """Drops a "Hongtai Screen.lnk" shortcut on the Desktop, and returns
     its path.
@@ -43,10 +77,11 @@ def create_desktop_shortcut():
     nothing else to wire up.
 
     Running from source (`python app.py`): points at the same hidden
-    "Launch Hongtai Screen.vbs" launcher make_launcher.py writes
+    "Launch Hongtai Screen.vbs" launcher write_run_vbs() above writes
     (written fresh here if missing), using icon.ico for the icon since a
-    .vbs file can't carry a custom one itself -- see make_launcher.py's
-    own docstring for why a second .lnk file is needed for that.
+    .vbs file can't carry a custom one itself -- see
+    scripts/make_launcher.py's own docstring for why a second .lnk file
+    is needed for that.
 
     Raises on failure (missing Desktop folder, non-Windows, cscript
     error) -- callers show that message rather than silently no-op'ing.
@@ -67,11 +102,7 @@ def create_desktop_shortcut():
     else:
         app_dir = _app_base_dir()
         app_path = os.path.abspath(sys.modules["__main__"].__file__)
-        # Reuse make_launcher's own .vbs writer so both paths always
-        # point at the exact same launcher, instead of two subtly
-        # different copies of the same VBScript living in two files.
-        import make_launcher
-        target = make_launcher._write_run_vbs(app_dir, app_path, "")
+        target = write_run_vbs(app_dir, app_path, "")
         working_dir = app_dir
         icon_spec = (f"{ICON_PATH},0" if os.path.isfile(ICON_PATH)
                      else f"{target},0")

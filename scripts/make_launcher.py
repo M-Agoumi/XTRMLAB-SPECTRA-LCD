@@ -1,7 +1,7 @@
-"""One-time setup helper: writes "Launch Hongtai Screen.vbs" next to this
-script, then (unless --no-desktop-icon is passed) also drops a desktop
-shortcut to it, using icon.ico, so it's a real double-click icon rather
-than just a file in this folder.
+"""One-time setup helper: writes "Launch Hongtai Screen.vbs" next to
+app.py (at the repo root), then (unless --no-desktop-icon is passed)
+also drops a desktop shortcut to it, using assets/icon.ico, so it's a
+real double-click icon rather than just a file in this folder.
 
 Why the .vbs exists: double-clicking app.py directly runs it through
 python.exe, which opens a console window to host it. The app's own
@@ -12,14 +12,15 @@ together. There's no way to intercept that from inside app.py itself:
 the fix has to be to not have a console in the first place.
 
 This mirrors exactly what "Launch at Windows startup" (see
-enable_startup() in app.py) already does for the Startup-folder
-launcher: run app.py via pythonw.exe (the windowless twin of
-python.exe) through VBScript's WshShell.Run(..., 0, False), which is
-what actually gives a 0-windows launch -- a .bat file here would still
-flash a console briefly, which plain Python can't suppress on its own
-without extra dependencies. The difference is this one lives next to
-app.py for you to double-click (or pin/shortcut to your desktop)
-whenever you want, instead of firing automatically at login.
+enable_startup() in src/hongtai_screen_app/startup_registration.py)
+already does for the Startup-folder launcher: run app.py via
+pythonw.exe (the windowless twin of python.exe) through VBScript's
+WshShell.Run(..., 0, False), which is what actually gives a 0-windows
+launch -- a .bat file here would still flash a console briefly, which
+plain Python can't suppress on its own without extra dependencies. The
+difference is this one lives next to app.py for you to double-click (or
+pin/shortcut to your desktop) whenever you want, instead of firing
+automatically at login.
 
 Why the desktop shortcut is a second, separate file rather than just
 pointing you at the .vbs: a .vbs file's icon is fixed (the generic
@@ -31,65 +32,35 @@ handing WScript.Shell.CreateShortcut to a throwaway helper .vbs run
 once via cscript -- the same "no extra dependencies" approach as
 everything else here; it's deleted right after.
 
-Run once:
-    python make_launcher.py
+This script reuses write_run_vbs() and _desktop_dir() from
+hongtai_screen_app.desktop_shortcut (the same code the GUI's own
+"Create Desktop Shortcut" button calls) rather than keeping its own
+separate copy, so there's exactly one implementation of "how to build
+this launcher" to keep correct.
+
+Run once, from the repo root:
+    python scripts/make_launcher.py
 
 Re-run any time you move this folder or switch Python installs, to
 refresh the paths baked into the .vbs/.lnk. Any extra arguments are
 passed through to app.py every time the launcher runs, e.g.:
-    python make_launcher.py --theme video
+    python scripts/make_launcher.py --theme video
 """
 import os
 import subprocess
 import sys
 import tempfile
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
-def _write_run_vbs(app_dir, app_path, extra):
-    py_dir = os.path.dirname(sys.executable)
-    pythonw = os.path.join(py_dir, "pythonw.exe")
-    interpreter = pythonw if os.path.isfile(pythonw) else sys.executable
-
-    # VBScript doesn't treat backslash as an escape character, so Windows
-    # paths need no special handling here -- only the quotes around each
-    # path need doubling (VBScript's way of embedding a literal " in a
-    # string), same as enable_startup() in app.py.
-    cmd = '""{interpreter}"" ""{app}""{extra}'.format(
-        interpreter=interpreter, app=app_path, extra=extra)
-    vbs = (
-        'Set WshShell = CreateObject("WScript.Shell")\n'
-        f'WshShell.Run "{cmd}", 0, False\n'
-    )
-    out_path = os.path.join(app_dir, "Launch Hongtai Screen.vbs")
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(vbs)
-    return out_path
-
-
-def _desktop_dir():
-    """Where Desktop actually is. Not just `~\\Desktop` -- OneDrive's
-    "Known Folder Move" (on by default on a lot of pre-configured
-    Windows machines) relocates it to somewhere like
-    `~\\OneDrive\\Desktop` instead, and `~\\Desktop` then simply doesn't
-    exist. The registry's User Shell Folders key is what Windows itself
-    actually uses to resolve "Desktop", so ask it rather than guessing
-    the plain path."""
-    try:
-        import winreg
-        with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Explorer"
-                r"\User Shell Folders") as key:
-            path, _ = winreg.QueryValueEx(key, "Desktop")
-        return os.path.expandvars(path)
-    except OSError:
-        return os.path.join(os.path.expanduser("~"), "Desktop")
+from hongtai_screen_app.desktop_shortcut import write_run_vbs, _desktop_dir  # noqa: E402
 
 
 def _create_desktop_shortcut(vbs_path, app_dir):
-    icon_path = os.path.join(app_dir, "icon.ico")
+    icon_path = os.path.join(app_dir, "assets", "icon.ico")
     if not os.path.isfile(icon_path):
-        print("(no icon.ico next to this script -- skipping the desktop "
+        print(f"(no icon.ico at {icon_path} -- skipping the desktop "
               "shortcut, the .vbs launcher above still works fine)")
         return None
 
@@ -136,7 +107,7 @@ def _create_desktop_shortcut(vbs_path, app_dir):
 
 
 def main():
-    app_dir = os.path.dirname(os.path.abspath(__file__))
+    app_dir = _REPO_ROOT
     app_path = os.path.join(app_dir, "app.py")
 
     args = sys.argv[1:]
@@ -144,7 +115,7 @@ def main():
     extra_args = [a for a in args if a != "--no-desktop-icon"]
     extra = " " + " ".join(extra_args) if extra_args else ""
 
-    vbs_path = _write_run_vbs(app_dir, app_path, extra)
+    vbs_path = write_run_vbs(app_dir, app_path, extra)
     print(f"Wrote {vbs_path}")
 
     if skip_desktop_icon:

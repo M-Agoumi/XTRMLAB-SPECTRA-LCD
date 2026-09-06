@@ -143,8 +143,9 @@ panel remotely, in real time, without standing in front of the case.
 Requirements:
     pip install pyserial pillow
 
-Example:
-    from hongtai_screen import HongtaiScreen
+Example (run from the repo root, or with src/ on your PYTHONPATH):
+    import sys; sys.path.insert(0, "src")
+    from hongtai_screen_app.driver.hongtai_screen import HongtaiScreen
     from PIL import Image, ImageDraw
 
     screen = HongtaiScreen("COM3")
@@ -561,12 +562,12 @@ class HongtaiScreen:
 
         `log` defaults to `print` (the CLI-friendly behavior this always
         had) but a GUI caller can pass its own log function instead --
-        see app.py's _run_safely(), which calls this mid-recovery from a
-        background thread where plain print() would go nowhere the user
-        can see it.
+        see theme_worker.py's ThemeWorker._run_safely(), which calls this
+        mid-recovery from a background thread where plain print() would
+        go nowhere the user can see it.
 
-        Safe to call directly too:
-            python -c "from hongtai_screen import HongtaiScreen; HongtaiScreen('COM3').blind_restart()"
+        Safe to call directly too (from the repo root):
+            python -c "import sys; sys.path.insert(0, 'src'); from hongtai_screen_app.driver.hongtai_screen import HongtaiScreen; HongtaiScreen('COM3').blind_restart()"
         """
         log("  blind_restart: opening the port and sending key=1 (restart), no reply expected ...")
         ser = None

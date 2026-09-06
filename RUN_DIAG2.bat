@@ -19,12 +19,12 @@ if exist "%APPDATA%\XTRM lab\config.json" (
 )
 echo.
 echo ==== part 1: DTR/RTS sweep ====
-python -u diag2_lines.py %1
+python -u scripts\diag2_lines.py %1
 if errorlevel 2 (
   echo.
   echo ==== part 2: panel stayed silent, trying to DRAW blind anyway ====
   echo ==== WATCH THE SCREEN for the next ~60 seconds ====
-  python -u blind_draw.py %1
+  python -u scripts\blind_draw.py %1
 ) else (
   echo.
   echo ==== panel answered -- skipping the blind-draw test ====

@@ -26,13 +26,17 @@ Playwright note below, though, before assuming it belongs in the exe.
 
 ## 2. Build
 
+Run this from the **repo root** (not from inside `packaging\`) — the
+spec's paths (`app.py`, `assets\icon.ico`, the `src` pathex) are all
+relative to wherever `pyinstaller` is invoked from:
+
 ```
-pyinstaller hongtai_screen.spec
+pyinstaller packaging\hongtai_screen.spec
 ```
 
-This reads `hongtai_screen.spec` (already in this repo, see there for
-what it does and why) and produces `dist\Hongtai Screen.exe` — a
-single, no-console, icon-bearing executable.
+This reads `packaging\hongtai_screen.spec` (already in this repo, see
+there for what it does and why) and produces `dist\Hongtai Screen.exe`
+— a single, no-console, icon-bearing executable.
 
 ## 3. Test it
 

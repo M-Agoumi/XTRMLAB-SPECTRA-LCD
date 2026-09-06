@@ -1,5 +1,5 @@
 """
-app_paths.py -- where this app's files live, on disk.
+paths.py -- where this app's files live, on disk.
 
 Split out of app.py (Phase 1 of ROADMAP.md's v2.0 rewrite) because every
 future UI -- the current Tkinter one, and eventually the webview/React
@@ -15,21 +15,36 @@ import time
 def _app_base_dir():
     """Directory the running app actually lives in -- used for anything
     that must persist next to it across runs (app_config.json, the
-    startup-launcher command in startup_registration.py). Under a frozen
-    PyInstaller build, __file__ points inside a temporary extraction
-    folder instead (a fresh one every run), so this checks sys.frozen
-    and uses the real .exe's own folder in that case."""
+    startup-launcher command in startup_registration.py).
+
+    NOT this module's own __file__: since the v2.0 restructure this
+    file lives inside src/hongtai_screen_app/, several directories
+    below the repo root that app_config.json/startup_debug.log/icon.ico
+    actually need to sit next to (wherever the real entry point --
+    root app.py, or the frozen .exe -- lives). Resolved instead via
+    whatever module Python itself is running as __main__, same
+    approach startup_registration.py and desktop_shortcut.py already
+    use to find the real script to point a launcher/shortcut at.
+
+    Under a frozen PyInstaller build, __main__'s __file__ points inside
+    a temporary extraction folder instead (a fresh one every run), so
+    this checks sys.frozen and uses the real .exe's own folder in that
+    case."""
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
+    main_file = getattr(sys.modules.get("__main__"), "__file__", None)
+    if main_file:
+        return os.path.dirname(os.path.abspath(main_file))
+    return os.getcwd()  # best-effort fallback -- e.g. an interactive shell
 
 
 def _resource_path(*parts):
     """Path to a bundled read-only resource (icon.ico) -- inside
-    sys._MEIPASS when frozen (PyInstaller's extraction dir for
-    --add-data files), next to this script otherwise."""
+    sys._MEIPASS/assets when frozen (PyInstaller's extraction dir for
+    --add-data files; see packaging/hongtai_screen.spec's `datas`),
+    inside the repo root's assets/ folder otherwise."""
     base = getattr(sys, "_MEIPASS", None) or _app_base_dir()
-    return os.path.join(base, *parts)
+    return os.path.join(base, "assets", *parts)
 
 
 CONFIG_PATH = os.path.join(_app_base_dir(), "app_config.json")

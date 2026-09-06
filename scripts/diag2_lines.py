@@ -10,15 +10,18 @@ vendor app uses, asserts both by default.
 This sweeps every combination and also tries a mid-session DTR toggle.
 Read-only: no pnputil, no rtscts, nothing that can hang.
 
-Usage: python diag2_lines.py [COM3]
+Usage (from the repo root): python scripts/diag2_lines.py [COM3]
 """
 
+import os
 import sys
 import time
 
 import serial
 
-from hongtai_screen import _build_frame, CMD_GET_DEVICE_INFO
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+
+from hongtai_screen_app.driver.hongtai_screen import _build_frame, CMD_GET_DEVICE_INFO
 
 RESET_MARKER = bytes([0xFF, 0xD9, 0xFF, 0xD9])
 PORT = sys.argv[1] if len(sys.argv) > 1 else "COM3"

@@ -21,7 +21,7 @@ import datetime
 
 from PIL import Image, ImageDraw, ImageFont
 
-from hongtai_screen import HongtaiScreen
+from ..driver.hongtai_screen import HongtaiScreen
 
 try:
     import psutil
