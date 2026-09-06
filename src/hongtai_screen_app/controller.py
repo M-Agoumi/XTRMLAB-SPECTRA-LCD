@@ -225,6 +225,11 @@ class AppController:
                 key: {"label": scheme["label"]}
                 for key, scheme in dashboard_theme.BACKGROUND_COLOR_SCHEMES.items()
             },
+            "nowPlaying": {
+                "default_art_path": d.get("default_art_path") or None,
+                "not_playing_message": d.get("not_playing_message") or None,
+                "default_message": dashboard_theme.DEFAULT_NOT_PLAYING_MESSAGE,
+            },
         }
 
     def save_dashboard_elements(self, elements):
@@ -265,6 +270,34 @@ class AppController:
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
             return dict(self.cfg["dashboard"]["background"])
+
+    def save_dashboard_now_playing(self, patch):
+        """Persists the "nothing playing" placeholder settings -- the
+        default album-art image and/or the message shown in place of a
+        track title -- same merge-into-"dashboard" shape as
+        save_dashboard_background(), but unlike the background these
+        two are live settings dashboard_theme.py re-reads every frame
+        (see set_default_art_path()/set_not_playing_message()), the
+        same way app.py's Tkinter Dashboard tab has always applied them
+        as you type, no Stop/Start needed -- so this applies them to
+        the running dashboard_theme module immediately too, not just on
+        the next Start/Apply. Only `default_art_path`/
+        `not_playing_message` keys are meaningful here; anything else
+        in `patch` is stored but ignored by the renderer, same
+        tolerance every other merge-safe dashboard endpoint has."""
+        if not isinstance(patch, dict):
+            raise ValueError("patch must be an object")
+        with self._lock:
+            dashboard_cfg = dict(self.cfg.get("dashboard") or {})
+            dashboard_cfg.update(patch)
+            self.cfg["dashboard"] = dashboard_cfg
+            config_store.save_config(self.cfg)
+            result = dict(self.cfg["dashboard"])
+        if "default_art_path" in patch:
+            dashboard_theme.set_default_art_path(patch.get("default_art_path") or None)
+        if "not_playing_message" in patch:
+            dashboard_theme.set_not_playing_message(patch.get("not_playing_message"))
+        return result
 
     def save_dashboard_preset(self, name, elements):
         name = (name or "").strip()

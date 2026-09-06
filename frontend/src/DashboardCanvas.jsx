@@ -100,6 +100,9 @@ export default function DashboardCanvas({ frameUrl, connected }) {
   const [bgDraft, setBgDraft] = useState(null);
   const [bgStatus, setBgStatus] = useState(null);
   const [bgError, setBgError] = useState(null);
+  const [npDraft, setNpDraft] = useState(null);
+  const [npStatus, setNpStatus] = useState(null);
+  const [npError, setNpError] = useState(null);
 
   const historyRef = useRef([]);
   const futureRef = useRef([]);
@@ -113,6 +116,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         setMeta(m);
         setElements(m.elements);
         setBgDraft(m.background);
+        setNpDraft(m.nowPlaying);
         historyRef.current = [];
         futureRef.current = [];
         setSelectedId(null);
@@ -324,6 +328,27 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         setBgStatus("Background saved -- takes effect on the next Start/Apply.");
       },
       (e) => setBgError(e.message)
+    );
+  };
+
+  const updateNpDraft = (patch) => {
+    setNpStatus(null);
+    setNpDraft((prev) => ({ ...prev, ...patch }));
+  };
+
+  const saveNowPlaying = () => {
+    if (!npDraft) return;
+    setNpError(null);
+    api.saveDashboardNowPlaying({
+      default_art_path: npDraft.default_art_path || null,
+      not_playing_message: npDraft.not_playing_message || null,
+    }).then(
+      (dashboardCfg) => {
+        setNpDraft((prev) => ({ ...prev, default_art_path: dashboardCfg.default_art_path,
+                                 not_playing_message: dashboardCfg.not_playing_message }));
+        setNpStatus("Saved -- applies live, even while the dashboard is already running.");
+      },
+      (e) => setNpError(e.message)
     );
   };
 
@@ -771,6 +796,44 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           </div>
           {bgStatus && <p className="hint settings-saved">{bgStatus}</p>}
           {bgError && <p className="error">{bgError}</p>}
+        </div>
+      )}
+
+      {npDraft && (
+        <div className="canvas-props">
+          <h2>"Nothing playing" placeholder</h2>
+          <div className="row">
+            <label className="grow">
+              Placeholder image
+              <input
+                type="text"
+                value={npDraft.default_art_path || ""}
+                onChange={(e) => updateNpDraft({ default_art_path: e.target.value })}
+                placeholder="C:\Users\you\Pictures\logo.png (blank = plain drawn placeholder)"
+              />
+            </label>
+          </div>
+          <div className="row">
+            <label className="grow">
+              Message
+              <input
+                type="text"
+                value={npDraft.not_playing_message || ""}
+                onChange={(e) => updateNpDraft({ not_playing_message: e.target.value })}
+                placeholder={npDraft.default_message}
+              />
+            </label>
+          </div>
+          <p className="hint">
+            Shown in place of the album art/track title whenever nothing is playing.
+            Leave either blank to fall back to the default. Both apply live, even while
+            the dashboard is already running -- no need to Stop/Start or Save layout.
+          </p>
+          <div className="row">
+            <button onClick={saveNowPlaying}>Save</button>
+          </div>
+          {npStatus && <p className="hint settings-saved">{npStatus}</p>}
+          {npError && <p className="error">{npError}</p>}
         </div>
       )}
 

@@ -1605,8 +1605,24 @@ def art_glow_frame(size, radius, accent, inset=7):
 
 
 # Shown (wrapped across as many lines as it needs) in place of a track
-# title whenever nothing is currently playing.
-NOT_PLAYING_MESSAGE = "Life is like a door never trust a cow because the sun can't swim"
+# title whenever nothing is currently playing. Same live-settable
+# pattern as DEFAULT_ART_PATH/set_default_art_path() just above --
+# `_not_playing_message` is what render_frame() actually reads every
+# frame (falling back to DEFAULT_NOT_PLAYING_MESSAGE when it's None),
+# so editing it, like the placeholder image, takes effect on the very
+# next frame instead of needing a Stop/Start.
+DEFAULT_NOT_PLAYING_MESSAGE = "Life is like a door never trust a cow because the sun can't swim"
+_not_playing_message = None
+
+
+def set_not_playing_message(message):
+    global _not_playing_message
+    message = (message or "").strip()
+    _not_playing_message = message or None
+
+
+def get_not_playing_message():
+    return _not_playing_message or DEFAULT_NOT_PLAYING_MESSAGE
 
 
 def truncate(draw, text, font, max_w):
@@ -1972,7 +1988,7 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
         # Nothing playing -- shown in full, wrapped over as many lines as
         # it needs rather than truncated with "...", since there's no
         # timestamp taking up the space below it anymore.
-        for line in wrap_text(draw, NOT_PLAYING_MESSAGE, fonts.message, mid_w - 16):
+        for line in wrap_text(draw, get_not_playing_message(), fonts.message, mid_w - 16):
             draw.text((mid_cx, y), line, font=fonts.message, fill=(200, 190, 220), anchor="ma")
             y += 28
         y += 10
@@ -1992,8 +2008,8 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
 
 
 def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
-        brightness=90, slots=None, elements=None, background=None, stop_event=None, log=print,
-        screen_factory=HongtaiScreen, on_connected=None, screen=None):
+        not_playing_message=None, brightness=90, slots=None, elements=None, background=None,
+        stop_event=None, log=print, screen_factory=HongtaiScreen, on_connected=None, screen=None):
     """Runs the dashboard until stop_event is set (or forever, if
     stop_event is None -- the CLI entry point below relies on Ctrl+C /
     KeyboardInterrupt instead in that case). Pulled out of main() so a
@@ -2048,6 +2064,7 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
         return
 
     set_default_art_path(default_art_path)
+    set_not_playing_message(not_playing_message)
 
     owns_screen = screen is None
     if owns_screen:
@@ -2154,10 +2171,13 @@ def main():
     ap.add_argument("--default-art", default=None,
                      help="image to show in place of album art when nothing is playing "
                           "(default: a plain drawn placeholder, no file needed)")
+    ap.add_argument("--not-playing-message", default=None,
+                     help="text to show in place of the track title when nothing is "
+                          f"playing (default: {DEFAULT_NOT_PLAYING_MESSAGE!r})")
     args = ap.parse_args()
 
     run(port=args.port, web_port=args.web_port, enable_web=not args.no_web,
-        default_art_path=args.default_art)
+        default_art_path=args.default_art, not_playing_message=args.not_playing_message)
 
 
 if __name__ == "__main__":

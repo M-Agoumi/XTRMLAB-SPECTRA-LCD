@@ -347,6 +347,18 @@ class App(tk.Tk):
                   foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(10, 0))
         row += 1
 
+        ttk.Label(f, text="\"Nothing playing\" message:").grid(row=row, column=0, sticky="w", pady=(12, 0))
+        row += 1
+        self.dash_not_playing_message = tk.StringVar(value=d.get("not_playing_message", "") or "")
+        self.dash_not_playing_message.trace_add("write", self._on_dash_message_change)
+        ttk.Entry(f, textvariable=self.dash_not_playing_message, width=54).grid(
+            row=row, column=0, columnspan=3, sticky="w", pady=(2, 0))
+        row += 1
+        ttk.Label(f, text="Shown in place of the track title when nothing is playing. Leave\n"
+                          "blank for the default line. Applies live -- no need to Stop/Start.",
+                  foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        row += 1
+
         # --- background -----------------------------------------------
         ttk.Label(f, text="Background:", font=("", 10, "bold")).grid(
             row=row, column=0, columnspan=4, sticky="w", pady=(16, 0))
@@ -666,6 +678,13 @@ class App(tk.Tk):
         # this genuinely takes effect on the very next frame, no restart.
         dashboard_theme.set_default_art_path(self.dash_art_path.get().strip() or None)
 
+    def _on_dash_message_change(self, *_args):
+        # Same "applies live, no restart" reasoning as _on_dash_art_
+        # change() above -- render_frame() calls get_not_playing_
+        # message() fresh every frame rather than baking it into the
+        # static background.
+        dashboard_theme.set_not_playing_message(self.dash_not_playing_message.get())
+
     def _apply_dash_web_settings(self):
         if not (self.running_tab_index == 0 and self.active_screen is not None):
             return  # nothing running yet -- takes effect on the next Start instead
@@ -806,12 +825,14 @@ class App(tk.Tk):
     def _dashboard_kwargs(self, port, brightness):
         web_port = self._parse_int(self.dash_web_port.get(), "Web mirror port", default=8765)
         art_path = self.dash_art_path.get().strip() or None
+        not_playing_message = self.dash_not_playing_message.get().strip() or None
         slots = {slot_key: self._stat_label_to_key.get(var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
                   for slot_key, var in self.dash_slot_vars.items()}
         background = self._dash_background_dict()
         return "Dashboard", dashboard_theme.run, dict(
             port=port, web_port=web_port, enable_web=self.dash_web_enable.get(),
-            default_art_path=art_path, brightness=brightness, slots=slots, background=background,
+            default_art_path=art_path, not_playing_message=not_playing_message,
+            brightness=brightness, slots=slots, background=background,
         )
 
     def _dash_background_dict(self):
@@ -882,6 +903,7 @@ class App(tk.Tk):
                 "enable_web": self.dash_web_enable.get(),
                 "web_port": self.dash_web_port.get(),
                 "default_art_path": self.dash_art_path.get().strip() or None,
+                "not_playing_message": self.dash_not_playing_message.get().strip() or None,
                 "slots": {slot_key: self._stat_label_to_key.get(
                               var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
                           for slot_key, var in self.dash_slot_vars.items()},
