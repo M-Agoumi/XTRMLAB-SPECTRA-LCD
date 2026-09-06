@@ -88,6 +88,8 @@ def _make_handler(controller: AppController):
                     self._send_json(200, controller.state())
                 elif path == "/api/config":
                     self._send_json(200, controller.get_config())
+                elif path == "/api/system":
+                    self._send_json(200, controller.system_info())
                 elif path == "/api/logs/stream":
                     self._handle_log_stream()
                 elif path == "/frame.jpg":
@@ -107,6 +109,9 @@ def _make_handler(controller: AppController):
                 if path == "/api/config":
                     patch = self._read_json_body()
                     self._send_json(200, controller.update_config(patch))
+                elif path == "/api/brightness":
+                    body = self._read_json_body()
+                    self._send_json(200, controller.set_brightness(body.get("value")))
                 elif path == "/api/start":
                     body = self._read_json_body()
                     self._send_json(200, controller.start(theme_name=body.get("theme")))
@@ -116,6 +121,11 @@ def _make_handler(controller: AppController):
                 elif path == "/api/apply":
                     controller.apply()
                     self._send_json(200, {"ok": True})
+                elif path == "/api/startup":
+                    body = self._read_json_body()
+                    self._send_json(200, controller.set_startup(bool(body.get("enabled"))))
+                elif path == "/api/shortcut":
+                    self._send_json(200, controller.create_desktop_shortcut())
                 else:
                     self._send_error_json(404, f"no such endpoint: {path}")
             except (ValueError, RuntimeError) as e:

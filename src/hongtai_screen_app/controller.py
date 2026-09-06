@@ -11,11 +11,14 @@ underlying modules (config_store, ThemeWorker, theme_kwargs, the
 driver), fully headless and fully testable without a display.
 """
 import queue
+import sys
 import threading
 import time
 from collections import deque
 
 from . import config_store
+from . import desktop_shortcut
+from . import startup_registration
 from . import theme_kwargs
 from .driver import hongtai_screen
 from .theme_worker import ThemeWorker
@@ -119,6 +122,64 @@ class AppController:
             self.cfg.update(patch)
             config_store.save_config(self.cfg)
             return dict(self.cfg)
+
+    def set_brightness(self, value):
+        """Brightness is special-cased instead of going through
+        update_config(): app.py's own slider applies it *live*, with no
+        restart, by calling screen.set_brightness() directly on the
+        running HongtaiScreen the moment the slider moves (it's just a
+        per-frame software dim -- see the driver's set_brightness()
+        docstring -- so there's nothing to reconnect). A generic config
+        patch only takes effect on the next Start/Apply, which would
+        make the web UI's brightness slider feel broken by comparison
+        (dial it down, nothing visibly happens until you restart the
+        theme). This does both: persists the new value to
+        app_config.json like any other setting, AND, if a screen is
+        currently connected, pushes it to the panel immediately."""
+        try:
+            value = max(0, min(100, int(value)))
+        except (TypeError, ValueError):
+            raise ValueError(f"brightness must be a number 0-100, got {value!r}")
+        with self._lock:
+            self.cfg["brightness"] = value
+            config_store.save_config(self.cfg)
+            screen = self.active_screen
+        if screen is not None:
+            try:
+                screen.set_brightness(value)
+            except Exception as e:  # noqa: BLE001 -- surfaced in the log either way
+                self._log(f"(brightness change failed: {e})")
+        return {"brightness": value}
+
+    # ------------------------------------------------------------------ #
+    # Windows integration -- "Launch at Windows startup" / desktop
+    # shortcut. Thin wrappers around startup_registration.py/
+    # desktop_shortcut.py (Phase 1's extraction already made these
+    # Tkinter-independent); routed through here rather than called
+    # directly from control_server.py so every controller action is
+    # logged/handled the same way, and so a future caller other than
+    # the HTTP API (a future in-process UI, say) gets the same surface.
+    # ------------------------------------------------------------------ #
+    def system_info(self):
+        return {
+            "platform": sys.platform,
+            "startup_supported": sys.platform == "win32",
+            "startup_enabled": startup_registration.is_startup_enabled(),
+        }
+
+    def set_startup(self, enabled):
+        if enabled:
+            startup_registration.enable_startup()
+        else:
+            startup_registration.disable_startup()
+        return self.system_info()
+
+    def create_desktop_shortcut(self):
+        """Raises on failure (non-Windows, no Desktop folder, cscript
+        error) -- same as desktop_shortcut.create_desktop_shortcut()
+        itself; control_server.py's do_POST already turns a RuntimeError
+        into a 400 with the message intact."""
+        return {"path": desktop_shortcut.create_desktop_shortcut()}
 
     def _selected_port(self):
         """app_config.json's "port" is a human-readable *label* (e.g.

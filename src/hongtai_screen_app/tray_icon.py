@@ -63,7 +63,24 @@ class TrayIcon:
             pystray.MenuItem("Quit", self._handle_quit),
         )
         icon = pystray.Icon("hongtai_screen", image, "Hongtai Screen Control", menu)
-        threading.Thread(target=icon.run, daemon=True).start()
+
+        def _run():
+            # icon.run() blocks for the tray icon's whole lifetime; an
+            # exception in here would otherwise just silently kill this
+            # background thread (Python only prints it if something is
+            # watching stderr) and leave callers thinking start() having
+            # returned normally meant the icon actually came up. Printing
+            # it here at least makes that failure visible in whatever
+            # console this process has, instead of "no tray icon, no
+            # explanation at all".
+            try:
+                icon.run()
+            except Exception:  # noqa: BLE001
+                import traceback
+                print("(system tray icon thread crashed:)")
+                traceback.print_exc()
+
+        threading.Thread(target=_run, daemon=True).start()
         self._icon = icon
 
     @staticmethod

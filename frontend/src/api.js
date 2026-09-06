@@ -30,6 +30,33 @@ export function updateConfig(patch) {
   }).then(asJson);
 }
 
+// Brightness is split out from updateConfig() on purpose: the backend
+// applies it live (no restart needed) the same way app.py's slider
+// does, by pushing straight to the connected screen if one's running.
+export function setBrightness(value) {
+  return fetch("/api/brightness", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  }).then(asJson);
+}
+
+export function getSystem() {
+  return fetch("/api/system").then(asJson);
+}
+
+export function setStartup(enabled) {
+  return fetch("/api/startup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  }).then(asJson);
+}
+
+export function createShortcut() {
+  return fetch("/api/shortcut", { method: "POST" }).then(asJson);
+}
+
 export function start(theme) {
   return fetch("/api/start", {
     method: "POST",

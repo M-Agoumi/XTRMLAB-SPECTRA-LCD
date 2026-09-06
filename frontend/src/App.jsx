@@ -7,17 +7,27 @@ const FRAME_POLL_MS = 400; // control_server.py serves one JPEG per
                             // "live" preview is really a fast poll --
                             // matches what the old web-mirror page did.
 
+const BRIGHTNESS_DEBOUNCE_MS = 120; // set_brightness() is a live, no-restart
+                                     // push straight to the connected screen
+                                     // (see api.js) -- debounced just enough
+                                     // that dragging the slider doesn't fire
+                                     // an HTTP request on every pixel.
+
 export default function App() {
   const [state, setState] = useState(null);
   const [stateError, setStateError] = useState(null);
   const [config, setConfig] = useState(null);
+  const [system, setSystem] = useState(null);
   const [portDraft, setPortDraft] = useState("");
   const [brightnessDraft, setBrightnessDraft] = useState(90);
   const [theme, setTheme] = useState("clock");
   const [logs, setLogs] = useState([]);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState(null);
+  const [systemError, setSystemError] = useState(null);
+  const [shortcutMsg, setShortcutMsg] = useState(null);
   const logBoxRef = useRef(null);
+  const brightnessTimer = useRef(null);
 
   // -- state polling -----------------------------------------------
   useEffect(() => {
@@ -50,6 +60,11 @@ export default function App() {
       setPortDraft(c.port || "");
       setBrightnessDraft(c.brightness ?? 90);
     });
+  }, []);
+
+  // -- system info: Windows-startup / desktop-shortcut status --------
+  useEffect(() => {
+    api.getSystem().then(setSystem, (e) => setSystemError(e.message));
   }, []);
 
   // -- live log stream -----------------------------------------------
@@ -102,13 +117,41 @@ export default function App() {
 
   const handleStart = () => runAction(() => api.start(theme));
   const handleStop = () => runAction(() => api.stop());
+  // Apply restarts whatever theme is CURRENTLY running with the
+  // latest saved settings (port, and anything theme-specific) -- it
+  // does not switch to a different theme. That's not a limitation of
+  // this button specifically: app.py's own "Apply (restart)" button
+  // works the same way, which is also why the theme picker below is
+  // locked while something's running -- Stop first to pick a
+  // different one, same as the old app's tabs being locked mid-run.
   const handleApply = () => runAction(() => api.apply());
 
   const handleSaveConfig = () =>
     runAction(async () => {
-      const patch = { port: portDraft || null, brightness: Number(brightnessDraft) };
-      const saved = await api.updateConfig(patch);
+      const saved = await api.updateConfig({ port: portDraft || null });
       setConfig(saved);
+    });
+
+  // Brightness is applied live (see api.setBrightness's docstring) --
+  // no Save button needed for it, just a short debounce on drag.
+  const handleBrightnessChange = (value) => {
+    setBrightnessDraft(value);
+    if (brightnessTimer.current) clearTimeout(brightnessTimer.current);
+    brightnessTimer.current = setTimeout(() => {
+      api.setBrightness(Number(value)).catch((e) => setActionError(e.message));
+    }, BRIGHTNESS_DEBOUNCE_MS);
+  };
+
+  const handleToggleStartup = (enabled) =>
+    runAction(async () => {
+      setSystem(await api.setStartup(enabled));
+    });
+
+  const handleCreateShortcut = () =>
+    runAction(async () => {
+      setShortcutMsg(null);
+      const { path } = await api.createShortcut();
+      setShortcutMsg(`Created: ${path}`);
     });
 
   const running = !!state?.worker_alive;
@@ -145,7 +188,12 @@ export default function App() {
         <div className="row">
           <label>
             Theme
-            <select value={theme} onChange={(e) => setTheme(e.target.value)} disabled={busy}>
+            <select
+              value={theme}
+              onChange={(e) => setTheme(e.target.value)}
+              disabled={busy || running}
+              title={running ? "Stop the running theme to pick a different one" : undefined}
+            >
               {api.THEMES.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -159,8 +207,8 @@ export default function App() {
           <button onClick={handleStop} disabled={busy || !running}>
             Stop
           </button>
-          <button onClick={handleApply} disabled={busy || !running}>
-            Apply
+          <button onClick={handleApply} disabled={busy || !running} title="Restart the running theme with the latest saved settings">
+            Apply (restart)
           </button>
         </div>
         {state?.running_theme && (
@@ -190,17 +238,42 @@ export default function App() {
               min="0"
               max="100"
               value={brightnessDraft}
-              onChange={(e) => setBrightnessDraft(e.target.value)}
+              onChange={(e) => handleBrightnessChange(e.target.value)}
             />
           </label>
-          <button onClick={handleSaveConfig} disabled={busy}>
-            Save
-          </button>
         </div>
         <p className="hint">
-          Saving takes effect on the next Start/Apply, same as editing
-          app_config.json directly.
+          Brightness applies immediately, running or not. Port needs
+          Save, and takes effect on the next Start/Apply.
         </p>
+      </section>
+
+      <section className="panel">
+        <h2>System</h2>
+        {system?.startup_supported === false ? (
+          <p className="hint">
+            Launch-at-startup and desktop shortcuts are Windows-only.
+          </p>
+        ) : (
+          <>
+            <div className="row">
+              <label className="row-inline">
+                <input
+                  type="checkbox"
+                  checked={!!system?.startup_enabled}
+                  disabled={busy || !system}
+                  onChange={(e) => handleToggleStartup(e.target.checked)}
+                />
+                Launch at Windows startup
+              </label>
+              <button onClick={handleCreateShortcut} disabled={busy}>
+                Create Desktop Shortcut
+              </button>
+            </div>
+            {shortcutMsg && <p className="hint">{shortcutMsg}</p>}
+          </>
+        )}
+        {systemError && <p className="error">{systemError}</p>}
       </section>
 
       <section className="panel">
