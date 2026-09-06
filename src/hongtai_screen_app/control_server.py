@@ -90,6 +90,8 @@ def _make_handler(controller: AppController):
                     self._send_json(200, controller.get_config())
                 elif path == "/api/system":
                     self._send_json(200, controller.system_info())
+                elif path == "/api/dashboard/meta":
+                    self._send_json(200, controller.dashboard_meta())
                 elif path == "/api/logs/stream":
                     self._handle_log_stream()
                 elif path == "/frame.jpg":
@@ -126,6 +128,17 @@ def _make_handler(controller: AppController):
                     self._send_json(200, controller.set_startup(bool(body.get("enabled"))))
                 elif path == "/api/shortcut":
                     self._send_json(200, controller.create_desktop_shortcut())
+                elif path == "/api/dashboard/elements":
+                    body = self._read_json_body()
+                    self._send_json(200, controller.save_dashboard_elements(body.get("elements")))
+                elif path == "/api/dashboard/presets":
+                    body = self._read_json_body()
+                    presets = controller.save_dashboard_preset(body.get("name"), body.get("elements"))
+                    self._send_json(200, {"presets": presets})
+                elif path == "/api/dashboard/presets/delete":
+                    body = self._read_json_body()
+                    presets = controller.delete_dashboard_preset(body.get("name"))
+                    self._send_json(200, {"presets": presets})
                 else:
                     self._send_error_json(404, f"no such endpoint: {path}")
             except (ValueError, RuntimeError) as e:
@@ -212,6 +225,7 @@ def _make_handler(controller: AppController):
                 "</p><ul>"
                 "<li><a href=\"/api/state\">/api/state</a></li>"
                 "<li><a href=\"/api/config\">/api/config</a></li>"
+                "<li><a href=\"/api/dashboard/meta\">/api/dashboard/meta</a></li>"
                 "<li><a href=\"/frame.jpg\">/frame.jpg</a></li>"
                 "</ul></body></html>"
             ).encode("utf-8")

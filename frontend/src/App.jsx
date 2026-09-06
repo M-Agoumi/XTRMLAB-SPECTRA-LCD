@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api.js";
+import DashboardCanvas from "./DashboardCanvas.jsx";
 
 const STATE_POLL_MS = 1500;
 const FRAME_POLL_MS = 400; // control_server.py serves one JPEG per
@@ -407,14 +408,7 @@ export default function App() {
       )}
 
       {theme === "dashboard" && (
-        <section className="panel">
-          <h2>Dashboard settings</h2>
-          <p className="hint">
-            The Dashboard's gauge layout isn't in the web UI yet (ROADMAP.md Phase 4) --
-            use the desktop app to configure it for now. Starting it here uses whatever
-            it's already configured to show.
-          </p>
-        </section>
+        <DashboardCanvas frameUrl={frameUrl} connected={!!state?.connected} />
       )}
 
       {settingsSaved && <p className="hint settings-saved">{settingsSaved}</p>}

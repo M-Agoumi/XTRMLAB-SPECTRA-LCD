@@ -24,6 +24,7 @@ from . import startup_registration
 from . import theme_kwargs
 from .driver import hongtai_screen
 from .screen_engine import ScreenEngine
+from .themes import dashboard_theme
 
 
 class AppController:
@@ -185,6 +186,82 @@ class AppController:
         itself; control_server.py's do_POST already turns a RuntimeError
         into a 400 with the message intact."""
         return {"path": desktop_shortcut.create_desktop_shortcut()}
+
+    # ------------------------------------------------------------------ #
+    # Dashboard design canvas (ROADMAP.md Phase 5) -- reading/writing
+    # dashboard.elements (and named presets of it) gets its own small
+    # surface instead of going through the generic update_config(),
+    # because update_config()'s per-top-level-key merge would replace
+    # the ENTIRE "dashboard" sub-dict on every save -- fine for Phase 3's
+    # video/webpage forms (their own top-level keys), but saving just a
+    # layout tweak through it would silently wipe out web_port/
+    # enable_web/background/slots. These methods merge into the existing
+    # "dashboard" dict instead, so the canvas can save a layout without
+    # knowing or caring what else is in there.
+    # ------------------------------------------------------------------ #
+    def dashboard_meta(self):
+        """Everything the design canvas needs to initialize itself: the
+        layout it would actually render right now (resolved the same
+        way dashboard_kwargs() resolves it, so the canvas can never
+        drift from what Start/Apply actually renders), the built-in
+        default layout to reset to, any saved named presets, and enough
+        STAT_DEFS metadata to populate a per-gauge stat picker without
+        the frontend needing to import anything from dashboard_theme.py
+        itself."""
+        with self._lock:
+            cfg = dict(self.cfg)
+        d = cfg.get("dashboard", {}) or {}
+        return {
+            "elements": theme_kwargs.resolve_dashboard_elements(cfg),
+            "defaults": dashboard_theme.DEFAULT_ELEMENTS,
+            "presets": d.get("presets", {}),
+            "stats": {
+                key: {"label": meta["label"], "title": meta["title"]}
+                for key, meta in dashboard_theme.STAT_DEFS.items()
+            },
+        }
+
+    def save_dashboard_elements(self, elements):
+        """Persists a new gauge layout -- takes effect on the next
+        Start/Apply, same as any other "needs a restart" dashboard
+        setting (see build_static_background()'s docstring). Doesn't
+        validate element shape beyond "is it a list" -- a malformed
+        element just fails loudly inside dashboard_theme.py's own
+        render path the next time it's started, same as a bad video
+        path or URL does for those themes."""
+        if not isinstance(elements, list):
+            raise ValueError("elements must be a list")
+        with self._lock:
+            dashboard_cfg = dict(self.cfg.get("dashboard") or {})
+            dashboard_cfg["elements"] = elements
+            self.cfg["dashboard"] = dashboard_cfg
+            config_store.save_config(self.cfg)
+            return dict(self.cfg["dashboard"])
+
+    def save_dashboard_preset(self, name, elements):
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("preset name can't be empty")
+        if not isinstance(elements, list):
+            raise ValueError("elements must be a list")
+        with self._lock:
+            dashboard_cfg = dict(self.cfg.get("dashboard") or {})
+            presets = dict(dashboard_cfg.get("presets") or {})
+            presets[name] = elements
+            dashboard_cfg["presets"] = presets
+            self.cfg["dashboard"] = dashboard_cfg
+            config_store.save_config(self.cfg)
+            return presets
+
+    def delete_dashboard_preset(self, name):
+        with self._lock:
+            dashboard_cfg = dict(self.cfg.get("dashboard") or {})
+            presets = dict(dashboard_cfg.get("presets") or {})
+            presets.pop(name, None)
+            dashboard_cfg["presets"] = presets
+            self.cfg["dashboard"] = dashboard_cfg
+            config_store.save_config(self.cfg)
+            return presets
 
     def _selected_port(self):
         """app_config.json's "port" is a human-readable *label* (e.g.

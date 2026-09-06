@@ -57,6 +57,40 @@ export function createShortcut() {
   return fetch("/api/shortcut", { method: "POST" }).then(asJson);
 }
 
+// Dashboard design canvas (ROADMAP.md Phase 5) -- a small surface of
+// its own rather than going through updateConfig(), because that PATCHes
+// the whole "dashboard" sub-object at once; these merge into it
+// server-side instead, so saving a layout tweak can't accidentally wipe
+// out web_port/enable_web/background/slots. See controller.py's
+// dashboard_meta()/save_dashboard_elements() docstrings.
+export function getDashboardMeta() {
+  return fetch("/api/dashboard/meta").then(asJson);
+}
+
+export function saveDashboardElements(elements) {
+  return fetch("/api/dashboard/elements", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ elements }),
+  }).then(asJson);
+}
+
+export function saveDashboardPreset(name, elements) {
+  return fetch("/api/dashboard/presets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, elements }),
+  }).then(asJson);
+}
+
+export function deleteDashboardPreset(name) {
+  return fetch("/api/dashboard/presets/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  }).then(asJson);
+}
+
 export function start(theme) {
   return fetch("/api/start", {
     method: "POST",

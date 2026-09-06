@@ -618,12 +618,74 @@ and falls back to migrating `dashboard.slots` otherwise; and a full
 `dashboard_theme.run()` against a fake screen actually streamed real
 frames end to end. **Not yet verified on real hardware.**
 
-### Phase 5 — The design canvas
+### Phase 5 — The design canvas — ✅ DONE (pending a real-machine pass)
 
-The hard, novel part, built on foundations already proven by then:
-drag/resize/rotate handles over the live frame, a property panel for
-the selected element, add/delete, z-order, snapping and alignment
-guides, undo/redo, and saveable layout presets.
+Built on Phase 4's element list directly: the canvas edits exactly the
+same `{id, type, stat, x, y, radius, rotation, color, opacity, z}`
+shape that already round-trips through config, so there's no separate
+"canvas format" to convert to/from -- what you drag is what
+`dashboard_theme.py` renders.
+
+New frontend component `DashboardCanvas.jsx` (the web UI's Dashboard
+tab), an SVG overlay drawn on top of the live `/frame.jpg` mirror when
+the panel's connected (a placeholder background otherwise):
+
+- **Drag** a gauge to move it (pointer events on the circle), **drag
+  its corner handle** to resize (radius = pixel distance from the
+  gauge's own center to the pointer, converted back to the same
+  fraction-of-`min(width,height)` basis `dashboard_theme.py` uses).
+  **Rotate is deliberately not exposed** -- Phase 4 stores/migrates
+  `rotation` but doesn't render it yet (the needle would need to
+  rotate in lockstep with the ring, and nothing could set a non-zero
+  value before this canvas existed to offer it), so a rotate handle
+  here would visibly do nothing. It'll get one once rendering support
+  lands.
+- **Snapping + alignment guides**: dragging within ~1.8% of the canvas
+  center or another gauge's x or y snaps to it and draws a dashed
+  guide line, independently on each axis.
+- **Property panel** for the selected gauge: stat picker (from
+  `STAT_DEFS`, via the new `/api/dashboard/meta` metadata endpoint so
+  the frontend never needs to import anything from `dashboard_theme.py`
+  directly), opacity slider, a custom-color checkbox + picker (falls
+  back to the existing left-cyan/right-magenta split when off), and
+  numeric X%/Y%/Radius% fields for precise placement alongside dragging.
+- **Add/delete**, **bring to front/send to back** (z-order).
+- **Undo/redo** (buttons + Ctrl+Z/Ctrl+Y), a plain history-stack of
+  committed element-list snapshots -- drag/resize only push one entry
+  per gesture (on release), not per pointer-move frame.
+- **Save layout** persists the current elements; **saveable named
+  presets** (save current as / load / delete) let you keep more than
+  one layout around and switch between them.
+
+New backend surface, kept separate from the generic `update_config()`
+on purpose: a `dashboard` config patch through that endpoint replaces
+the *entire* `dashboard` sub-dict, which would silently wipe
+`web_port`/`enable_web`/`background`/`slots` on every layout save.
+`controller.dashboard_meta()`/`save_dashboard_elements()`/
+`save_dashboard_preset()`/`delete_dashboard_preset()` (routed through
+`GET /api/dashboard/meta`, `POST /api/dashboard/elements`,
+`POST /api/dashboard/presets`, `POST /api/dashboard/presets/delete`)
+merge into the existing `dashboard` dict instead. `theme_kwargs.py`'s
+element-resolution logic was pulled into a shared
+`resolve_dashboard_elements(cfg)` so `dashboard_kwargs()` (what
+actually starts the theme) and `dashboard_meta()` (what the canvas
+reads) can never disagree about "what's the layout right now".
+
+Verified: pure-function geometry/color/snapping helpers unit-tested in
+isolation (hex/rgb conversion, accent derivation, resize-radius math,
+snap-distance logic); the production frontend build is clean; and a
+full Playwright run against the real built frontend + a live backend
+(no panel attached) confirmed, with screenshots at each step, the
+default layout renders correctly, clicking a gauge selects it and
+opens the property panel, dragging moves it and updates the panel
+live, Save Layout persists to `app_config.json`, Add Gauge/Delete/
+Undo round-trip correctly, and preset save actually reaches the
+backend. The saved custom layout from that browser session was then
+fed back through the real `dashboard_theme.build_static_background()`/
+`render_frame()` (full cairo rendering, not a stub) and rendered
+correctly. **Not yet verified on real hardware** -- specifically,
+editing live over an actual panel's `/frame.jpg` mirror rather than
+the "no screen connected" placeholder.
 
 ### Phase 6 — Richer elements and options
 
