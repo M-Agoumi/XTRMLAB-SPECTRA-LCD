@@ -17,25 +17,34 @@ def _app_base_dir():
     that must persist next to it across runs (app_config.json, the
     startup-launcher command in startup_registration.py).
 
-    NOT this module's own __file__: since the v2.0 restructure this
-    file lives inside src/hongtai_screen_app/, several directories
-    below the repo root that app_config.json/startup_debug.log/icon.ico
-    actually need to sit next to (wherever the real entry point --
-    root app.py, or the frozen .exe -- lives). Resolved instead via
-    whatever module Python itself is running as __main__, same
-    approach startup_registration.py and desktop_shortcut.py already
-    use to find the real script to point a launcher/shortcut at.
+    Anchored on THIS file's own location (three parents up from
+    src/hongtai_screen_app/paths.py is always the repo root), not on
+    whatever script Python happened to be run as. It used to be
+    resolved via sys.modules["__main__"].__file__ instead -- fine back
+    when root app.py was the only legitimate entry point, but Phase 2
+    added a second one (scripts/run_backend.py, which runs the backend
+    with no Tkinter at all) that lives a directory below the repo root.
+    Resolving via __main__ made that script write its own separate
+    scripts/app_config.json instead of sharing the real one next to
+    app.py -- exactly the "same app_config.json" run_backend.py's own
+    docstring promises. Anchoring on this file's location instead means
+    every entry point (app.py, scripts/run_backend.py, and whatever
+    Phase 2c's webview backend turns out to be) agrees on the same
+    directory, without needing to know about each other.
 
-    Under a frozen PyInstaller build, __main__'s __file__ points inside
-    a temporary extraction folder instead (a fresh one every run), so
-    this checks sys.frozen and uses the real .exe's own folder in that
-    case."""
+    startup_registration.py and desktop_shortcut.py still use
+    sys.modules["__main__"].__file__ directly, deliberately -- they're
+    solving a different problem (what command line actually points at
+    the real running script, for a Windows Startup/.lnk launcher),
+    where the __main__ script's own identity is exactly what's wanted.
+
+    Under a frozen PyInstaller build, this file's own location points
+    inside a temporary extraction folder instead (a fresh one every
+    run), so this checks sys.frozen and uses the real .exe's own folder
+    in that case."""
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
-    main_file = getattr(sys.modules.get("__main__"), "__file__", None)
-    if main_file:
-        return os.path.dirname(os.path.abspath(main_file))
-    return os.getcwd()  # best-effort fallback -- e.g. an interactive shell
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _resource_path(*parts):

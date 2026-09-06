@@ -32,6 +32,25 @@ dashboard designer) this is laying groundwork for.
   that code lived directly inside `app.py`. Both now resolve the
   actual running script via `sys.modules["__main__"]` instead, which
   is correct regardless of which file the code lives in.
+- **Phase 2a of the v2.0 rewrite**: a new, headless HTTP control API
+  (`src/hongtai_screen_app/controller.py` + `control_server.py`,
+  `scripts/run_backend.py` to run it standalone) that drives the same
+  start/stop/apply/config logic as the Tkinter app, bound to
+  `127.0.0.1` only. Fully additive — the Tkinter GUI is untouched.
+- **Phase 2b of the v2.0 rewrite**: a minimal Vite + React frontend
+  (`frontend/`) — connection status, live preview, theme/port/
+  brightness/start/stop/apply controls, a live log panel — served by
+  the backend itself on the same origin as the control API. The built
+  bundle (`frontend/dist/`) is committed so no Node toolchain is
+  required to run the app, only to change the frontend's source.
+- Fixed a bug Phase 2b's real-hardware pass surfaced: running the
+  backend via `scripts/run_backend.py` wrote its own separate
+  `scripts/app_config.json` instead of sharing the real one next to
+  `app.py`, because `_app_base_dir()` resolved via
+  `sys.modules["__main__"].__file__` — correct when `app.py` was the
+  only entry point, wrong once `scripts/run_backend.py` became a
+  second one. Now anchored on `paths.py`'s own file location instead,
+  so every entry point agrees on the same directory.
 
 ## [1.0.0] — 2026-08-29
 

@@ -248,7 +248,7 @@ frontend/process-spawn parts can't be verified from the sandbox at all
 (no display, no Node runtime tested here, no WebView2) -- each one
 lands and gets reviewed before the next starts.
 
-#### Phase 2a — Backend control API — ✅ DONE (pending on-hardware confirmation)
+#### Phase 2a — Backend control API — ✅ DONE
 
 New, additive, fully headless -- does **not** touch the Tkinter app.
 Three new modules in `src/hongtai_screen_app/`:
@@ -304,18 +304,67 @@ called received the worker's live error/recovery log lines in real
 time, matching exactly what the Tkinter app's Log panel would show for
 the same run. `scripts/run_backend.py` itself was run as a real
 subprocess, queried over HTTP, and shut down cleanly via SIGINT.
-Nothing here has been run against real hardware yet (no COM port in
-the sandbox) -- the `connected`/`screen_info` fields and
-`/frame.jpg` actually returning image bytes still need one real-machine
-pass.
+Confirmed on real hardware: `POST /api/start` connects to the panel,
+`connected`/`screen_info` populate correctly, and `/frame.jpg` returns
+real image bytes once a theme is running.
 
-#### Phase 2b — Frontend scaffold (not started)
+One bug surfaced by that real-machine pass, fixed as part of closing
+out this phase: `_app_base_dir()` (`paths.py`) resolved via
+`sys.modules["__main__"].__file__`, which pointed at `scripts/` (not
+the repo root) when the entry point was `scripts/run_backend.py`
+rather than root `app.py` -- so running the backend standalone wrote
+its own separate `scripts/app_config.json` instead of sharing the real
+one next to `app.py`, contradicting `run_backend.py`'s own docstring
+promise ("loads the same app_config.json the GUI uses"). Fixed by
+anchoring `_app_base_dir()` on `paths.py`'s own file location (three
+parents up is always the repo root) instead of on whichever script
+Python was run as -- `startup_registration.py`/`desktop_shortcut.py`
+keep using `sys.modules["__main__"].__file__`, deliberately, since
+they're solving a different problem (pointing a Windows launcher at
+the real running script). Verified headlessly: `scripts/run_backend.py`
+run from a fresh checkout now writes `app_config.json` at the repo
+root regardless of entry point, and a stray `scripts/app_config.json`
+is no longer created.
 
-A minimal Vite + React shell that talks to the Phase 2a API: the log
-panel, port/brightness/start/stop/apply controls, and the live preview
-via `/frame.jpg`. Needs Node/npm, and can only really be checked by
-eye (a screenshot or the real machine), so it's kept as its own step
-rather than folded into 2a.
+#### Phase 2b — Frontend scaffold — ✅ DONE (pending a look on the real machine)
+
+A minimal Vite + React shell (`frontend/`) that talks to the Phase 2a
+API: connection status, the live preview (`/frame.jpg`, polled at
+~2.5Hz -- the API serves one JPEG per request, not a multipart
+stream, matching how the old web-mirror page already worked),
+theme/port/brightness/start/stop/apply controls, and a live log panel
+(consumes `/api/logs/stream` via `EventSource`, which handles SSE
+reconnects on its own). `frontend/src/api.js` is the only file that
+knows the backend's actual endpoint shapes -- everything else just
+calls its functions.
+
+**Served by the backend itself, same origin, on purpose.** `npm run
+build`'s output (`frontend/dist/`) is served directly by
+`control_server.py`: any GET that isn't an API route now falls
+through to a static-file handler that serves `frontend/dist/`
+(path-traversal-checked -- verified headlessly that `/../../<anything
+outside dist>` 404s rather than leaking a repo file). This means
+there's no cross-origin request to configure in production at all --
+open `http://127.0.0.1:8899/` with a theme running and the whole UI
+loads from the same process already driving the panel. `npm run dev`
+(a separate Vite dev server on its own port) instead uses
+`vite.config.js`'s proxy for `/api`/`/frame.jpg`, for a fast edit
+loop while working on the frontend itself.
+
+`frontend/dist/` is committed to the repo (see `.gitignore`) so
+`pip install -r requirements.txt && python app.py` keeps working with
+zero Node toolchain required -- only touching `frontend/src/` requires
+Node, and only to rebuild the committed bundle afterward.
+
+Verified headlessly: `npm run build` succeeds cleanly; the built
+bundle's `index.html` and its hashed JS asset are served correctly by
+`control_server.py` with the right content types; `/api/state` and the
+rest of the API keep working unchanged alongside the static handler;
+a raw-socket path-traversal attempt (`GET /../pyproject.toml`, past
+`urlparse` which doesn't normalize `..` itself) correctly 404s instead
+of returning a repo file. Not yet checked by eye on a real screen --
+whether the layout/preview/controls actually look and feel right in a
+real browser against real hardware is still open.
 
 #### Phase 2c — UI process spawn/kill wiring (not started)
 
