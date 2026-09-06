@@ -533,6 +533,14 @@ class HongtaiScreen:
         self._mirror_jpeg: Optional[bytes] = None
         self._mirror_quality = 80
         self._mirror_httpd = None
+        # In-memory-only frame capture (see enable_frame_capture() below) --
+        # separate from _mirror_enabled on purpose: this keeps the latest
+        # frame available as JPEG bytes for a same-process caller (the
+        # control API's own /frame.jpg -- see control_server.py) without
+        # opening a second network listener/port the way enable_web_mirror()
+        # does. Both flags feed the same _mirror_jpeg buffer via
+        # _update_mirror() below; either one being on is enough to populate it.
+        self._capture_enabled = False
 
     @property
     def width(self) -> int:
@@ -767,8 +775,36 @@ class HongtaiScreen:
         self._mirror_httpd = None
         self._mirror_enabled = False
 
-    def _update_mirror(self, img: Image.Image):
+    def enable_frame_capture(self, quality: int = 80):
+        """Keep the latest frame available in memory as JPEG bytes (see
+        get_mirror_frame_jpeg()) with NO network listener at all -- unlike
+        enable_web_mirror(), which is opt-in and LAN-facing on purpose
+        (see its own docstring), this is meant for a same-process,
+        loopback-only caller like the control API's /frame.jpg endpoint,
+        so it carries none of the "opens a port, triggers a firewall
+        prompt" concerns and can just be left on whenever something's
+        connected. Safe to call alongside enable_web_mirror() -- they
+        share the same underlying buffer, and disabling one doesn't
+        affect the other."""
+        self._capture_enabled = True
+        self._mirror_quality = quality
+
+    def disable_frame_capture(self):
+        self._capture_enabled = False
         if not self._mirror_enabled:
+            with self._mirror_lock:
+                self._mirror_jpeg = None
+
+    def get_mirror_frame_jpeg(self) -> Optional[bytes]:
+        """The latest frame as JPEG bytes, or None if neither
+        enable_frame_capture() nor enable_web_mirror() is on yet (or no
+        frame has been shown since). A plain in-memory read -- no I/O,
+        cheap to poll."""
+        with self._mirror_lock:
+            return self._mirror_jpeg
+
+    def _update_mirror(self, img: Image.Image):
+        if not (self._mirror_enabled or self._capture_enabled):
             return
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=self._mirror_quality)
