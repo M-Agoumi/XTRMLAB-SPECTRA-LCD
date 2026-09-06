@@ -170,6 +170,10 @@ button:disabled {
   margin: 8px 0 0;
 }
 
+.settings-saved {
+  color: #6fd68f;
+}
+
 .log-box {
   background: #0c0d0f;
   border-radius: 6px;

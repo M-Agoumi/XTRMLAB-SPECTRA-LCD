@@ -76,6 +76,14 @@ dashboard designer) this is laying groundwork for.
   using the same `FindWindowW`-by-title approach `single_instance.py`
   already uses. Best-effort and unverified on a real machine yet.
 
+- **Phase 3 of the v2.0 rewrite**: Video, Webpage and Clock settings
+  forms added to the frontend, matching `app.py`'s own fields/hint text
+  per theme. No backend changes needed — `update_config()` and
+  `theme_kwargs.py` (both Phase 2a) already handled these settings
+  generically. The video path is a plain text field rather than a file
+  picker, since a browser file input can't hand back a real filesystem
+  path for the backend to open.
+
 ## [1.0.0] — 2026-08-29
 
 First tagged release. Everything below shipped before this tag existed

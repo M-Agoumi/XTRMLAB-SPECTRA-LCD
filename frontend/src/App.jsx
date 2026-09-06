@@ -26,6 +26,9 @@ export default function App() {
   const [actionError, setActionError] = useState(null);
   const [systemError, setSystemError] = useState(null);
   const [shortcutMsg, setShortcutMsg] = useState(null);
+  const [videoDraft, setVideoDraft] = useState({ path: "", loop: true, bw: false, audio: false, fps: "" });
+  const [webpageDraft, setWebpageDraft] = useState({ url: "", interval: "0.1", reloadEvery: "" });
+  const [settingsSaved, setSettingsSaved] = useState(null);
   const logBoxRef = useRef(null);
   const brightnessTimer = useRef(null);
 
@@ -59,6 +62,20 @@ export default function App() {
       setConfig(c);
       setPortDraft(c.port || "");
       setBrightnessDraft(c.brightness ?? 90);
+      const v = c.video || {};
+      setVideoDraft({
+        path: v.path || "",
+        loop: v.loop ?? true,
+        bw: v.bw ?? false,
+        audio: v.audio ?? false,
+        fps: v.fps ? String(v.fps) : "",
+      });
+      const w = c.webpage || {};
+      setWebpageDraft({
+        url: w.url || "",
+        interval: w.interval ? String(w.interval) : "0.1",
+        reloadEvery: w.reload_every ? String(w.reload_every) : "",
+      });
     });
   }, []);
 
@@ -142,6 +159,44 @@ export default function App() {
     }, BRIGHTNESS_DEBOUNCE_MS);
   };
 
+  // Video/Webpage settings -- ROADMAP.md Phase 3. Same shape app.py's
+  // own _save_current_config() persists (see its "video"/"webpage"
+  // dict comments): path/fps as a string or null, url/interval as
+  // strings, reload_every as a string or null. theme_kwargs.py already
+  // parses these straight out of app_config.json (it's what the
+  // headless controller was built to read from Phase 2a onward), so
+  // nothing on the backend needed to change for this -- these just
+  // fill in the two settings forms Phase 2b's minimal shell skipped.
+  const handleSaveVideo = () =>
+    runAction(async () => {
+      setSettingsSaved(null);
+      const saved = await api.updateConfig({
+        video: {
+          path: videoDraft.path.trim() || null,
+          loop: videoDraft.loop,
+          bw: videoDraft.bw,
+          audio: videoDraft.audio,
+          fps: videoDraft.fps.trim() || null,
+        },
+      });
+      setConfig(saved);
+      setSettingsSaved("Video settings saved -- takes effect on the next Start/Apply.");
+    });
+
+  const handleSaveWebpage = () =>
+    runAction(async () => {
+      setSettingsSaved(null);
+      const saved = await api.updateConfig({
+        webpage: {
+          url: webpageDraft.url.trim(),
+          interval: webpageDraft.interval.trim() || "0.1",
+          reload_every: webpageDraft.reloadEvery.trim() || null,
+        },
+      });
+      setConfig(saved);
+      setSettingsSaved("Webpage settings saved -- takes effect on the next Start/Apply.");
+    });
+
   const handleToggleStartup = (enabled) =>
     runAction(async () => {
       setSystem(await api.setStartup(enabled));
@@ -216,6 +271,130 @@ export default function App() {
         )}
         {actionError && <p className="error">{actionError}</p>}
       </section>
+
+      {theme === "video" && (
+        <section className="panel">
+          <h2>Video settings</h2>
+          <div className="row">
+            <label className="grow">
+              Video file (full path)
+              <input
+                type="text"
+                value={videoDraft.path}
+                onChange={(e) => setVideoDraft({ ...videoDraft, path: e.target.value })}
+                placeholder="C:\path\to\video.mp4"
+              />
+            </label>
+          </div>
+          <div className="row">
+            <label className="row-inline">
+              <input
+                type="checkbox"
+                checked={videoDraft.loop}
+                onChange={(e) => setVideoDraft({ ...videoDraft, loop: e.target.checked })}
+              />
+              Loop when it ends
+            </label>
+            <label className="row-inline">
+              <input
+                type="checkbox"
+                checked={videoDraft.bw}
+                onChange={(e) => setVideoDraft({ ...videoDraft, bw: e.target.checked })}
+              />
+              Force black &amp; white
+            </label>
+            <label className="row-inline">
+              <input
+                type="checkbox"
+                checked={videoDraft.audio}
+                onChange={(e) => setVideoDraft({ ...videoDraft, audio: e.target.checked })}
+              />
+              Also play audio (needs ffmpeg + pygame)
+            </label>
+          </div>
+          <div className="row">
+            <label>
+              FPS override (blank = the video's own rate)
+              <input
+                type="text"
+                value={videoDraft.fps}
+                onChange={(e) => setVideoDraft({ ...videoDraft, fps: e.target.value })}
+                placeholder="auto"
+                style={{ width: "6em" }}
+              />
+            </label>
+            <button onClick={handleSaveVideo} disabled={busy}>
+              Save
+            </button>
+          </div>
+          <p className="hint">No video is bundled with this app -- point it at any file on this machine.</p>
+        </section>
+      )}
+
+      {theme === "webpage" && (
+        <section className="panel">
+          <h2>Webpage settings</h2>
+          <div className="row">
+            <label className="grow">
+              URL
+              <input
+                type="text"
+                value={webpageDraft.url}
+                onChange={(e) => setWebpageDraft({ ...webpageDraft, url: e.target.value })}
+                placeholder="https://..."
+              />
+            </label>
+          </div>
+          <div className="row">
+            <label>
+              Screenshot interval (seconds)
+              <input
+                type="text"
+                value={webpageDraft.interval}
+                onChange={(e) => setWebpageDraft({ ...webpageDraft, interval: e.target.value })}
+                style={{ width: "6em" }}
+              />
+            </label>
+            <label>
+              Full reload every N seconds (blank = never)
+              <input
+                type="text"
+                value={webpageDraft.reloadEvery}
+                onChange={(e) => setWebpageDraft({ ...webpageDraft, reloadEvery: e.target.value })}
+                placeholder="never"
+                style={{ width: "6em" }}
+              />
+            </label>
+            <button onClick={handleSaveWebpage} disabled={busy}>
+              Save
+            </button>
+          </div>
+          <p className="hint">
+            Needs Playwright on the backend (pip install playwright, then playwright
+            install chromium) -- best kept simple and landscape.
+          </p>
+        </section>
+      )}
+
+      {theme === "clock" && (
+        <section className="panel">
+          <h2>Clock settings</h2>
+          <p className="hint">A live clock with CPU/RAM bars -- no settings beyond port and brightness below.</p>
+        </section>
+      )}
+
+      {theme === "dashboard" && (
+        <section className="panel">
+          <h2>Dashboard settings</h2>
+          <p className="hint">
+            The Dashboard's gauge layout isn't in the web UI yet (ROADMAP.md Phase 4) --
+            use the desktop app to configure it for now. Starting it here uses whatever
+            it's already configured to show.
+          </p>
+        </section>
+      )}
+
+      {settingsSaved && <p className="hint settings-saved">{settingsSaved}</p>}
 
       <section className="panel">
         <h2>Config</h2>
