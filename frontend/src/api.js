@@ -82,3 +82,15 @@ export function subscribeLogs(onLine) {
 }
 
 export const THEMES = ["dashboard", "video", "webpage", "clock"];
+
+// The display label controller.py's state() reports as "running_theme"
+// for each theme key -- see theme_kwargs.py's BUILDERS, which is where
+// these come from ("Dashboard", "Video", "Webpage Mirror", "Clock").
+// Used to figure out which THEMES key is actually running so the
+// picker can show it, rather than whatever it happened to default to.
+export const THEME_LABELS = {
+  dashboard: "Dashboard",
+  video: "Video",
+  webpage: "Webpage Mirror",
+  clock: "Clock",
+};
