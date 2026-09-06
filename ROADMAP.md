@@ -140,16 +140,37 @@ the background budget since it only exists while visible), effectively
 to today's ~84MB once it's doing real work, comfortably under the
 100MB cap.
 
-### Phase 1 — Extract the backend (no visible change)
+### Phase 1 — Extract the backend (no visible change) — ✅ DONE (pending on-hardware confirmation)
 
-Pull everything that isn't Tkinter out of `app.py` into modules that
-don't depend on it: config load/save, port enumeration, worker/thread
-lifecycle, tray icon, single-instance mutex, startup registration,
-desktop shortcut. This is what becomes the standalone backend process.
+Pulled everything that isn't Tkinter out of `app.py` into its own
+modules:
 
-The Tkinter app keeps working, now as a thin UI over those modules.
-Low risk, independently valuable, and it's what makes running the old
-UI and the new one side by side possible.
+- `app_paths.py` — base dir / resource path resolution, `startup_debug.log` writer
+- `config_store.py` — `app_config.json` load/save, `AUTO_DETECT`/`THEME_TAB_ORDER`
+- `startup_registration.py` — Windows Startup-folder VBS launcher
+- `desktop_shortcut.py` — Desktop `.lnk` creation
+- `single_instance.py` — named-mutex single-instance check
+- `theme_worker.py` — `ThemeWorker`: background thread + blind-restart
+  recovery loop, talking back only through a plain `log` callback
+- `tray_icon.py` — `TrayIcon`: pystray wrapper driven by three plain
+  callbacks (`on_show`/`on_stop_screen`/`on_quit`)
+
+`app.py` is now a thin Tkinter layer that calls into these. No
+intentional behavior change — verified headlessly (python3.12 +
+Tkinter under Xvfb, since the sandbox's default Python has no Tk) that
+the `App` class still constructs, builds its widgets, and that
+`ThemeWorker` runs/reports through its log callback exactly like the
+old inline thread did. One real fix rode along: `enable_startup()` and
+`create_desktop_shortcut()` used to resolve the running script via
+their own `__file__`; now that this logic lives in a different file
+than `app.py`, they resolve it via `sys.modules["__main__"].__file__`
+instead, which is what actually still points at `app.py` regardless of
+which module the code was called from.
+
+Tray icon, startup registration and desktop shortcut creation are all
+Windows-only and untestable from the sandbox — needs one real-machine
+pass (Start/Stop, tray Show/Stop/Quit, "Launch at Windows startup",
+"Create Desktop Shortcut") before this phase is fully closed out.
 
 ### Phase 2 — Control API + UI process
 
