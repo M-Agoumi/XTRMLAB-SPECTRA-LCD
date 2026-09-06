@@ -4,8 +4,10 @@ Plan for replacing the Tkinter desktop app with a webview + Python
 backend architecture, and turning the Dashboard's fixed 8-slot layout
 into a free-form design canvas.
 
-Status: **planned, not started.** v1.0.0 (the current Tkinter app) stays
-the shipped, working version throughout.
+Status: **Phase 0 done, validated on real hardware/OS.** Design updated
+to a two-process split based on real measurements (see below). v1.0.0
+(the current Tkinter app) stays the shipped, working version throughout
+the rest of this work.
 
 ## Why
 
@@ -26,25 +28,37 @@ RGB fan control is **out of scope** — that's the motherboard's domain
 If it's ever wanted, Gigabyte boards are well supported by OpenRGB, so
 it'd be an SDK integration rather than a reverse-engineering project.
 
+There's a hard requirement driving the architecture below: **background
+(no window open) RAM must stay under 100MB.** Not everyone running this
+has 32GB+ to spare.
+
 ## Architecture
 
+Two separate OS processes, not one app with a UI bolted on:
+
 ```
-┌──────────────────────────────────────────────┐
-│ pywebview window (WebView2, Windows' own      │
-│ Edge engine — not a bundled Chromium)         │
-│   React frontend, served over localhost       │
-└───────────────┬──────────────────────────────┘
-                │ HTTP / WebSocket on 127.0.0.1
+┌──────────────────────────────────────────────┐   spawned on open,
+│ UI process (pywebview / WebView2)             │   KILLED outright
+│   React frontend, served over localhost       │   on close --
+└───────────────┬──────────────────────────────┘   costs ~390MB while
+                │ HTTP / WebSocket on 127.0.0.1      open, ~0MB when not
 ┌───────────────┴──────────────────────────────┐
-│ Python backend (one process, always running)  │
-│  • local HTTP server: frontend + control API  │
-│    + /frame.jpg live feed                     │
-│  • config, tray icon, single-instance,        │
-│    startup registration                       │
-│  • theme render loop  (unchanged)             │
-│  • hongtai_screen.py driver  (unchanged)      │
+│ Backend process (always running)              │   never imports
+│  • local HTTP server: frontend + control API  │   pywebview/WebView2
+│    + /frame.jpg live feed                     │   at all -- expected
+│  • config, tray icon, single-instance,        │   to cost about what
+│    startup registration                       │   today's app costs
+│  • theme render loop  (unchanged)             │   (~84MB), comfortably
+│  • hongtai_screen.py driver  (unchanged)      │   under the 100MB cap
 └──────────────────────────────────────────────┘
 ```
+
+The backend has to keep running regardless of whether any UI is open --
+it's the thing driving the physical panel, not something that exists
+for the UI's benefit. The UI existing only while it's actually open is
+what keeps background RAM under budget; see "Phase 0 results" below for
+why this ended up as two processes rather than one process that
+destroys its own window.
 
 ### Key decisions
 
@@ -70,13 +84,16 @@ the browser (60fps, feels native); coordinates are pushed to Python,
 which re-renders, and the image underneath catches up within ~100ms at
 10Hz. Pixel-accurate by construction, one renderer to maintain.
 
-**Tray behavior: destroy, not hide.** WebView2 is a multi-process
-browser engine; a hidden window keeps its processes resident. To keep
-idle RAM near today's ~84MB, minimizing to tray **destroys** the window
-and reopening creates a fresh one. Cost: reopening takes ~0.5-2s
-instead of being instant. This requires all real state to live in the
-Python backend, with the page treated as stateless UI — good practice
-anyway.
+**The UI is a separate process, killed outright on close.** Originally
+planned as "destroy the window, keep the same process" -- Phase 0's
+measurements ruled that out (see below). The UI process is spawned
+fresh each time the window is opened and terminated (its own PID is
+enough; WebView2 cleans up its own helper processes) when it closes.
+Cost: opening the window takes ~1-2.5s (spawning a process + WebView2
+init) instead of being instant. This requires all real state to live
+in the backend, with the page treated as stateless UI — good practice
+anyway, and now a hard requirement rather than just a nice one, since
+the UI process can vanish and be recreated at any time.
 
 **Low lock-in.** Because the UI is an HTTP app, pywebview is just a
 window shell. If it ever disappoints, the shell can be swapped without
@@ -84,39 +101,66 @@ touching the UI, which still runs in any browser.
 
 ## Phases
 
-### Phase 0 — Spike (throwaway)
+### Phase 0 — Spike (throwaway) — ✅ DONE
 
-Prove the stack before committing to it. A pywebview window loading a
-page from a local server, showing the live frame, with one button that
-calls into Python to start/stop the dashboard.
+Ran on real hardware. Full scripts and logs in
+`experiments/phase0_webview_spike/` (kept for reference, safe to delete
+once this is fully absorbed elsewhere).
 
-**Measure:** RAM with the window open, RAM after minimize-to-tray
-(window destroyed), and how long reopening actually takes.
+**Round 1 — does destroying a window reclaim its process's memory?
+No.** Across three independent runs (an interactive spike, 12 automated
+open/destroy cycles, and a control run that never destroyed anything),
+"this process" RSS jumped once on first WebView2 use (~65-90MB) and
+never came back down regardless of window state. A small (~1MB/cycle)
+creep across repeated cycles flattened out rather than accelerating —
+not a leak, just allocator noise. Conclusion: loading WebView2 into a
+process is a one-time, per-process cost, not a per-window one — so
+destroying and recreating a window in the *same* process buys nothing.
 
-This is the go/no-go. If WebView2 doesn't reclaim memory the way we
-expect, we learn it here for a day's work instead of after a month.
-Code gets thrown away either way.
+Combined with the 100MB background hard cap, this ruled out the
+original single-process design entirely: ~90MB of permanent WebView2
+overhead alone, sharing a process with the always-on backend, would
+already be most of the budget before counting any real work. Redesigned
+as the two-process split described above.
+
+**Round 2 — does killing a separate UI process actually clean up
+everything?** Yes, cleanly. 4 automated spawn/kill cycles (alternating
+"kill just the child's PID" vs. "kill its whole process tree
+explicitly") all showed **zero surviving processes**, checked
+immediately and 5s after each kill — killing just the PID was enough
+in every case; WebView2's own process-lifetime management tears down
+its helpers on its own. The backend process itself barely moved across
+all 4 cycles (16.1MB → 17.7MB), confirming the spawn/kill orchestration
+itself has no real cost.
+
+**Numbers to build against:** UI process costs ~390-395MB while open
+(the real, honest cost of a modern browser-engine UI — irrelevant to
+the background budget since it only exists while visible), effectively
+0MB within ~1s of the window closing. Backend alone should land close
+to today's ~84MB once it's doing real work, comfortably under the
+100MB cap.
 
 ### Phase 1 — Extract the backend (no visible change)
 
-Pull everything that isn't Tkinter out of `app.py` into modules both
-UIs can use: config load/save, port enumeration, worker/thread
+Pull everything that isn't Tkinter out of `app.py` into modules that
+don't depend on it: config load/save, port enumeration, worker/thread
 lifecycle, tray icon, single-instance mutex, startup registration,
-desktop shortcut.
+desktop shortcut. This is what becomes the standalone backend process.
 
 The Tkinter app keeps working, now as a thin UI over those modules.
-Low risk, independently valuable, and it's what makes running two UIs
-side by side possible.
+Low risk, independently valuable, and it's what makes running the old
+UI and the new one side by side possible.
 
-### Phase 2 — Control API + frontend shell
+### Phase 2 — Control API + UI process
 
-Generalize the mirror's HTTP server into the app's own local server:
-frontend bundle, control endpoints (state, config get/set,
+Generalize the mirror's HTTP server into the backend's own local
+server: frontend bundle, control endpoints (state, config get/set,
 start/stop/apply), a log stream (SSE or WebSocket), and the frame feed.
 
 React app shell with port/brightness/startup controls, the log panel,
-and the live preview. Tray integration with the destroy/recreate
-behavior from Phase 0.
+and the live preview. The UI runs as its own process (per the Phase 0
+two-process design): the tray icon (in the backend) spawns it on
+"Show" and kills it on close/minimize.
 
 ### Phase 3 — Port the simple themes
 
@@ -174,9 +218,6 @@ custom color ramps.
 present on Windows 10 via Edge, but not guaranteed. Needs a detection
 path and a friendly failure, not a crash.
 
-**Does RAM actually come back?** The whole premise of destroy-on-tray.
-Phase 0 answers this with real numbers before anything else is built.
-
 **Two-language project.** Node/npm for the frontend on top of Python
 raises the barrier for anyone cloning the repo. Options: commit the
 built frontend bundle so `pip install -r requirements.txt && python
@@ -184,9 +225,10 @@ app.py` still just works, or require a Node build step. Leaning toward
 committing the bundle — the project's whole appeal is that it runs
 without ceremony.
 
-**Reopen latency.** Accepted trade-off, but worth measuring in Phase 0
-— if it's 3+ seconds rather than under 1, it may be worth keeping the
-window alive when the panel isn't streaming, or pre-warming.
+**Reopen latency.** Measured in Phase 0 at ~1-2.5s (spawning a process
++ WebView2 init) — an accepted trade-off for keeping background RAM
+under budget, not a regression to chase further unless it turns out to
+feel worse in the real app than the spike suggested.
 
 **Scope.** This is a large project. Phases 0-3 alone are a substantial
 chunk of work, and they only reach parity with what exists today — the
