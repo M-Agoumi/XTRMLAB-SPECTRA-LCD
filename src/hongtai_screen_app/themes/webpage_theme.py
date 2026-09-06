@@ -56,7 +56,7 @@ import time
 
 from PIL import Image
 
-from hongtai_screen import HongtaiScreen
+from ..driver.hongtai_screen import HongtaiScreen
 
 
 def run(url, port=None, interval=0.1, reload_every=None, brightness=90,

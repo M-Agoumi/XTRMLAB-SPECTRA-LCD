@@ -138,7 +138,7 @@ try:
 except ImportError:  # pragma: no cover -- surfaced clearly at startup, see main()
     cairo = None
 
-from hongtai_screen import HongtaiScreen
+from ..driver.hongtai_screen import HongtaiScreen
 
 # ---------------------------------------------------------------- psutil ---
 

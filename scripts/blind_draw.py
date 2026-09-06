@@ -13,18 +13,21 @@ This walks a list of candidate resolutions, showing a big label on each
 one for ~6 seconds. Watch the panel: whichever one fills it correctly
 (not stretched, not tiled, not garbage) is the real resolution.
 
-Usage:
-    python blind_draw.py COM3              # walk the candidate list
-    python blind_draw.py COM3 1280x480     # just this one, held longer
+Usage (from the repo root):
+    python scripts/blind_draw.py COM3              # walk the candidate list
+    python scripts/blind_draw.py COM3 1280x480     # just this one, held longer
 """
 
+import os
 import sys
 import time
 
 import serial
 from PIL import Image, ImageDraw, ImageFont
 
-from hongtai_screen import _build_frame, CMD_LIVE_PING
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+
+from hongtai_screen_app.driver.hongtai_screen import _build_frame, CMD_LIVE_PING
 
 RESET_MARKER = bytes([0xFF, 0xD9, 0xFF, 0xD9])
 

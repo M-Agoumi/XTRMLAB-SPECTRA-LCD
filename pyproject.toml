@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hongtai-screen-app"
+version = "1.0.0"
+description = "Custom driver + desktop GUI for the XTRM Lab / Hongtai-family integrated LCD panel."
+requires-python = ">=3.9"
+# Kept in sync with requirements.txt by hand -- see there for the
+# authoritative, commented list (this file exists for editor/IDE
+# import resolution and an optional editable install, not as the
+# primary way to install dependencies; `pip install -r
+# requirements.txt` remains the documented path in BUILD.md/README.md).
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# NOTE: this file makes the project *installable* (`pip install -e .`)
+# for anyone who wants proper editor import resolution across the src/
+# layout, but nothing here is required to just run the app -- `python
+# app.py` works with no install step at all (see app.py's own
+# docstring for how). This is opt-in tooling support, not ceremony.

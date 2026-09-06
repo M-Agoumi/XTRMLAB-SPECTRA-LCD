@@ -2,6 +2,37 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased] — v2.0 rewrite in progress
+
+Internal reorganization, no user-visible feature change. See
+`ROADMAP.md` for the full v2.0 plan (webview/React UI, free-form
+dashboard designer) this is laying groundwork for.
+
+### Changed
+- **Restructured into a proper `src/` layout.** What used to be ~20
+  loose `.py` files at the repo root is now: `app.py` (a thin launcher,
+  kept at the root since it's what existing Windows Startup entries and
+  Desktop shortcuts already point at) plus `src/hongtai_screen_app/`
+  (the actual package: the GUI, the app-shell modules, `driver/` for
+  the protocol code, `themes/` for the four theme renderers),
+  `scripts/` (standalone diagnostics and thin CLI wrappers for the
+  themes), `assets/` (`icon.ico`), and `packaging/`
+  (`hongtai_screen.spec`). No install step needed — `python app.py`
+  still just works, and so does everything under `scripts/`. See
+  `README.md`'s "Project layout" section for the map.
+- **Phase 1 of the v2.0 rewrite**: pulled everything that isn't
+  Tkinter out of the old monolithic `app.py` into its own modules
+  (`paths.py`, `config_store.py`, `startup_registration.py`,
+  `desktop_shortcut.py`, `single_instance.py`, `theme_worker.py`,
+  `tray_icon.py`) so the same logic can eventually be driven by a
+  non-Tkinter UI. `app.py` is now a thin Tkinter layer over these.
+- Fixed a latent bug this reorganization surfaced: the Windows startup
+  launcher and desktop shortcut used to resolve "where's app.py" via
+  their own module's `__file__`, which only worked by accident while
+  that code lived directly inside `app.py`. Both now resolve the
+  actual running script via `sys.modules["__main__"]` instead, which
+  is correct regardless of which file the code lives in.
+
 ## [1.0.0] — 2026-08-29
 
 First tagged release. Everything below shipped before this tag existed
@@ -38,10 +69,6 @@ than split into artificial pre-releases.
   console), and an **Open in browser** button once it's live.
 - Auto-recovery from the panel freezing (`blind_restart`), independent
   of a full power cycle.
-- A **Create Desktop Shortcut** button (next to "Launch at Windows
-  startup") that drops a "Hongtai Screen" desktop icon pointing at the
-  standalone `.exe` when frozen, or the hidden source-mode launcher
-  otherwise.
 
 ### Fixed
 - Web mirror leaked its listening socket on Stop (`server_close()` was

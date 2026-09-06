@@ -48,6 +48,33 @@ below lists exactly what it needs, and installing only a subset is
 fine; a theme that's missing something reports that clearly rather
 than crashing the others.
 
+## Project layout
+
+```
+app.py                     -- thin launcher; this is what you run/shortcut
+requirements.txt
+src/hongtai_screen_app/     -- the actual implementation
+    app.py                  -- the Tkinter GUI + its main()
+    paths.py, config_store.py, startup_registration.py,
+    desktop_shortcut.py, single_instance.py, theme_worker.py,
+    tray_icon.py            -- the app-shell, one concern per module
+    driver/hongtai_screen.py -- the panel protocol driver
+    themes/                  -- dashboard_theme.py, video_theme.py,
+                                 webpage_theme.py, demo_clock.py
+scripts/                    -- standalone tools, run directly:
+    list_screens.py, test_connection.py, blind_draw.py,
+    diag2_lines.py, make_launcher.py, and a thin CLI wrapper for
+    each theme (dashboard_theme.py, video_theme.py, etc.)
+assets/                     -- icon.ico
+packaging/                  -- hongtai_screen.spec (PyInstaller)
+experiments/                -- throwaway spikes, see ROADMAP.md
+```
+
+`python app.py` never needs an install step — it puts `src/` on
+`sys.path` itself, same trick every script under `scripts/` uses to
+reach the package. See **Files** below for what each module in
+`src/hongtai_screen_app/` actually does.
+
 ## Which COM port?
 
 Every script here auto-detects the panel by USB vendor ID (Hongtai
@@ -55,7 +82,7 @@ Technology's VID, shared across every rebrand of this hardware) — you
 don't need to know or pass a port at all in the normal case:
 
 ```
-python list_screens.py
+python scripts/list_screens.py
 ```
 
 lists every serial port on the machine and flags any that look like a
@@ -63,7 +90,7 @@ Hongtai-family screen. `COM3` is just what it happened to be detected as
 here; it can easily be different on another machine (a different USB
 port, other devices already using COM ports, etc.). If you have more than
 one such screen plugged in, auto-detection can't pick one for you and
-you'll need to pass the port explicitly, e.g. `python test_connection.py COM5`
+you'll need to pass the port explicitly, e.g. `python scripts/test_connection.py COM5`
 or `HongtaiScreen("COM5")` in code — `list_screens.py` will tell you
 exactly when that's the case.
 
@@ -76,7 +103,7 @@ exactly when that's the case.
 - **DTR must be asserted (high).** This is the one setting that decides
   whether the panel talks back at all — with DTR low it receives your
   commands but never replies, and looks bricked. See the note in
-  `hongtai_screen.py`.
+  `src/hongtai_screen_app/driver/hongtai_screen.py`.
 - Model `TXW818-JD9161C-5.99inch-hor`, 960x480, firmware 3.3, mounted at
   `angle: 180`. All queried live from the panel, not hardcoded.
 - The firmware does **not** apply its own mounting rotation — the host
@@ -134,16 +161,6 @@ it's live, an **Open in browser** button next to the port field opens
 it on this machine directly; it tells you why if the mirror isn't
 actually up yet.
 
-### Desktop shortcut
-
-Click **Create Desktop Shortcut** near the top of the window (next to
-"Launch at Windows startup") any time to drop a "Hongtai Screen" icon
-on your Desktop. Running the standalone `.exe` (see `BUILD.md`), the
-shortcut points straight at it -- already windowless, already has its
-own icon. Running from source, it points at the same hidden launcher
-`make_launcher.py` sets up (see below), writing it first if it doesn't
-exist yet.
-
 ### Launching without a console window
 
 Double-clicking `app.py` directly runs it through `python.exe`, which
@@ -153,10 +170,11 @@ it. The app's own close-to-tray behavior only covers its own window
 (the X button); it can't do anything about a console hosting it from
 outside.
 
-Run this once (Windows only):
+Run this once (Windows only), or just click **Create Desktop Shortcut**
+in the app itself:
 
 ```
-python make_launcher.py
+python scripts/make_launcher.py
 ```
 
 It writes `Launch Hongtai Screen.vbs` next to `app.py` -- double-click
@@ -164,8 +182,8 @@ that instead and it starts the app the same hidden way "Launch at
 Windows startup" below does, with no console at all, so there's nothing
 to accidentally close -- and, since a `.vbs` file's icon can't be
 changed, also drops a proper "Hongtai Screen" shortcut with its own
-icon (`icon.ico`) on your desktop that points at it, so you get a real
-icon to double-click instead of a generic script file. Pass
+icon (`assets/icon.ico`) on your desktop that points at it, so you get
+a real icon to double-click instead of a generic script file. Pass
 `--no-desktop-icon` to skip that part and only write the `.vbs`.
 
 ### Running automatically at Windows startup
@@ -216,59 +234,65 @@ SmartScreen**, not this panel's software. Ignore it.
 
 ## Files
 
-- `app.py` — the desktop app (see "Desktop app" above). Recommended way
-  to run this day to day.
-- `hongtai_screen.py` — the library. Everything else imports this.
-- `list_screens.py` — lists every serial port on the machine and flags
-  which ones look like a Hongtai-family screen. Run this first if you're
-  not sure a screen will be detected, or if you have more than one.
+See **Project layout** above for the directory map. Everything below
+lives in `src/hongtai_screen_app/` unless noted, and each standalone
+script has a matching entry point under `scripts/` (a thin wrapper for
+the theme modules, since those double as library code the GUI imports).
+
+- `app.py` (repo root) — thin launcher for the desktop app (see
+  "Desktop app" above). Recommended way to run this day to day.
+- `driver/hongtai_screen.py` — the library. Everything else imports this.
+- `scripts/list_screens.py` — lists every serial port on the machine and
+  flags which ones look like a Hongtai-family screen. Run this first if
+  you're not sure a screen will be detected, or if you have more than one.
   ```
-  python list_screens.py
+  python scripts/list_screens.py
   ```
-- `test_connection.py` — run this next. Connects (auto-detecting the
-  port), prints what the screen reports about itself, sets brightness,
-  shows one static test frame for 5 seconds, then disconnects cleanly.
+- `scripts/test_connection.py` — run this next. Connects (auto-detecting
+  the port), prints what the screen reports about itself, sets
+  brightness, shows one static test frame for 5 seconds, then
+  disconnects cleanly.
   ```
-  python test_connection.py           # auto-detects the port
-  python test_connection.py COM5      # or specify one explicitly
+  python scripts/test_connection.py           # auto-detects the port
+  python scripts/test_connection.py COM5      # or specify one explicitly
   ```
-- `demo_clock.py` — a starter template showing continuous/live custom
-  content: a clock plus CPU/RAM bars, redrawn at 10Hz until you press
-  Ctrl+C.
+- `themes/demo_clock.py` — a starter template showing continuous/live
+  custom content: a clock plus CPU/RAM bars, redrawn at 10Hz until you
+  press Ctrl+C.
   ```
-  python demo_clock.py                # auto-detects the port
-  python demo_clock.py COM5           # or specify one explicitly
+  python scripts/demo_clock.py                # auto-detects the port
+  python scripts/demo_clock.py COM5           # or specify one explicitly
   ```
   Copy this file and edit `render_frame()` to build your own layout —
   it just needs to return a `PIL.Image` sized `(width, height)`; the
   library handles encoding, streaming, and the keepalive pings.
-- `video_theme.py` — streams any video file you already have to the
-  panel, frame by frame (letterboxed to fit, black bars if the aspect
-  ratio doesn't match). Doesn't ship or fetch any video content itself —
-  point it at your own file. Works well for flat, high-contrast
+- `themes/video_theme.py` — streams any video file you already have to
+  the panel, frame by frame (letterboxed to fit, black bars if the
+  aspect ratio doesn't match). Doesn't ship or fetch any video content
+  itself — point it at your own file. Works well for flat, high-contrast
   animation (Bad Apple is the classic example) since that compresses to
   small JPEGs the panel's link can keep up with, but it's fully generic.
   ```
-  python video_theme.py bad_apple.mp4               # auto-detects the port
-  python video_theme.py bad_apple.mp4 --fps 20       # override playback rate
-  python video_theme.py bad_apple.mp4 --bw           # force black & white
-  python video_theme.py bad_apple.mp4 --audio        # also play the audio (needs ffmpeg + pygame)
-  python video_theme.py bad_apple.mp4 --loop         # restart from the beginning when it ends
-  python video_theme.py bad_apple.mp4 COM5           # explicit port
+  python scripts/video_theme.py bad_apple.mp4               # auto-detects the port
+  python scripts/video_theme.py bad_apple.mp4 --fps 20       # override playback rate
+  python scripts/video_theme.py bad_apple.mp4 --bw           # force black & white
+  python scripts/video_theme.py bad_apple.mp4 --audio        # also play the audio (needs ffmpeg + pygame)
+  python scripts/video_theme.py bad_apple.mp4 --loop         # restart from the beginning when it ends
+  python scripts/video_theme.py bad_apple.mp4 COM5           # explicit port
   ```
   Extra dep: `pip install opencv-python-headless`. `--audio` additionally
   needs `pip install pygame` and `ffmpeg` on PATH; without those it just
   skips audio and plays silently.
-- `dashboard_theme.py` — a neon "cyberpunk panel" dashboard: 8 glowing
+- `themes/dashboard_theme.py` — a neon "cyberpunk panel" dashboard: 8 glowing
   gauges you assign freely from 14 live stats, Spotify (or whatever's
   playing) album art in the middle with a glowing progress bar, and the
   clock underneath it. Background style, color scheme, and even a
   custom photo are all configurable. Each stat degrades independently
   instead of crashing if its dependency is missing:
   ```
-  python dashboard_theme.py           # auto-detects the port
-  python dashboard_theme.py COM5      # or specify one explicitly
-  python dashboard_theme.py --default-art cover.jpg   # your own "nothing playing" image
+  python scripts/dashboard_theme.py           # auto-detects the port
+  python scripts/dashboard_theme.py COM5      # or specify one explicitly
+  python scripts/dashboard_theme.py --default-art cover.jpg   # your own "nothing playing" image
   ```
   Driving it from code (or the desktop app, which does this for you)
   passes `slots={...}` and `background={...}` into `run()` — see below.
@@ -369,17 +393,17 @@ SmartScreen**, not this panel's software. Ignore it.
   `pycairo` are required -- they draw the gauges and gradients -- the
   rest degrade independently as described above). `pycairo` installs
   from a prebuilt wheel on Windows, no separate Cairo install needed.
-- `webpage_theme.py` — mirrors any webpage onto the panel using a
+- `themes/webpage_theme.py` — mirrors any webpage onto the panel using a
   headless Chromium browser (Playwright), at a viewport sized exactly
   to the panel's resolution so there's no scaling/letterboxing. The
   page stays open between screenshots, so any JS-driven content on it
   (a clock, a live dashboard, a stock ticker) keeps updating on its
   own — this just takes a fresh snapshot of it periodically.
   ```
-  python webpage_theme.py https://example.com               # auto-detects the port, 10Hz by default
-  python webpage_theme.py https://example.com --interval 2  # screenshot every 2s instead
-  python webpage_theme.py https://example.com --reload-every 60  # force a full reload every 60s
-  python webpage_theme.py https://example.com COM5          # explicit port
+  python scripts/webpage_theme.py https://example.com               # auto-detects the port, 10Hz by default
+  python scripts/webpage_theme.py https://example.com --interval 2  # screenshot every 2s instead
+  python scripts/webpage_theme.py https://example.com --reload-every 60  # force a full reload every 60s
+  python scripts/webpage_theme.py https://example.com COM5          # explicit port
   ```
   Extra deps: `pip install playwright`, then a one-time
   `playwright install chromium` (~150MB browser download). A random
@@ -400,9 +424,9 @@ it adds no extra dependencies (just Python's built-in `http.server`).
 `dashboard_theme.py` turns it on automatically:
 
 ```
-python dashboard_theme.py                  # prints the mirror's URL on startup
-python dashboard_theme.py --web-port 9000   # use a different port
-python dashboard_theme.py --no-web          # disable it
+python scripts/dashboard_theme.py                  # prints the mirror's URL on startup
+python scripts/dashboard_theme.py --web-port 9000   # use a different port
+python scripts/dashboard_theme.py --no-web          # disable it
 ```
 
 To add it to any other script (or your own), one line after `connect()`:
@@ -421,7 +445,8 @@ run.
 ## Library quick reference
 
 ```python
-from hongtai_screen import HongtaiScreen
+import sys; sys.path.insert(0, "src")   # not needed from inside scripts/ or the app itself
+from hongtai_screen_app.driver.hongtai_screen import HongtaiScreen
 from PIL import Image
 
 screen = HongtaiScreen()          # auto-detects the port; pass "COM5" etc. to be explicit
@@ -446,7 +471,7 @@ screen.run(lambda: my_frame(), fps=1.0)   # blocks; Ctrl+C to stop
 firmware's restart command (key=1) and tries again. To do it by hand:
 
 ```
-python -c "from hongtai_screen import HongtaiScreen; HongtaiScreen().blind_restart()"
+python -c "import sys; sys.path.insert(0, 'src'); from hongtai_screen_app.driver.hongtai_screen import HongtaiScreen; HongtaiScreen().blind_restart()"
 ```
 
 That one command is what un-wedges this panel — including from the state
@@ -465,7 +490,7 @@ Never open this device with `rtscts=True` — it hangs pyserial indefinitely.
 - [`BUILD.md`](BUILD.md) — building a standalone `Hongtai Screen.exe`
   with PyInstaller. Only needed if you want that instead of
   `python app.py`.
-- `hongtai_screen.spec` — the PyInstaller spec `BUILD.md` uses.
+- `packaging/hongtai_screen.spec` — the PyInstaller spec `BUILD.md` uses.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed release to release.
 
 ## Status

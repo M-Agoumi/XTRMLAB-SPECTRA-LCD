@@ -140,12 +140,12 @@ the background budget since it only exists while visible), effectively
 to today's ~84MB once it's doing real work, comfortably under the
 100MB cap.
 
-### Phase 1 — Extract the backend (no visible change) — ✅ DONE (pending on-hardware confirmation)
+### Phase 1 — Extract the backend (no visible change) — ✅ DONE
 
 Pulled everything that isn't Tkinter out of `app.py` into its own
 modules:
 
-- `app_paths.py` — base dir / resource path resolution, `startup_debug.log` writer
+- `paths.py` — base dir / resource path resolution, `startup_debug.log` writer
 - `config_store.py` — `app_config.json` load/save, `AUTO_DETECT`/`THEME_TAB_ORDER`
 - `startup_registration.py` — Windows Startup-folder VBS launcher
 - `desktop_shortcut.py` — Desktop `.lnk` creation
@@ -168,9 +168,78 @@ instead, which is what actually still points at `app.py` regardless of
 which module the code was called from.
 
 Tray icon, startup registration and desktop shortcut creation are all
-Windows-only and untestable from the sandbox — needs one real-machine
-pass (Start/Stop, tray Show/Stop/Quit, "Launch at Windows startup",
-"Create Desktop Shortcut") before this phase is fully closed out.
+Windows-only and untestable from the sandbox — confirmed working
+(Start/Stop, tray Show/Stop/Quit, "Launch at Windows startup", "Create
+Desktop Shortcut") on the real machine, so this phase is fully closed
+out.
+
+### Phase 1.5 — src/ layout restructure (no visible change) — ✅ DONE (pending on-hardware confirmation)
+
+Not one of the originally planned phases -- inserted here because the
+project root had grown to ~20 loose `.py` files by the end of Phase 1
+and needed a real directory structure before Phase 2 adds a `frontend/`
+tree on top of it.
+
+```
+app.py                      -- thin launcher (unchanged path -- see below)
+src/hongtai_screen_app/      -- the actual package
+    app.py                   -- the Tkinter GUI + main()
+    paths.py, config_store.py, startup_registration.py,
+    desktop_shortcut.py, single_instance.py, theme_worker.py,
+    tray_icon.py             -- Phase 1's app-shell modules, unchanged
+                                 in substance, just moved + import paths
+                                 switched to relative (`from .paths import ...`)
+    driver/hongtai_screen.py -- the protocol driver
+    themes/                   -- dashboard_theme.py, video_theme.py,
+                                  webpage_theme.py, demo_clock.py
+scripts/                     -- list_screens.py, test_connection.py,
+                                 blind_draw.py, diag2_lines.py,
+                                 make_launcher.py, and a thin CLI shim
+                                 per theme (so `python scripts/dashboard_theme.py`
+                                 etc. keep working standalone)
+assets/icon.ico
+packaging/hongtai_screen.spec
+```
+
+**Root `app.py` deliberately did not move.** It's now a ~15-line
+launcher that puts `src/` on `sys.path` and calls
+`hongtai_screen_app.app.main()` -- kept at this exact path so every
+existing Windows integration that already points at it (a "Launch at
+Windows startup" Startup-folder entry, a Desktop shortcut, `Launch
+Hongtai Screen.vbs`) keeps working with zero user action, rather than
+silently breaking because the real file moved. No install step is
+needed to run any of this -- `python app.py` and everything under
+`scripts/` use the same `sys.path.insert(0, ".../src")` trick, so
+`pip install -r requirements.txt && python app.py` from **Quick
+start** still just works. An optional `pyproject.toml` was added purely
+for editor/IDE import resolution and an optional `pip install -e .` --
+never required.
+
+Two real fixes rode along with the move (both are exactly the kind of
+bug a flat "everything imports everything by bare name" layout hides):
+`_app_base_dir()` (in `paths.py`) used to resolve via its own
+`__file__`, which put `app_config.json`/`startup_debug.log` inside
+`src/hongtai_screen_app/` instead of next to the real entry point once
+that function moved into its own file -- fixed to resolve via
+`sys.modules["__main__"].__file__` instead (same approach
+`startup_registration.py`/`desktop_shortcut.py` already used). And
+`desktop_shortcut.py`'s dependency on `make_launcher.py` was inverted:
+the "write the hidden .vbs launcher" logic now lives once, as
+`desktop_shortcut.write_run_vbs()`, and `scripts/make_launcher.py`
+(a standalone convenience script) imports *it*, rather than package
+code reaching out to a loose top-level script that could be deleted or
+moved independently.
+
+Verified headlessly: `python app.py` (plain and `--autostart --theme
+clock`) runs end to end under Xvfb with the same behavior as before the
+move -- `app_config.json`/`startup_debug.log` land next to root
+`app.py` as expected, not under `src/`; every `scripts/*.py` resolves
+its import correctly at runtime (checked `list_screens.py` actually
+enumerating ports, not just parsing). Windows-only things (Start/Stop
+against real hardware, tray, "Launch at Windows startup", "Create
+Desktop Shortcut", and a real PyInstaller build against the new
+`packaging/hongtai_screen.spec`) still need one real-machine pass
+before this is fully closed out -- same caveat as Phase 1 had.
 
 ### Phase 2 — Control API + UI process
 

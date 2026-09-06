@@ -2,19 +2,21 @@
 #
 # PyInstaller build spec for the desktop app -- produces a single
 # "Hongtai Screen.exe" with no console window, the app icon baked in,
-# and icon.ico bundled as a resource (app.py's _resource_path() finds
-# it inside sys._MEIPASS at runtime, see app.py).
+# and assets/icon.ico bundled as a resource (paths.py's
+# _resource_path() finds it inside sys._MEIPASS at runtime).
 #
-# Build (Windows only -- run this yourself, see BUILD.md):
+# Build (Windows only, from the REPO ROOT -- not from this packaging/
+# folder -- so the relative paths below resolve correctly; see
+# BUILD.md):
 #
 #   pip install pyinstaller
-#   pyinstaller hongtai_screen.spec
+#   pyinstaller packaging/hongtai_screen.spec
 #
 # Output lands in dist\Hongtai Screen.exe -- a single portable file.
 # app_config.json is created next to whatever folder you put the exe
-# in (see app.py's _app_base_dir()), so it's fine to move the exe
-# around after building; just keep icon.ico out of the way, it's
-# already embedded and not needed alongside the exe.
+# in (see paths.py's _app_base_dir()), so it's fine to move the exe
+# around after building; nothing else needs to travel with it -- the
+# app package (src/) and icon are both baked in.
 
 import sys
 
@@ -33,10 +35,16 @@ hidden_imports = [
 
 a = Analysis(
     ["app.py"],
-    pathex=[],
+    # app.py (the repo-root launcher) does its own sys.path.insert(0,
+    # ".../src") before importing hongtai_screen_app -- PyInstaller's
+    # static analyzer can't follow that at scan time, so it's told
+    # here explicitly instead (paths below are relative to wherever
+    # `pyinstaller` is invoked from, i.e. the repo root -- see the
+    # build command above).
+    pathex=["src"],
     binaries=[],
     datas=[
-        ("icon.ico", "."),
+        ("assets/icon.ico", "assets"),
     ],
     hiddenimports=hidden_imports,
     hookspath=[],
@@ -71,5 +79,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon="icon.ico",
+    icon="assets/icon.ico",
 )

@@ -5,8 +5,8 @@ ZOTAC, MSI, ASIAHORSE, and dozens of other rebrands of the same OEM
 hardware -- COM3 is what it happened to be on the machine this was
 originally written on, but there's no reason it'll be COM3 for you too).
 
-Usage:
-    python list_screens.py
+Usage (from the repo root):
+    python scripts/list_screens.py
 
 Every other script in this folder (test_connection.py, demo_clock.py,
 etc.) auto-detects the port the same way this does, so you normally
@@ -14,10 +14,18 @@ don't need to pass a port at all -- run this first only if you want to
 see what's actually plugged in, or if auto-detection complains that it
 found zero or more than one candidate.
 """
+import os
+import sys
 
 from serial.tools import list_ports
 
-from hongtai_screen import HONGTAI_VID, find_hongtai_ports
+# The actual driver lives in src/hongtai_screen_app/driver/ (see
+# ROADMAP.md's Phase 1 / the v2.0 src-layout restructure) -- this is
+# the same sys.path shim root app.py uses, so this script keeps working
+# with no separate install step, run from anywhere.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+
+from hongtai_screen_app.driver.hongtai_screen import HONGTAI_VID, find_hongtai_ports
 
 
 def main():
