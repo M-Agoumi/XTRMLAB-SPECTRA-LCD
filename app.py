@@ -47,21 +47,13 @@ prompt (e.g. at every boot before you've clicked "Allow"), just leave
 """
 
 import argparse
-import json
 import os
-import subprocess
 import sys
-import tempfile
 import threading
-import time
 import queue
 import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
-
-from PIL import Image as PILImage, ImageDraw as PILImageDraw  # already a hard
-# dependency of every theme here (dashboard_theme etc.), so this import is
-# never gated behind pystray's optional-dependency try/except below.
 
 import hongtai_screen
 import dashboard_theme
@@ -69,246 +61,17 @@ import video_theme
 import webpage_theme
 import demo_clock
 
-try:
-    import pystray
-except Exception:  # noqa: BLE001 -- broader than ImportError on purpose: pystray
-    # picks a platform backend at import time (win32/appindicator/gtk/...)
-    # and a missing *system* dependency for that backend (e.g. no GTK on a
-    # Linux box without a tray daemon) surfaces as something other than
-    # ImportError. Either way, the tray icon is optional -- app.py must
-    # still start without it, just falling back to a normal window.
-    pystray = None
-
-def _app_base_dir():
-    """Directory the running app actually lives in -- used for anything
-    that must persist next to it across runs (app_config.json, the
-    startup-launcher command below). Under a frozen PyInstaller build,
-    __file__ points inside a temporary extraction folder instead (a
-    fresh one every run), so this checks sys.frozen and uses the real
-    .exe's own folder in that case."""
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
-
-
-def _resource_path(*parts):
-    """Path to a bundled read-only resource (icon.ico) -- inside
-    sys._MEIPASS when frozen (PyInstaller's extraction dir for
-    --add-data files), next to this script otherwise."""
-    base = getattr(sys, "_MEIPASS", None) or _app_base_dir()
-    return os.path.join(base, *parts)
-
-
-CONFIG_PATH = os.path.join(_app_base_dir(), "app_config.json")
-
-# A plain text file next to app_config.json, written to ONLY for
-# --autostart launches (see _write_startup_log()) -- pythonw.exe has no
-# console and an autostart launch usually starts hidden/minimized too,
-# so this is the only way to see what actually happened during a boot
-# launch: whether Windows even ran the Startup script, whether the
-# single-instance check passed, which theme it decided to resume, and
-# any exception along the way. Already covered by .gitignore's blanket
-# "*.log" rule.
-STARTUP_LOG_PATH = os.path.join(_app_base_dir(), "startup_debug.log")
-
-
-def _write_startup_log(msg):
-    """Best-effort append to STARTUP_LOG_PATH. Opened and closed on every
-    call rather than held open, so a line written just before a hard
-    crash or a killed process still actually lands on disk instead of
-    sitting lost in a buffer."""
-    try:
-        with open(STARTUP_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
-    except Exception:  # noqa: BLE001 -- never let logging itself crash the app
-        pass
-AUTO_DETECT = "(auto-detect)"
-
-# Tab order in the Notebook -- kept in one place since both --theme and
-# the "Launch at Windows startup" registration need to map a theme name
-# to the tab index _on_start() reads.
-THEME_TAB_ORDER = ["dashboard", "video", "webpage", "clock"]
-
-STARTUP_TASK_NAME = "HongtaiScreenApp"
-
-
-def _startup_script_path():
-    """Where the Windows Startup-folder launcher lives, or None if this
-    isn't Windows (the feature is Windows-only -- other platforms have
-    their own login-item mechanisms this app doesn't try to drive)."""
-    if sys.platform != "win32":
-        return None
-    appdata = os.environ.get("APPDATA")
-    if not appdata:
-        return None
-    return os.path.join(appdata, "Microsoft", "Windows", "Start Menu",
-                         "Programs", "Startup", f"{STARTUP_TASK_NAME}.vbs")
-
-
-def is_startup_enabled():
-    path = _startup_script_path()
-    return path is not None and os.path.isfile(path)
-
-
-def enable_startup():
-    """Writes a tiny VBScript into the Windows Startup folder that
-    launches this app hidden (no console, no window flash) at login.
-    VBScript's WshShell.Run(..., 0, False) is what actually gives the
-    "0 windows visible" launch -- a .bat file here would still flash a
-    console window briefly, which a plain Python script can't avoid on
-    its own without extra dependencies.
-
-    Deliberately just `--autostart` with no `--theme` -- which theme
-    actually starts is decided at runtime from whatever was last
-    actually running (see App.__init__'s auto-resume logic), not fixed
-    to whatever was selected the moment this checkbox was ticked."""
-    path = _startup_script_path()
-    if path is None:
-        raise RuntimeError("Launch-at-startup is only supported on Windows.")
-
-    # VBScript doesn't treat backslash as an escape character, so Windows
-    # paths need no special handling -- only the quotes around each path
-    # need doubling (VBScript's way of embedding a literal " in a string).
-    if getattr(sys, "frozen", False):
-        # Frozen build: sys.executable IS the app -- one self-contained
-        # .exe, no separate interpreter to pick.
-        cmd = '""{app}"" --autostart'.format(app=sys.executable)
-    else:
-        app_path = os.path.abspath(__file__)
-        py_dir = os.path.dirname(sys.executable)
-        pythonw = os.path.join(py_dir, "pythonw.exe")
-        interpreter = pythonw if os.path.isfile(pythonw) else sys.executable
-        cmd = '""{interpreter}"" ""{app}"" --autostart'.format(
-            interpreter=interpreter, app=app_path)
-    vbs = (
-        'Set WshShell = CreateObject("WScript.Shell")\n'
-        f'WshShell.Run "{cmd}", 0, False\n'
-    )
-
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(vbs)
-
-
-def disable_startup():
-    path = _startup_script_path()
-    if path and os.path.isfile(path):
-        os.remove(path)
-
-
-def _desktop_dir():
-    """Where Desktop actually is. Not just `~\\Desktop` -- OneDrive's
-    "Known Folder Move" (on by default on a lot of pre-configured
-    Windows machines) relocates it to somewhere like
-    `~\\OneDrive\\Desktop` instead, and `~\\Desktop` then simply doesn't
-    exist. The registry's User Shell Folders key is what Windows itself
-    actually uses to resolve "Desktop", so ask it rather than guessing
-    the plain path. (Same helper as make_launcher.py -- kept as its own
-    copy here so this button works even if make_launcher.py is ever
-    removed from a packaged build.)"""
-    try:
-        import winreg
-        with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Explorer"
-                r"\User Shell Folders") as key:
-            path, _ = winreg.QueryValueEx(key, "Desktop")
-        return os.path.expandvars(path)
-    except OSError:
-        return os.path.join(os.path.expanduser("~"), "Desktop")
-
-
-def create_desktop_shortcut():
-    """Drops a "Hongtai Screen.lnk" shortcut on the Desktop, and returns
-    its path.
-
-    Frozen build (the standalone .exe from BUILD.md): the shortcut
-    points straight at the exe -- it's already windowless and already
-    carries its own icon (baked in at build time via hongtai_screen.spec),
-    nothing else to wire up.
-
-    Running from source (`python app.py`): points at the same hidden
-    "Launch Hongtai Screen.vbs" launcher make_launcher.py writes
-    (written fresh here if missing), using icon.ico for the icon since a
-    .vbs file can't carry a custom one itself -- see make_launcher.py's
-    own docstring for why a second .lnk file is needed for that.
-
-    Raises on failure (missing Desktop folder, non-Windows, cscript
-    error) -- callers show that message rather than silently no-op'ing.
-    """
-    if sys.platform != "win32":
-        raise RuntimeError("Desktop shortcuts are only supported on Windows.")
-
-    desktop = _desktop_dir()
-    if not os.path.isdir(desktop):
-        raise RuntimeError(f"No Desktop folder found at {desktop!r}")
-
-    shortcut_path = os.path.join(desktop, "Hongtai Screen.lnk")
-
-    if getattr(sys, "frozen", False):
-        target = sys.executable
-        working_dir = os.path.dirname(target)
-        icon_spec = f"{target},0"
-    else:
-        app_dir = _app_base_dir()
-        app_path = os.path.abspath(__file__)
-        # Reuse make_launcher's own .vbs writer so both paths always
-        # point at the exact same launcher, instead of two subtly
-        # different copies of the same VBScript living in two files.
-        import make_launcher
-        target = make_launcher._write_run_vbs(app_dir, app_path, "")
-        working_dir = app_dir
-        icon_spec = (f"{ICON_PATH},0" if os.path.isfile(ICON_PATH)
-                     else f"{target},0")
-
-    # Same "no extra dependencies" trick as everywhere else here: hand
-    # WScript.Shell.CreateShortcut to a throwaway helper .vbs run once
-    # via cscript, rather than pulling in pywin32 just for this.
-    helper_script = (
-        'Set WshShell = CreateObject("WScript.Shell")\n'
-        f'Set link = WshShell.CreateShortcut("{shortcut_path}")\n'
-        f'link.TargetPath = "{target}"\n'
-        f'link.WorkingDirectory = "{working_dir}"\n'
-        f'link.IconLocation = "{icon_spec}"\n'
-        'link.Description = "Start the Hongtai/XTRM lab screen app"\n'
-        'link.Save\n'
-    )
-    fd, helper_path = tempfile.mkstemp(suffix=".vbs")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(helper_script)
-        result = subprocess.run(["cscript", "//nologo", helper_path],
-                                 capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"cscript exited {result.returncode}: "
-                f"{result.stderr.strip() or '(no error output)'}")
-    finally:
-        os.remove(helper_path)
-
-    if not os.path.isfile(shortcut_path):
-        raise RuntimeError(
-            f"cscript reported success but {shortcut_path} doesn't exist")
-    return shortcut_path
-
-
-def load_config():
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:  # noqa: BLE001 -- missing/corrupt config is fine, just start fresh
-        return {}
-
-
-def save_config(cfg):
-    try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
-    except Exception:  # noqa: BLE001 -- best-effort, never block on this
-        pass
-
-
-ICON_PATH = _resource_path("icon.ico")
+# Everything below used to live in app.py directly; Phase 1 of the v2.0
+# rewrite (see ROADMAP.md) pulled out everything that isn't Tkinter into
+# its own module, so the same logic can eventually be driven by a
+# non-Tkinter UI too. This file is now just the Tkinter layer on top.
+from app_paths import ICON_PATH, _write_startup_log
+from config_store import AUTO_DETECT, THEME_TAB_ORDER, load_config, save_config
+from startup_registration import is_startup_enabled, enable_startup, disable_startup
+from desktop_shortcut import create_desktop_shortcut
+from single_instance import _ensure_single_instance
+from theme_worker import ThemeWorker
+import tray_icon
 
 
 class App(tk.Tk):
@@ -860,56 +623,12 @@ class App(tk.Tk):
         self.apply_btn.configure(state="normal")
         self.notebook.tab(0, state="disabled" if tab_index != 0 else "normal")
 
-        self.worker = threading.Thread(target=self._run_safely, args=(target, kwargs), daemon=True)
+        # ThemeWorker (theme_worker.py) owns the actual thread + the
+        # retry/blind_restart recovery loop -- see README's "If the
+        # panel stops responding" section for why a plain reconnect
+        # isn't enough on its own for a mid-stream wedge.
+        self.worker = ThemeWorker(target, kwargs, self._log)
         self.worker.start()
-
-    # A mid-stream write timeout dying and staying dead until someone
-    # notices the log and clicks Start again -- which then just as
-    # silently reconnects to a panel whose live-video decode path is
-    # still wedged -- was the actual bug behind "the image froze and
-    # never came back": connect()'s own retry/blind_restart logic only
-    # fires a firmware restart when the initial handshake itself gets no
-    # reply at all, but a panel that's wedged mid-stream can still answer
-    # getDeviceInfo just fine, so a plain reconnect "succeeds" (logs
-    # Connected/Streaming again) while the panel keeps ignoring frames --
-    # exactly matching README's "if the panel stops responding" section:
-    # blind_restart() is the actual fix, not just reopening the port.
-    RECOVERY_ATTEMPTS = 3
-
-    def _run_safely(self, target, kwargs):
-        stop_event = kwargs.get("stop_event")
-        port = kwargs.get("port")
-
-        for attempt in range(1, self.RECOVERY_ATTEMPTS + 1):
-            try:
-                target(**kwargs)
-                return  # ended on its own: Stop was pressed, or e.g. a
-                         # video without --loop simply finished playing
-            except Exception as e:  # noqa: BLE001 -- surfaced in the log either way
-                if stop_event is not None and stop_event.is_set():
-                    # Already stopping -- an exception racing with that
-                    # (Stop landing mid-write, say) isn't a fault to
-                    # recover from, just noise.
-                    self._log(f"(stopped: {e})")
-                    return
-
-                self._log(f"ERROR: {e}")
-                if attempt >= self.RECOVERY_ATTEMPTS:
-                    self._log(f"Giving up after {self.RECOVERY_ATTEMPTS} "
-                               "attempts -- check the panel/cable, then "
-                               "hit Start again.")
-                    return
-
-                self._log(f"Recovering (attempt {attempt + 1}/"
-                           f"{self.RECOVERY_ATTEMPTS}) -- restarting the "
-                           "panel's firmware, not just reconnecting (see "
-                           "README's \"If the panel stops responding\") ...")
-                try:
-                    hongtai_screen.HongtaiScreen(port).blind_restart(log=self._log)
-                except Exception as restart_err:  # noqa: BLE001
-                    self._log(f"(restart attempt failed: {restart_err} -- "
-                               "trying to reconnect anyway)")
-                time.sleep(1.0)
 
     def _on_screen_connected(self, screen):
         """Called from the worker thread right after connect() succeeds
@@ -1206,7 +925,7 @@ class App(tk.Tk):
         self.destroy()
 
     # ------------------------------------------------------------------ #
-    # system tray (Windows + pystray only -- see _start_tray())
+    # system tray (Windows + pystray only -- see tray_icon.py)
     # ------------------------------------------------------------------ #
     def _start_tray(self):
         """Starts a system tray icon so the app can run with no taskbar
@@ -1216,41 +935,25 @@ class App(tk.Tk):
         (`pip install pystray`); returns False without one, so callers
         know to fall back to a plain minimized window instead of the app
         disappearing with no way back."""
-        if pystray is None or sys.platform != "win32":
+        if not tray_icon.available():
             return False
         try:
-            image = self._build_tray_image()
-            menu = pystray.Menu(
-                pystray.MenuItem("Show window", self._tray_show, default=True),
-                pystray.MenuItem("Stop screen", self._tray_stop_screen),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem("Quit", self._tray_quit),
+            icon = tray_icon.TrayIcon(
+                on_show=self._tray_show,
+                on_stop_screen=self._tray_stop_screen,
+                on_quit=self._tray_quit,
             )
-            icon = pystray.Icon("hongtai_screen", image, "Hongtai Screen Control", menu)
-            threading.Thread(target=icon.run, daemon=True).start()
+            icon.start()
             self._tray_icon = icon
             return True
         except Exception as e:  # noqa: BLE001 -- a tray icon is a nice-to-have, never fatal
             self._log(f"(couldn't start the system tray icon: {e})")
             return False
 
-    @staticmethod
-    def _build_tray_image():
-        """A small drawn placeholder icon (a monitor glyph) -- nothing is
-        bundled as a .ico file, so this is built on the fly with PIL."""
-        size = 64
-        img = PILImage.new("RGBA", (size, size), (0, 0, 0, 0))
-        d = PILImageDraw.Draw(img)
-        d.rounded_rectangle([4, 4, size - 4, size - 4], radius=12, fill=(30, 32, 40, 255))
-        d.rounded_rectangle([14, 16, size - 14, size - 26], radius=4,
-                             outline=(120, 200, 255, 255), width=3)
-        d.rectangle([size // 2 - 8, size - 20, size // 2 + 8, size - 14], fill=(120, 200, 255, 255))
-        return img
-
     # Tray menu callbacks run on pystray's own background thread, not the
     # Tk main thread -- each hops back onto the Tk thread via after(0, ...)
     # rather than touching widgets directly.
-    def _tray_show(self, icon=None, item=None):
+    def _tray_show(self):
         self.after(0, self._show_window)
 
     def _show_window(self):
@@ -1258,11 +961,10 @@ class App(tk.Tk):
         self.lift()
         self.focus_force()
 
-    def _tray_stop_screen(self, icon=None, item=None):
+    def _tray_stop_screen(self):
         self.after(0, self._on_stop)
 
-    def _tray_quit(self, icon=None, item=None):
-        icon.stop()
+    def _tray_quit(self):
         self.after(0, self._quit_for_real)
 
     def _quit_for_real(self):
@@ -1272,88 +974,6 @@ class App(tk.Tk):
             self.stop_event.set()
         self._cancel_poll_timer()
         self.destroy()
-
-
-_SINGLE_INSTANCE_MUTEX_NAME = "Local\\HongtaiScreenApp_SingleInstance"
-_WINDOW_TITLE = "Hongtai Screen Control"
-_single_instance_mutex_handle = None  # kept alive for the process's whole
-# lifetime on purpose -- see _ensure_single_instance()'s docstring.
-
-
-def _ensure_single_instance():
-    """Windows-only: refuses to let a second copy of this app start, and
-    instead brings the already-running one to the front (even if it's
-    currently hidden in the tray). Without this, launching a second copy
-    used to silently race the first one for the same COM port -- only
-    whichever got there first actually talked to the panel, and every
-    other copy just sat there uselessly failing to connect (or, worse,
-    fighting the first one for it).
-
-    The "is one already running" check is a named kernel mutex (built
-    into ctypes/kernel32 -- no extra dependency), not a lock *file*:
-    a mutex is owned by its process and Windows itself cleans it up the
-    instant that process exits or is killed, so a prior crash can never
-    leave this stuck thinking an instance is running when none actually
-    is (the classic failure mode of a stale PID/lock file).
-
-    Returns True if it's fine to keep starting up (either this is the
-    first copy, or this isn't Windows and the check doesn't apply),
-    False if another instance is already running and this process
-    should exit immediately without opening a window.
-    """
-    if sys.platform != "win32":
-        return True  # this app's Windows-specific features (see
-                      # enable_startup()) are Windows-only already;
-                      # nothing here needs to apply anywhere else.
-
-    import ctypes
-
-    global _single_instance_mutex_handle
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.CreateMutexW(None, False, _SINGLE_INSTANCE_MUTEX_NAME)
-    # GetLastError() (the real Win32 call, not ctypes' own get_last_error()
-    # cache, which needs use_last_error=True at DLL-load time to be
-    # reliable) -- ERROR_ALREADY_EXISTS means CreateMutexW handed back a
-    # handle to an existing mutex rather than creating a new one, i.e.
-    # another copy of this app already holds it.
-    ERROR_ALREADY_EXISTS = 183
-    already_running = kernel32.GetLastError() == ERROR_ALREADY_EXISTS
-    # Never closed and never allowed to go out of scope: holding this
-    # handle open for this process's entire lifetime is exactly what
-    # makes the *next* launch see ERROR_ALREADY_EXISTS. Windows closes it
-    # automatically on process exit either way (clean or crashed).
-    _single_instance_mutex_handle = handle
-
-    if not already_running:
-        return True
-
-    _bring_existing_window_to_front()
-    return False
-
-
-def _bring_existing_window_to_front():
-    """Best-effort: finds the already-running instance's window by its
-    exact title (FindWindowW matches top-level windows regardless of
-    their visibility, so this works even if it's currently withdrawn to
-    the tray) and activates it, so refusing to open a second copy still
-    does something useful instead of the second launch just silently
-    doing nothing."""
-    import ctypes
-    user32 = ctypes.windll.user32
-    hwnd = user32.FindWindowW(None, _WINDOW_TITLE)
-    if not hwnd:
-        try:
-            from tkinter import messagebox
-            messagebox.showinfo(
-                "Hongtai Screen",
-                "Hongtai Screen is already running -- check your system "
-                "tray.")
-        except Exception:  # noqa: BLE001 -- best-effort notice only
-            pass
-        return
-    SW_RESTORE = 9
-    user32.ShowWindow(hwnd, SW_RESTORE)
-    user32.SetForegroundWindow(hwnd)
 
 
 def parse_args():
