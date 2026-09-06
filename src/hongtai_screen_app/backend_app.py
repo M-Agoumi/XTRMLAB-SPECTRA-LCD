@@ -35,7 +35,7 @@ from . import single_instance
 from . import tray_icon
 from .control_server import DEFAULT_PORT, ControlServer, _make_handler
 from .controller import AppController
-from .paths import _app_base_dir, _write_startup_log
+from .paths import ICON_PATH, _app_base_dir, _write_startup_log
 
 
 class BackendApp:
@@ -100,13 +100,22 @@ class BackendApp:
     def start_tray(self):
         """Returns False (not fatal) if a tray icon can't be started at
         all here -- same as app.py's _start_tray(): a nice-to-have, not
-        required to run."""
+        required to run. Logs *why* (missing pystray, wrong platform, or
+        whatever pystray's own init raised) through the controller, the
+        same way app.py's _start_tray() already does -- silently
+        returning False here made a failed tray indistinguishable from
+        "worked, icon just isn't visible" the first time this was tried
+        on the real machine."""
         if not tray_icon.available():
+            reason = ("not on Windows" if sys.platform != "win32"
+                       else "pystray isn't installed (pip install pystray)")
+            self.controller._log(f"(no system tray icon: {reason})")
             return False
         self._tray = tray_icon.TrayIcon(self._on_show, self._on_stop_screen, self._on_quit)
         try:
             self._tray.start()
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            self.controller._log(f"(couldn't start the system tray icon: {e})")
             self._tray = None
             return False
         return True
@@ -134,8 +143,11 @@ class BackendApp:
                 return
             script = self._run_ui_script_path()
             url = f"http://127.0.0.1:{self.port}/"
+            cmd = [sys.executable, script, "--url", url]
+            if os.path.isfile(ICON_PATH):
+                cmd += ["--icon", ICON_PATH]
             try:
-                self._ui_process = subprocess.Popen([sys.executable, script, "--url", url])
+                self._ui_process = subprocess.Popen(cmd)
             except Exception as e:  # noqa: BLE001 -- surfaced in the log either way
                 self.controller._log(f"(couldn't open the UI window: {e})")
 
@@ -178,7 +190,11 @@ def main(argv=None):
 
     app = BackendApp(autostart=args.autostart, autostart_theme=args.theme, port=args.port)
     app.start_server()
+    print(f"Control API listening on http://127.0.0.1:{args.port}/ (localhost only)")
     have_tray = app.start_tray()
+    print("System tray icon: started" if have_tray else
+          "System tray icon: NOT started -- see the Log panel at "
+          f"http://127.0.0.1:{args.port}/ for why")
 
     # A plain launch opens the window right away, same as app.py
     # showing its window on a normal (non-autostart) run. --autostart

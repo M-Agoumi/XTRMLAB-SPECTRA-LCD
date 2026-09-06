@@ -35,6 +35,10 @@ def main(argv=None):
     ap.add_argument("--width", type=int, default=1040)
     ap.add_argument("--height", type=int, default=720)
     ap.add_argument("--title", default="Hongtai Screen")
+    ap.add_argument("--icon", default=None,
+                     help="path to a .ico for the window/taskbar icon (Windows) -- "
+                          "optional, and silently skipped on a pywebview version "
+                          "that doesn't support it")
     args = ap.parse_args(argv)
 
     try:
@@ -44,7 +48,16 @@ def main(argv=None):
         raise SystemExit(1)
 
     webview.create_window(args.title, args.url, width=args.width, height=args.height)
-    webview.start()
+    try:
+        if args.icon:
+            webview.start(icon=args.icon)
+        else:
+            webview.start()
+    except TypeError:
+        # Older pywebview without the `icon` kwarg on start() -- the
+        # window/taskbar icon just falls back to whatever default
+        # WebView2 uses instead of failing the whole launch over it.
+        webview.start()
 
 
 if __name__ == "__main__":
