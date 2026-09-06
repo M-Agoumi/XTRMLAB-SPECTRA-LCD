@@ -116,6 +116,14 @@ export function saveDashboardNowPlaying(patch) {
   }).then(asJson);
 }
 
+export function saveDashboardMiddleContent(patch) {
+  return fetch("/api/dashboard/middle_content", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ patch }),
+  }).then(asJson);
+}
+
 export function saveDashboardPreset(name, elements) {
   return fetch("/api/dashboard/presets", {
     method: "POST",

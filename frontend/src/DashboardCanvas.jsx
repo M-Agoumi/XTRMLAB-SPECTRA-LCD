@@ -108,6 +108,9 @@ export default function DashboardCanvas({ frameUrl, connected }) {
   const [npDraft, setNpDraft] = useState(null);
   const [npStatus, setNpStatus] = useState(null);
   const [npError, setNpError] = useState(null);
+  const [mcDraft, setMcDraft] = useState(null);
+  const [mcStatus, setMcStatus] = useState(null);
+  const [mcError, setMcError] = useState(null);
   const [uploadingId, setUploadingId] = useState(null); // "background" | "nowPlaying" | an element id, or null
 
   const historyRef = useRef([]);
@@ -123,6 +126,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         setElements(m.elements);
         setBgDraft(m.background);
         setNpDraft(m.nowPlaying);
+        setMcDraft(m.middleContent);
         historyRef.current = [];
         futureRef.current = [];
         setSelectedId(null);
@@ -378,6 +382,29 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         setNpStatus("Saved -- applies live, even while the dashboard is already running.");
       },
       (e) => setNpError(e.message)
+    );
+  };
+
+  const updateMcDraft = (patch) => {
+    setMcStatus(null);
+    setMcDraft((prev) => ({ ...prev, ...patch }));
+  };
+
+  const saveMiddleContent = () => {
+    if (!mcDraft) return;
+    setMcError(null);
+    api.saveDashboardMiddleContent({
+      middle_content: mcDraft.value,
+      weather_location: mcDraft.weather_location || "",
+      weather_units: mcDraft.weather_units,
+    }).then(
+      (dashboardCfg) => {
+        setMcDraft((prev) => ({ ...prev, value: dashboardCfg.middle_content || "spotify",
+                                 weather_location: dashboardCfg.weather_location || "",
+                                 weather_units: dashboardCfg.weather_units || "celsius" }));
+        setMcStatus("Saved -- applies live, even while the dashboard is already running.");
+      },
+      (e) => setMcError(e.message)
     );
   };
 
@@ -834,7 +861,58 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         </div>
       )}
 
-      {npDraft && (
+      {mcDraft && (
+        <div className="canvas-props">
+          <h2>Middle content</h2>
+          <div className="row">
+            <label className="grow">
+              Show
+              <select value={mcDraft.value} onChange={(e) => updateMcDraft({ value: e.target.value })}>
+                {Object.entries(mcDraft.options).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {mcDraft.value === "weather" && (
+            <div className="row">
+              <label className="grow">
+                Location
+                <input
+                  type="text"
+                  value={mcDraft.weather_location || ""}
+                  onChange={(e) => updateMcDraft({ weather_location: e.target.value })}
+                  placeholder="City, address, or lat,lon"
+                />
+              </label>
+              <label>
+                Units
+                <select value={mcDraft.weather_units}
+                        onChange={(e) => updateMcDraft({ weather_units: e.target.value })}>
+                  {Object.entries(mcDraft.weather_unit_options).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+          <p className="hint">
+            {mcDraft.value === "weather"
+              ? "Looked up via Open-Meteo -- a free weather service, no account or API key needed."
+              : mcDraft.value === "none"
+              ? "Nothing is drawn between the two gauge columns -- just the background shows through."
+              : "The Spotify now-playing display below (album art, track/artist, progress)."}
+            {" "}Applies live, even while the dashboard is already running -- no need to Stop/Start.
+          </p>
+          <div className="row">
+            <button onClick={saveMiddleContent}>Save</button>
+          </div>
+          {mcStatus && <p className="hint settings-saved">{mcStatus}</p>}
+          {mcError && <p className="error">{mcError}</p>}
+        </div>
+      )}
+
+      {npDraft && mcDraft && mcDraft.value === "spotify" && (
         <div className="canvas-props">
           <h2>"Nothing playing" placeholder</h2>
           <div className="row">

@@ -259,6 +259,34 @@ export default function App() {
         </div>
       </section>
 
+      <section className="panel">
+        <h2>System</h2>
+        {system?.startup_supported === false ? (
+          <p className="hint">
+            Launch-at-startup and desktop shortcuts are Windows-only.
+          </p>
+        ) : (
+          <>
+            <div className="row">
+              <label className="row-inline">
+                <input
+                  type="checkbox"
+                  checked={!!system?.startup_enabled}
+                  disabled={busy || !system}
+                  onChange={(e) => handleToggleStartup(e.target.checked)}
+                />
+                Launch at Windows startup
+              </label>
+              <button onClick={handleCreateShortcut} disabled={busy}>
+                Create Desktop Shortcut
+              </button>
+            </div>
+            {shortcutMsg && <p className="hint">{shortcutMsg}</p>}
+          </>
+        )}
+        {systemError && <p className="error">{systemError}</p>}
+      </section>
+
       <section className="panel controls">
         <h2>Controls</h2>
         <div className="row">
@@ -442,34 +470,6 @@ export default function App() {
           Brightness applies immediately, running or not. Port needs
           Save, and takes effect on the next Start/Apply.
         </p>
-      </section>
-
-      <section className="panel">
-        <h2>System</h2>
-        {system?.startup_supported === false ? (
-          <p className="hint">
-            Launch-at-startup and desktop shortcuts are Windows-only.
-          </p>
-        ) : (
-          <>
-            <div className="row">
-              <label className="row-inline">
-                <input
-                  type="checkbox"
-                  checked={!!system?.startup_enabled}
-                  disabled={busy || !system}
-                  onChange={(e) => handleToggleStartup(e.target.checked)}
-                />
-                Launch at Windows startup
-              </label>
-              <button onClick={handleCreateShortcut} disabled={busy}>
-                Create Desktop Shortcut
-              </button>
-            </div>
-            {shortcutMsg && <p className="hint">{shortcutMsg}</p>}
-          </>
-        )}
-        {systemError && <p className="error">{systemError}</p>}
       </section>
 
       <section className="panel">

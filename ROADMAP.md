@@ -856,6 +856,25 @@ dict instead of replacing it, matching the merge-safe pattern the web
 UI's own save endpoints already use. Verified with a logic-level test
 confirming `elements`/`presets` survive a Tkinter save unchanged.
 
+**Feature: the middle column is a choice now, not just Spotify.** New
+`dashboard.middle_content` setting (`"spotify"` default/`"weather"`/
+`"none"`), since not everyone wants a now-playing display (or runs
+Spotify). `"weather"` is a new `weather.py` module -- Open-Meteo,
+free/no-API-key, geocodes a typed place name and polls current
+conditions every 10 minutes from a background thread -- rendered as a
+hand-drawn glowing icon + temperature + description + feels-like/
+humidity + resolved place name, with tolerant fallbacks for no location
+set or a lookup failure. `"none"` draws nothing there. Both UIs gained
+a "Middle content" section (Show picker, plus location/units for
+Weather); the "Nothing playing" section now only shows for Spotify. New
+merge-safe `controller.save_dashboard_middle_content()` / `POST /api/
+dashboard/middle_content` applies live, same pattern as the now-playing
+settings. Verified headlessly (mocked-HTTP geocode/fetch, live
+location/unit changes waking the poll thread immediately, rendered
+frames for all three modes and their fallbacks, the endpoint's
+round-trip and its rejection of an unknown value) and via a Playwright
+session against the real built frontend + live backend.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files

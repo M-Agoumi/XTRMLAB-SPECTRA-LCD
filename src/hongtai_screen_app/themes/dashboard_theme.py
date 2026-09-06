@@ -140,6 +140,7 @@ except ImportError:  # pragma: no cover -- surfaced clearly at startup, see main
     cairo = None
 
 from ..driver.hongtai_screen import HongtaiScreen
+from .. import weather
 
 # ---------------------------------------------------------------- psutil ---
 
@@ -1625,6 +1626,108 @@ def get_not_playing_message():
     return _not_playing_message or DEFAULT_NOT_PLAYING_MESSAGE
 
 
+# What goes in the middle column, between the two gauge columns --
+# "spotify" (this theme's original and still-default behavior: album
+# art + track/artist + progress, falling back to the placeholder
+# image/message above when nothing's playing) is one option; "weather"
+# (weather.py -- a free, no-API-key lookup, just a place name) and
+# "none" (nothing drawn there at all, for anyone who wants neither) are
+# the other two, added because not everyone wants a Spotify display
+# glued to their PC's case. Live-settable the same way as
+# DEFAULT_ART_PATH/_not_playing_message above -- render_frame() reads
+# this fresh every frame, so switching it takes effect on the very next
+# frame, no Stop/Start needed.
+MIDDLE_CONTENT_OPTIONS = {
+    "spotify": "Spotify (now playing)",
+    "weather": "Weather",
+    "none": "None",
+}
+_middle_content = "spotify"
+
+
+def set_middle_content(value):
+    global _middle_content
+    _middle_content = value if value in MIDDLE_CONTENT_OPTIONS else "spotify"
+
+
+def get_middle_content():
+    return _middle_content
+
+
+# Accent color per weather.categorize() icon category -- picked to read
+# clearly at a glance (warm yellow for clear, blue for rain, and so on)
+# rather than matching any particular icon-pack convention, since these
+# are hand-drawn PIL shapes, not a bundled icon set.
+_WEATHER_ICON_ACCENTS = {
+    "clear": (255, 200, 60),
+    "cloudy": (170, 185, 215),
+    "fog": (170, 185, 215),
+    "rain": (80, 170, 255),
+    "snow": (225, 235, 250),
+    "storm": (200, 90, 255),
+}
+
+
+def _weather_icon_tile(category, size):
+    """A small glowing vector icon for one of weather.categorize()'s
+    broad categories -- simple filled PIL shapes (a circle+rays for
+    "clear", overlapping ellipses for a cloud, plus rain/snow/lightning
+    marks below it) rather than a bundled icon set, consistent with the
+    rest of this theme (gauges, the hex-grid background) being drawn,
+    not loaded from image assets. Returns (RGBA tile, accent color) --
+    the tile is meant to be glow_paste()'d the same way album art's
+    border glow is."""
+    accent = _WEATHER_ICON_ACCENTS.get(category, _WEATHER_ICON_ACCENTS["cloudy"])
+    tile = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(tile)
+    cx = size / 2
+
+    def cloud(cy_frac, scale):
+        r = size * 0.16 * scale
+        base_y = size * cy_frac
+        d.ellipse([cx - r * 2.1, base_y - r * 0.6, cx - r * 0.3, base_y + r * 1.3], fill=accent + (255,))
+        d.ellipse([cx - r * 0.8, base_y - r * 1.3, cx + r * 1.1, base_y + r * 1.1], fill=accent + (255,))
+        d.ellipse([cx + r * 0.2, base_y - r * 0.5, cx + r * 2.0, base_y + r * 1.3], fill=accent + (255,))
+        d.rectangle([cx - r * 2.0, base_y, cx + r * 1.9, base_y + r * 1.2], fill=accent + (255,))
+
+    if category == "clear":
+        cy = size / 2
+        r = size * 0.22
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=accent + (255,))
+        for i in range(8):
+            ang = i * math.pi / 4
+            x1, y1 = cx + math.cos(ang) * r * 1.35, cy + math.sin(ang) * r * 1.35
+            x2, y2 = cx + math.cos(ang) * r * 1.75, cy + math.sin(ang) * r * 1.75
+            d.line([x1, y1, x2, y2], fill=accent + (255,), width=max(2, int(size * 0.02)))
+    elif category in ("cloudy", "fog"):
+        cloud(0.52, 1.0)
+        if category == "fog":
+            for yf in (0.80, 0.90):
+                d.line([cx - size * 0.32, size * yf, cx + size * 0.32, size * yf],
+                       fill=accent + (200,), width=max(2, int(size * 0.025)))
+    elif category == "rain":
+        cloud(0.42, 0.9)
+        for dx in (-0.16, 0.0, 0.16):
+            x = cx + size * dx
+            d.line([x, size * 0.66, x - size * 0.03, size * 0.82],
+                   fill=accent + (255,), width=max(2, int(size * 0.025)))
+    elif category == "snow":
+        cloud(0.42, 0.9)
+        for dx in (-0.16, 0.0, 0.16):
+            x, y = cx + size * dx, size * 0.76
+            s = size * 0.05
+            d.line([x - s, y, x + s, y], fill=accent + (255,), width=2)
+            d.line([x, y - s, x, y + s], fill=accent + (255,), width=2)
+            d.line([x - s * 0.7, y - s * 0.7, x + s * 0.7, y + s * 0.7], fill=accent + (255,), width=2)
+            d.line([x - s * 0.7, y + s * 0.7, x + s * 0.7, y - s * 0.7], fill=accent + (255,), width=2)
+    else:  # "storm"
+        cloud(0.38, 0.9)
+        bolt = [cx + size * 0.04, size * 0.60, cx - size * 0.06, size * 0.74,
+                cx + size * 0.02, size * 0.74, cx - size * 0.08, size * 0.92]
+        d.line(bolt, fill=accent + (255,), width=max(2, int(size * 0.03)), joint="curve")
+    return tile, accent
+
+
 def truncate(draw, text, font, max_w):
     if not text:
         return ""
@@ -1697,6 +1800,10 @@ class Fonts:
         self.artist = load_font(15, bold=True)
         self.progress = load_font(15)
         self.message = load_font(22)  # the "nothing playing" message -- bigger, meant to be read
+        self.weather_temp = load_font(48)
+        self.weather_desc = load_font(18)
+        self.weather_detail = load_font(14)
+        self.weather_location = load_font(14, bold=True)
 
 
 def _linear_gradient(width, height, top_color, bottom_color):
@@ -1889,49 +1996,13 @@ def build_static_background(width, height, fonts, elements=None, background=None
     return img, layout
 
 
-def render_frame(background, layout, width, height, fonts, stats, media, history=None):
-    """`stats` is a flat dict keyed by STAT_DEFS key -- any key can be
-    missing or None, which just draws that gauge's dim track with no
-    needle and "--" (see draw_gauge_dynamic_tile). Every gauge element
-    reads from this same dict via its own `stat`, since any stat can be
-    bound to any element; `layout["resolved"]` (built by
-    build_static_background(), keyed by element id) is where each
-    element's actual on-panel position/size ended up.
-
-    `history` (ROADMAP.md Phase 6) is a dict of element id -> a
-    sequence of that element's bound stat's recent values, oldest
-    first -- only graph elements read it, and only run()'s loop
-    actually maintains one (see its own comment on the per-element
-    deques it keeps across frames); every other caller either omits it
-    entirely or passes an empty dict, which just draws each graph's
-    static border with nothing plotted inside it yet."""
-    img = background.copy()
-    base = min(width, height)
-    history = history or {}
-
-    for el in layout["elements"]:
-        etype = el.get("type", "gauge")
-        if etype == "gauge":
-            g = layout["resolved"][el["id"]]
-            stat = STAT_DEFS[el["stat"]]
-            accent = _element_accent(el)
-            accent2 = _element_accent2(el)
-            big = g["radius"] >= base * BIG_GAUGE_RADIUS_FRACTION
-            value_font = fonts.gauge_value if big else fonts.small_value
-            draw_gauge_dynamic(img, g, stats.get(el["stat"]), stat["min"], stat["max"],
-                                accent, value_font, stat["fmt"], accent2)
-        elif etype == "graph":
-            box = layout["resolved"].get(el["id"])
-            if box is None:
-                continue
-            accent = _element_color(el, default=ACCENT_CPU)
-            _draw_graph_dynamic(img, el, box, history.get(el["id"], ()), accent)
-        # text/image elements are fully static -- baked into
-        # `background` already, nothing to redraw here.
-
-    # --- middle: album art + progress + track/artist + clock ----------
-    mid_x0, mid_w = layout["mid_x0"], layout["mid_w"]
-    mid_cx = mid_x0 + mid_w / 2
+def _draw_spotify_middle(img, draw, mid_cx, mid_w, height, fonts, media):
+    """The original (and still default) middle-column content: album
+    art + track/artist + playback progress, falling back to the
+    "nothing playing" placeholder image/message when there's no active
+    session. Pulled out of render_frame() so it's just one of three
+    interchangeable middle_content branches (see MIDDLE_CONTENT_OPTIONS)
+    rather than the only thing that column could ever show."""
     art_size = int(min(mid_w * 0.62, height * 0.42))
 
     art = None
@@ -1951,8 +2022,6 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
     glow_tile, glow_pad = art_glow_frame(art_size, 14, ACCENT_MID)
     glow_paste(img, glow_tile, (art_x - glow_pad, art_y - glow_pad), blur=8, glow_alpha=0.55)
     img.paste(art, (art_x, art_y))
-
-    draw = ImageDraw.Draw(img)
 
     y = art_y + art_size + 16
     if title:
@@ -1996,7 +2065,116 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
         draw.text((mid_cx, y), "SPOTIFY ART NEEDS WINSDK", font=fonts.track, fill=(238, 238, 244), anchor="ma")
         y += 66
 
-    # Fixed vertical position (not the flowing `y` used above) -- see
+
+def _draw_weather_middle(img, draw, mid_cx, mid_w, height, fonts):
+    """Current-conditions readout (weather.py) for anyone who'd rather
+    see the weather than a Spotify display -- an icon, the temperature,
+    a one-line description, and a couple of secondary details, all
+    centered in the same column the album art normally occupies. Any
+    missing piece (no location set yet, a lookup that hasn't completed,
+    a geocoding failure) degrades to a short centered message instead
+    of a half-drawn readout, the same tolerant-fallback style as the
+    Spotify placeholder above."""
+    info = weather.get_weather()
+    icon_size = int(min(mid_w * 0.4, height * 0.28))
+    icon_y = int(height * 0.08)
+
+    if not info or info.get("error") or info.get("temperature") is None:
+        message = (info or {}).get("error") if info else "Set a location in Settings to show weather here"
+        message = message or "Weather unavailable"
+        y = icon_y + icon_size // 3
+        for line in wrap_text(draw, message, fonts.message, mid_w - 16):
+            draw.text((mid_cx, y), line, font=fonts.message, fill=(200, 190, 220), anchor="ma")
+            y += 28
+        return
+
+    tile, accent = _weather_icon_tile(info.get("icon", "cloudy"), icon_size)
+    icon_x = int(mid_cx - icon_size / 2)
+    glow_paste(img, tile, (icon_x, icon_y), blur=8, glow_alpha=0.5)
+    img.paste(tile, (icon_x, icon_y), tile)
+
+    y = icon_y + icon_size + 10
+    units_symbol = "°F" if info.get("units") == "fahrenheit" else "°C"
+    temp = info.get("temperature")
+    draw.text((mid_cx, y), f"{round(temp)}{units_symbol}", font=fonts.weather_temp,
+               fill=(238, 238, 244), anchor="ma")
+    y += 54
+
+    description = info.get("description") or ""
+    if description:
+        draw.text((mid_cx, y), description, font=fonts.weather_desc, fill=(210, 202, 230), anchor="ma")
+        y += 26
+
+    detail_bits = []
+    if info.get("feels_like") is not None:
+        detail_bits.append(f"Feels {round(info['feels_like'])}{units_symbol}")
+    if info.get("humidity") is not None:
+        detail_bits.append(f"{round(info['humidity'])}% humidity")
+    if detail_bits:
+        draw.text((mid_cx, y), "  ·  ".join(detail_bits), font=fonts.weather_detail,
+                   fill=(170, 165, 190), anchor="ma")
+        y += 22
+
+    if info.get("location_name"):
+        draw.text((mid_cx, y + 4), info["location_name"].upper(), font=fonts.weather_location,
+                   fill=(150, 145, 175), anchor="ma")
+
+
+def render_frame(background, layout, width, height, fonts, stats, media, history=None):
+    """`stats` is a flat dict keyed by STAT_DEFS key -- any key can be
+    missing or None, which just draws that gauge's dim track with no
+    needle and "--" (see draw_gauge_dynamic_tile). Every gauge element
+    reads from this same dict via its own `stat`, since any stat can be
+    bound to any element; `layout["resolved"]` (built by
+    build_static_background(), keyed by element id) is where each
+    element's actual on-panel position/size ended up.
+
+    `history` (ROADMAP.md Phase 6) is a dict of element id -> a
+    sequence of that element's bound stat's recent values, oldest
+    first -- only graph elements read it, and only run()'s loop
+    actually maintains one (see its own comment on the per-element
+    deques it keeps across frames); every other caller either omits it
+    entirely or passes an empty dict, which just draws each graph's
+    static border with nothing plotted inside it yet."""
+    img = background.copy()
+    base = min(width, height)
+    history = history or {}
+
+    for el in layout["elements"]:
+        etype = el.get("type", "gauge")
+        if etype == "gauge":
+            g = layout["resolved"][el["id"]]
+            stat = STAT_DEFS[el["stat"]]
+            accent = _element_accent(el)
+            accent2 = _element_accent2(el)
+            big = g["radius"] >= base * BIG_GAUGE_RADIUS_FRACTION
+            value_font = fonts.gauge_value if big else fonts.small_value
+            draw_gauge_dynamic(img, g, stats.get(el["stat"]), stat["min"], stat["max"],
+                                accent, value_font, stat["fmt"], accent2)
+        elif etype == "graph":
+            box = layout["resolved"].get(el["id"])
+            if box is None:
+                continue
+            accent = _element_color(el, default=ACCENT_CPU)
+            _draw_graph_dynamic(img, el, box, history.get(el["id"], ()), accent)
+        # text/image elements are fully static -- baked into
+        # `background` already, nothing to redraw here.
+
+    # --- middle: Spotify / weather / nothing, then the clock ----------
+    mid_x0, mid_w = layout["mid_x0"], layout["mid_w"]
+    mid_cx = mid_x0 + mid_w / 2
+    draw = ImageDraw.Draw(img)
+    content = get_middle_content()
+
+    if content == "weather":
+        _draw_weather_middle(img, draw, mid_cx, mid_w, height, fonts)
+    elif content == "none":
+        pass  # nothing drawn here -- just the background shows through
+    else:
+        _draw_spotify_middle(img, draw, mid_cx, mid_w, height, fonts, media)
+
+    # Fixed vertical position (not whatever flowing `y` the content
+    # above ended at) -- see
     # build_static_background()'s comment on why: the disk/VRAM gauges
     # flanking it need a stable spot baked into the static background,
     # so the clock can no longer drift with how much media info is
@@ -2008,13 +2186,20 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
 
 
 def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
-        not_playing_message=None, brightness=90, slots=None, elements=None, background=None,
+        not_playing_message=None, middle_content=None, weather_location=None, weather_units=None,
+        brightness=90, slots=None, elements=None, background=None,
         stop_event=None, log=print, screen_factory=HongtaiScreen, on_connected=None, screen=None):
     """Runs the dashboard until stop_event is set (or forever, if
     stop_event is None -- the CLI entry point below relies on Ctrl+C /
     KeyboardInterrupt instead in that case). Pulled out of main() so a
     GUI can start/stop this theme in a background thread instead of
     only being usable from the command line.
+
+    `middle_content` picks what shows between the two gauge columns --
+    "spotify" (default), "weather", or "none" (see
+    MIDDLE_CONTENT_OPTIONS/set_middle_content()). `weather_location`/
+    `weather_units` are only meaningful when it's "weather" -- see
+    weather.py's set_location()/set_units().
 
     `elements` (ROADMAP.md Phase 4) is the new way to lay the gauges
     out -- a list of dicts in slots_to_elements()'s shape, with their
@@ -2065,6 +2250,10 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
 
     set_default_art_path(default_art_path)
     set_not_playing_message(not_playing_message)
+    set_middle_content(middle_content or "spotify")
+    weather.set_location(weather_location)
+    weather.set_units(weather_units or "celsius")
+    weather.start_polling()
 
     owns_screen = screen is None
     if owns_screen:
@@ -2174,10 +2363,18 @@ def main():
     ap.add_argument("--not-playing-message", default=None,
                      help="text to show in place of the track title when nothing is "
                           f"playing (default: {DEFAULT_NOT_PLAYING_MESSAGE!r})")
+    ap.add_argument("--middle-content", choices=list(MIDDLE_CONTENT_OPTIONS), default="spotify",
+                     help="what to show between the two gauge columns (default: spotify)")
+    ap.add_argument("--weather-location", default=None,
+                     help="city/address for --middle-content weather (looked up via Open-Meteo, no API key)")
+    ap.add_argument("--weather-units", choices=list(weather.UNIT_OPTIONS), default="celsius",
+                     help="temperature units for --middle-content weather (default: celsius)")
     args = ap.parse_args()
 
     run(port=args.port, web_port=args.web_port, enable_web=not args.no_web,
-        default_art_path=args.default_art, not_playing_message=args.not_playing_message)
+        default_art_path=args.default_art, not_playing_message=args.not_playing_message,
+        middle_content=args.middle_content, weather_location=args.weather_location,
+        weather_units=args.weather_units)
 
 
 if __name__ == "__main__":
