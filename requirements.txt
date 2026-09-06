@@ -18,7 +18,7 @@ psutil>=5.9
 numpy>=1.24          # required -- gauge rendering + background gradients
 pycairo>=1.24        # required -- gauge rendering (prebuilt wheel on Windows)
 nvidia-ml-py>=12.0   # optional -- NVIDIA GPU/VRAM/power stats; degrades gracefully without one
-winsdk>=1.0.0b10        # optional -- Spotify/now-playing album art (Windows 10 1809+)
+winsdk>=1.0.4        # optional -- Spotify/now-playing album art (Windows 10 1809+)
 
 # --- video_theme.py: stream a video file to the panel ------------------
 opencv-python-headless>=4.8
@@ -31,6 +31,11 @@ playwright>=1.40
 # --- Desktop app extra: system tray icon on close/at startup -----------
 pystray>=0.19        # optional -- without it, closing the window quits instead
                      # of dismissing to tray, and --autostart just minimizes
+
+# --- v2.0 UI process (ROADMAP.md Phase 2c, not the shipped app yet) ---
+# pywebview>=5.0     # optional -- only needed to try scripts/run_v2_app.py /
+                     # scripts/run_ui.py. Also needs WebView2 (ships with
+                     # Windows 11; usually present on Windows 10 via Edge).
 
 # --- Building a standalone .exe (developers only, not needed to run) --
 # pyinstaller>=6.0  # see BUILD.md -- uncomment or `pip install pyinstaller` yourself

@@ -43,6 +43,22 @@ dashboard designer) this is laying groundwork for.
   the backend itself on the same origin as the control API. The built
   bundle (`frontend/dist/`) is committed so no Node toolchain is
   required to run the app, only to change the frontend's source.
+- Fixed a bug Phase 2b's real-hardware pass surfaced: `controller.py`'s
+  `_selected_port()` passed the saved port *label* (a whole
+  descriptive string) straight to the driver as an openable device
+  path instead of translating it back to the real `COM3`-style path
+  the way `app.py` already does — starting a theme with a specific
+  port saved (not auto-detect) failed with a confusing
+  `FileNotFoundError` even with the panel working fine. Fixed to do
+  the same rescan-and-match `app.py` uses.
+- **Phase 2c of the v2.0 rewrite**: `backend_app.py`
+  (`scripts/run_v2_app.py`) -- a new, parallel entry point (not yet
+  what `app.py`/Desktop shortcuts point at) that runs the control API,
+  a tray icon, and resumes the last-running theme on launch, with its
+  tray's "Show" spawning `scripts/run_ui.py` (a small pywebview
+  window) as a genuinely separate process, and "Quit" terminating it.
+  Confirms the two-process design Phase 0 measured actually works end
+  to end.
 - Fixed a bug Phase 2b's real-hardware pass surfaced: running the
   backend via `scripts/run_backend.py` wrote its own separate
   `scripts/app_config.json` instead of sharing the real one next to
