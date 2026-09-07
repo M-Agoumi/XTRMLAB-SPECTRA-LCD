@@ -57,6 +57,17 @@ export function createShortcut() {
   return fetch("/api/shortcut", { method: "POST" }).then(asJson);
 }
 
+// Mirrors the official XTRM Lab app's "Keep playing when screen is
+// off" setting -- see power_state.py's docstring. Applies immediately,
+// no restart needed.
+export function setKeepActiveWhenLocked(value) {
+  return fetch("/api/keep_active_when_locked", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  }).then(asJson);
+}
+
 // Dashboard design canvas (ROADMAP.md Phase 5) -- a small surface of
 // its own rather than going through updateConfig(), because that PATCHes
 // the whole "dashboard" sub-object at once; these merge into it

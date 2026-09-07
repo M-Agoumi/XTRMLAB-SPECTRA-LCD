@@ -34,6 +34,7 @@ import cv2
 from PIL import Image
 
 from ..driver.hongtai_screen import HongtaiScreen
+from .. import power_state
 
 
 def fit_frame(frame_bgr, target_w, target_h, bw=False):
@@ -159,7 +160,13 @@ def run(video_path, port=None, fps=None, bw=False, audio=False, loop=False,
                 continue  # we're behind -- skip this frame instead of queueing up
 
             img = fit_frame(frame, info.width, info.height, bw=bw)
-            screen.show(img)
+            # "Keep the panel updating while Windows is locked" setting
+            # (power_state.py) -- skip just the push to the panel while
+            # locked; frame_idx/wall-clock bookkeeping above still needs
+            # to keep advancing normally so playback doesn't drift once
+            # it resumes.
+            if not power_state.should_pause():
+                screen.show(img)
             frame_idx += 1
 
             if frame_count and frame_idx % 100 == 0:

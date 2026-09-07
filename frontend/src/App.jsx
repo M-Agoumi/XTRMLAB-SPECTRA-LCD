@@ -223,6 +223,12 @@ export default function App() {
       setSystem(await api.setStartup(enabled));
     });
 
+  const handleToggleKeepActive = (value) =>
+    runAction(async () => {
+      const { keep_active_when_locked } = await api.setKeepActiveWhenLocked(value);
+      setSystem((prev) => ({ ...prev, keep_active_when_locked }));
+    });
+
   const handleCreateShortcut = () =>
     runAction(async () => {
       setShortcutMsg(null);
@@ -284,6 +290,20 @@ export default function App() {
             {shortcutMsg && <p className="hint">{shortcutMsg}</p>}
           </>
         )}
+        <div className="row">
+          <label className="row-inline">
+            <input
+              type="checkbox"
+              checked={!!system?.keep_active_when_locked}
+              disabled={busy || !system || system?.keep_active_supported === false}
+              onChange={(e) => handleToggleKeepActive(e.target.checked)}
+            />
+            Keep the panel updating while Windows is locked
+          </label>
+          {system?.keep_active_supported === false && (
+            <span className="hint">(Windows only)</span>
+          )}
+        </div>
         {systemError && <p className="error">{systemError}</p>}
       </section>
 
