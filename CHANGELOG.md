@@ -378,6 +378,35 @@ dashboard designer) this is laying groundwork for.
   built frontend + live backend: adding a now-playing element, styled
   file inputs in both the Image and "Nothing playing" sections, and
   the center buttons independently resetting X and Y on a text element.
+- **Fixed the canvas showing a placeholder box instead of the picture
+  you just picked, and made the resize/save workflow legible.** Picking
+  an image for the background, an image element, or the "Nothing
+  playing" placeholder used to only update a filename label -- the
+  canvas kept drawing a generic "IMAGE" box, so it looked like the pick
+  hadn't done anything. New `GET /api/dashboard/image?path=` (`control_
+  server.py`'s `_handle_dashboard_image()` / `controller.read_dashboard_
+  image()`, restricted to paths already inside `image_store.py`'s own
+  managed folder) serves the actual bytes back, so: an image element
+  now renders the real picture directly on the canvas (clipped to its
+  box, respecting opacity), and all three file pickers show a small
+  thumbnail next to the filename -- all the moment a file's picked, no
+  Save/Start/Apply needed, since this canvas was already a live preview
+  and just wasn't using real image data. Also added an explicit "Save
+  layout*" / "Unsaved changes" indicator (amber-highlighted button once
+  `elements` differs from what was last loaded/saved) so it's no longer
+  a guess whether a still-live edit has actually been persisted, plus a
+  rewritten top hint spelling out the three-stage model (canvas preview
+  is instant; Save layout persists it; Start/Apply pushes it to the
+  physical panel). And graph/image/media elements gained two more
+  resize handles (right edge = width only, bottom edge = height only)
+  alongside the existing corner handle (both at once), since a single
+  diagonal handle couldn't change just one dimension without a
+  pixel-perfect straight drag. Verified via a Playwright session against
+  the real built frontend + live backend: uploading an image and seeing
+  it render inline plus its thumbnail within the same interaction, an
+  actual mouse-drag on the width-only handle confirming height stays
+  untouched, and the dirty indicator appearing on edit and clearing on
+  save.
 
 ## [1.0.0] — 2026-08-29
 

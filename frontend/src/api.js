@@ -103,6 +103,19 @@ export function uploadDashboardImage(file) {
   });
 }
 
+// Points the canvas at the actual picked image (background, now-playing
+// placeholder, an image/media element) instead of just its filename --
+// see control_server.py's _handle_dashboard_image()/controller.py's
+// read_dashboard_image(). `path` is always one this app itself handed
+// back (from uploadDashboardImage() or dashboard/meta), never anything
+// typed in directly, but it's still passed as a query param the
+// backend re-validates (image_store.is_managed()) rather than trusted
+// blindly.
+export function dashboardImageUrl(path) {
+  if (!path) return null;
+  return `/api/dashboard/image?path=${encodeURIComponent(path)}`;
+}
+
 export function saveDashboardElements(elements) {
   return fetch("/api/dashboard/elements", {
     method: "POST",

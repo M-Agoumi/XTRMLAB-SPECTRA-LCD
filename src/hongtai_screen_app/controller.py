@@ -13,6 +13,7 @@ fully testable without a display -- and, unlike the Tkinter app, built
 on ScreenEngine (screen_engine.py) instead of ThemeWorker, so switching
 themes here reuses one persistent connection instead of reconnecting.
 """
+import os
 import queue
 import sys
 import threading
@@ -236,6 +237,25 @@ class AppController:
             raise ValueError(f"invalid image data: {e}")
         path = image_store.store_image_bytes(data, filename)
         return {"path": path}
+
+    def read_dashboard_image(self, path):
+        """Returns (bytes, path) for a previously-uploaded/picked image,
+        so the web UI's canvas can show the actual picture it just
+        stored -- not just its filename -- the moment it's picked,
+        without needing Start/Apply or even Save. Only ever reads a
+        path already under image_store.IMAGES_DIR (image_store.
+        is_managed()): the canvas only ever hands this back a path IT
+        was given by upload_dashboard_image()/Tkinter's Browse dialog in
+        the first place, never anything the browser typed in itself, but
+        this is still the one place a client-supplied filesystem path
+        reaches disk, so it's checked regardless. Raises ValueError for
+        anything outside that folder or that doesn't exist."""
+        if not path or not image_store.is_managed(path):
+            raise ValueError("not a managed image path")
+        if not os.path.isfile(path):
+            raise ValueError("image not found")
+        with open(path, "rb") as f:
+            return f.read(), path
 
     # ------------------------------------------------------------------ #
     # Dashboard design canvas (ROADMAP.md Phase 5) -- reading/writing

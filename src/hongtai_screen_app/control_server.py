@@ -38,7 +38,7 @@ import sys
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from .controller import AppController
 from .paths import _app_base_dir
@@ -96,6 +96,8 @@ def _make_handler(controller: AppController):
                     self._handle_log_stream()
                 elif path == "/frame.jpg":
                     self._handle_frame()
+                elif path == "/api/dashboard/image":
+                    self._handle_dashboard_image()
                 elif self._try_serve_static(path):
                     pass
                 elif path == "/":
@@ -204,6 +206,31 @@ def _make_handler(controller: AppController):
                 return
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _handle_dashboard_image(self):
+            """Serves back a previously-picked image (background,
+            now-playing placeholder, an image element) by its stored
+            path, so the design canvas can show what was actually
+            picked -- as a thumbnail on the file field, and as the
+            element's real content on the canvas itself -- immediately,
+            without needing Save/Start/Apply first. `?path=` is the
+            managed path upload_dashboard_image()/dashboard_meta()
+            already handed the frontend; controller.read_dashboard_image()
+            refuses anything outside image_store's own managed folder."""
+            qs = parse_qs(urlparse(self.path).query)
+            path = (qs.get("path") or [None])[0]
+            try:
+                data, resolved = controller.read_dashboard_image(path)
+            except ValueError as e:
+                self._send_error_json(404, str(e))
+                return
+            content_type, _ = mimetypes.guess_type(resolved)
+            self.send_response(200)
+            self.send_header("Content-Type", content_type or "application/octet-stream")
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
