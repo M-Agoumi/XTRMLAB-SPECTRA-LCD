@@ -141,6 +141,7 @@ except ImportError:  # pragma: no cover -- surfaced clearly at startup, see main
 
 from ..driver.hongtai_screen import HongtaiScreen
 from .. import weather
+from .. import power_state
 
 # ---------------------------------------------------------------- psutil ---
 
@@ -2305,33 +2306,41 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
         while stop_event is None or not stop_event.is_set():
             frame_start = time.time()
 
-            sysinfo_frame = read_systeminfos()
-            media = get_media_info()
-            gpu = get_gpu_stats(sysinfo_frame)
-            stats = {
-                "cpu_load": get_cpu_stats()["util"],
-                "gpu_load": gpu["util"] if gpu else None,
-                "gpu_temp": gpu["temp"] if gpu else None,
-                "ram": get_ram_percent(),
-                "network": get_network_rate_mb_s(),
-                "cpu_freq": get_cpu_freq_ghz(),
-                "disk_usage": get_disk_usage_percent(),
-                "vram_usage": get_vram_percent(),
-                "swap": get_swap_percent(),
-                "disk_io": get_disk_io_mb_s(),
-                "gpu_power": get_gpu_power_w(),
-                "process_count": get_process_count(),
-                "cpu_load_peak": get_cpu_load_peak_core(),
-                "battery": get_battery_percent(),
-            }
+            # "Keep the panel updating while Windows is locked" setting
+            # (power_state.py, on by default -- matches this app's
+            # original always-on behavior) -- when it's off and Windows
+            # is actually locked, skip building and pushing a frame
+            # entirely this tick rather than just the screen.show()
+            # call, so a locked machine doesn't keep burning CPU on
+            # stats/rendering nobody's watching either.
+            if not power_state.should_pause():
+                sysinfo_frame = read_systeminfos()
+                media = get_media_info()
+                gpu = get_gpu_stats(sysinfo_frame)
+                stats = {
+                    "cpu_load": get_cpu_stats()["util"],
+                    "gpu_load": gpu["util"] if gpu else None,
+                    "gpu_temp": gpu["temp"] if gpu else None,
+                    "ram": get_ram_percent(),
+                    "network": get_network_rate_mb_s(),
+                    "cpu_freq": get_cpu_freq_ghz(),
+                    "disk_usage": get_disk_usage_percent(),
+                    "vram_usage": get_vram_percent(),
+                    "swap": get_swap_percent(),
+                    "disk_io": get_disk_io_mb_s(),
+                    "gpu_power": get_gpu_power_w(),
+                    "process_count": get_process_count(),
+                    "cpu_load_peak": get_cpu_load_peak_core(),
+                    "battery": get_battery_percent(),
+                }
 
-            for graph_id, buf in history.items():
-                stat_key = next((el.get("stat") for el in elements
-                                  if el["id"] == graph_id), None)
-                buf.append(stats.get(stat_key) if stat_key else None)
+                for graph_id, buf in history.items():
+                    stat_key = next((el.get("stat") for el in elements
+                                      if el["id"] == graph_id), None)
+                    buf.append(stats.get(stat_key) if stat_key else None)
 
-            img = render_frame(bg_image, layout, info.width, info.height, fonts, stats, media, history)
-            screen.show(img)
+                img = render_frame(bg_image, layout, info.width, info.height, fonts, stats, media, history)
+                screen.show(img)
 
             elapsed = time.time() - frame_start
             sleep_for = max(0.0, target_period - elapsed)

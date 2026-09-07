@@ -313,6 +313,41 @@ dashboard designer) this is laying groundwork for.
   real built frontend + live backend confirming the section saves, the
   Weather-only fields show/hide correctly, and the placeholder section
   hides itself outside Spotify mode, with no console errors.
+- **New setting: "Keep the panel updating while Windows is locked"
+  (on by default), mirroring the official XTRM Lab app's own "Keep
+  playing when screen is off" toggle.** That vendor app's Electron
+  `powerMonitor` stops rendering on a Windows lock-screen/suspend event
+  unless that setting is on; this app had no equivalent at all before
+  now -- it always kept going, silently polling stats and pushing
+  frames to a panel nobody's near while the machine sits locked. New
+  `power_state.py` detects "is Windows locked right now" with no extra
+  dependency (`ctypes`' `OpenInputDesktop()` -- the standard userspace
+  trick, no elevation needed), polled every 2 seconds from a background
+  thread. True system suspend isn't something userspace can "keep
+  active" through -- Windows freezes the whole process during real
+  sleep, so there's nothing to pause or resume there; this is
+  specifically about a screen *lock* (Win+L, an idle timeout, "Lock"
+  from the Start menu), which Windows runs every process straight
+  through, unaffected. All four themes' render loops (`dashboard_
+  theme.py`, `video_theme.py`, `webpage_theme.py`, `demo_clock.py`)
+  now check `power_state.should_pause()` before doing their per-frame
+  work (not just before pushing to the panel, so a locked machine
+  doesn't keep burning CPU/GPU on stats, video decode, or webpage
+  screenshots nobody's watching either) and skip that frame entirely
+  when it's on and the setting is off, resuming automatically the
+  moment Windows unlocks. New `controller.set_keep_active_when_
+  locked()` / `POST /api/keep_active_when_locked` (`system_info()`
+  gained `keep_active_when_locked`/`keep_active_supported` keys) and a
+  matching `app.py` Tkinter checkbox, both applying immediately, no
+  restart needed. The web UI's System panel gained the checkbox too
+  (disabled with "(Windows only)" off Windows, same pattern the
+  existing startup checkbox already uses). Verified headlessly
+  (`OpenInputDesktop`-based lock detection stubbed for both states, the
+  setting ignoring lock state entirely when on, and an end-to-end test
+  starting `dashboard_theme.run()` against a fake screen confirming
+  frames stop the instant the setting is flipped off while locked and
+  resume immediately on unlock) and via a Playwright session against
+  the real built frontend + live backend, with no console errors.
 
 ## [1.0.0] — 2026-08-29
 

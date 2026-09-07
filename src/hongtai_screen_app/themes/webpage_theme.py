@@ -57,6 +57,7 @@ import time
 from PIL import Image
 
 from ..driver.hongtai_screen import HongtaiScreen
+from .. import power_state
 
 
 def run(url, port=None, interval=0.1, reload_every=None, brightness=90,
@@ -136,12 +137,17 @@ def run(url, port=None, interval=0.1, reload_every=None, brightness=90,
                         log(f"  (reload failed: {e} -- continuing with the current page)")
                     last_reload = frame_start
 
-                try:
-                    png_bytes = page.screenshot()
-                    img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-                    screen.show(img)
-                except Exception as e:  # noqa: BLE001
-                    log(f"  (frame skipped: {e})")
+                # "Keep the panel updating while Windows is locked"
+                # setting (power_state.py) -- skip the screenshot
+                # entirely while locked, not just the panel push, since
+                # that's the actually expensive part of this loop.
+                if not power_state.should_pause():
+                    try:
+                        png_bytes = page.screenshot()
+                        img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+                        screen.show(img)
+                    except Exception as e:  # noqa: BLE001
+                        log(f"  (frame skipped: {e})")
 
                 elapsed = time.time() - frame_start
                 sleep_for = max(0.0, interval - elapsed)

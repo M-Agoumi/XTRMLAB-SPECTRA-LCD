@@ -128,6 +128,9 @@ def _make_handler(controller: AppController):
                     self._send_json(200, controller.set_startup(bool(body.get("enabled"))))
                 elif path == "/api/shortcut":
                     self._send_json(200, controller.create_desktop_shortcut())
+                elif path == "/api/keep_active_when_locked":
+                    body = self._read_json_body()
+                    self._send_json(200, controller.set_keep_active_when_locked(body.get("value")))
                 elif path == "/api/dashboard/upload_image":
                     body = self._read_json_body()
                     self._send_json(200, controller.upload_dashboard_image(

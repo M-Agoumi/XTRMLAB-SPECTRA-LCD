@@ -22,6 +22,7 @@ import datetime
 from PIL import Image, ImageDraw, ImageFont
 
 from ..driver.hongtai_screen import HongtaiScreen
+from .. import power_state
 
 try:
     import psutil
@@ -130,8 +131,11 @@ def run(port=None, brightness=90, stop_event=None, log=print, screen_factory=Hon
     try:
         while stop_event is None or not stop_event.is_set():
             frame_start = time.time()
-            img = render_frame(info.width, info.height)
-            screen.show(img)
+            # "Keep the panel updating while Windows is locked" setting
+            # (power_state.py).
+            if not power_state.should_pause():
+                img = render_frame(info.width, info.height)
+                screen.show(img)
             elapsed = time.time() - frame_start
             sleep_for = max(0.0, target_period - elapsed)
             if stop_event is not None:

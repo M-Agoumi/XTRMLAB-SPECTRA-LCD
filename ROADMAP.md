@@ -875,6 +875,24 @@ frames for all three modes and their fallbacks, the endpoint's
 round-trip and its rejection of an unknown value) and via a Playwright
 session against the real built frontend + live backend.
 
+**Feature: "Keep the panel updating while Windows is locked" (on by
+default).** Mirrors the vendor XTRM Lab app's own "Keep playing when
+screen is off" toggle (found reverse-engineering its app.asar --
+Electron's `powerMonitor` stops rendering on lock/suspend unless it's
+on); this app had no equivalent before, always rendering regardless.
+New `power_state.py` detects a Windows lock via `ctypes`'
+`OpenInputDesktop()` (no extra dependency), polled every 2s. Only
+covers a screen *lock* -- true system suspend freezes the whole process
+anyway, nothing to pause/resume there. All four themes' render loops
+check `power_state.should_pause()` before their per-frame work (not
+just the panel push) and skip that frame while it applies, resuming the
+instant Windows unlocks. New `controller.set_keep_active_when_locked()`
+/ `POST /api/keep_active_when_locked`, a matching Tkinter checkbox, and
+a System-panel checkbox in the web UI, all applying immediately.
+Verified headlessly (lock detection stubbed both ways, an end-to-end
+run against a fake screen confirming frames stop/resume exactly on the
+setting flip) and via Playwright against the real built frontend.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files

@@ -74,6 +74,7 @@ from .theme_worker import ThemeWorker
 from . import tray_icon
 from . import image_store
 from . import weather
+from . import power_state
 
 
 class App(tk.Tk):
@@ -142,6 +143,9 @@ class App(tk.Tk):
         # restart; that's what lets the *next* launch resume it
         # automatically. See _save_current_config()/_on_start()/_on_stop().
         self._auto_resume_tab = self.cfg.get("auto_resume_tab")
+
+        power_state.set_keep_active_when_locked(self.cfg.get("keep_active_when_locked", True))
+        power_state.start_polling()
 
         self._build_widgets()
         self._autosize_window()
@@ -267,6 +271,24 @@ class App(tk.Tk):
         shortcut_btn.pack(side="left", padx=(14, 0))
         if sys.platform != "win32":
             shortcut_btn.configure(state="disabled")
+
+        # Mirrors the official XTRM Lab app's "Keep playing when screen
+        # is off" setting -- see power_state.py's docstring for the full
+        # reasoning. Global/system-level like "Launch at Windows
+        # startup" above (not per-theme), so it lives in this same row.
+        power_row = ttk.Frame(self, padding=(10, 4, 10, 0))
+        power_row.pack(fill="x")
+        self.keep_active_var = tk.BooleanVar(value=self.cfg.get("keep_active_when_locked", True))
+        keep_active_cb = ttk.Checkbutton(
+            power_row, text="Keep the panel updating while Windows is locked",
+            variable=self.keep_active_var, command=self._on_toggle_keep_active)
+        keep_active_cb.pack(side="left")
+        if not power_state.IS_WINDOWS:
+            keep_active_cb.configure(state="disabled")
+            ttk.Label(power_row, text="(Windows only)", foreground="#666").pack(side="left", padx=(6, 0))
+        else:
+            ttk.Label(power_row, text="-- unticking freezes the panel on whatever it last showed until you unlock",
+                       foreground="#666").pack(side="left", padx=(6, 0))
 
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -820,6 +842,18 @@ class App(tk.Tk):
             # Reflect what's actually on disk rather than the failed click.
             self.startup_var.set(is_startup_enabled())
 
+    def _on_toggle_keep_active(self):
+        # Applies immediately, same as brightness -- power_state.should_
+        # pause() is checked fresh by every theme's render loop on every
+        # frame, so there's nothing to restart. Persisted here too (not
+        # just applied live) so it survives to the next launch, same as
+        # every other Dashboard/global setting _save_current_config()
+        # writes.
+        value = self.keep_active_var.get()
+        power_state.set_keep_active_when_locked(value)
+        self._log(f"Keep panel updating while locked: {'enabled' if value else 'disabled'}.")
+        self._save_current_config()
+
     def _on_create_desktop_shortcut(self):
         """"Create Desktop Shortcut" button next to the startup checkbox
         -- see create_desktop_shortcut()'s docstring for what it actually
@@ -1002,6 +1036,7 @@ class App(tk.Tk):
             "brightness": self.brightness_var.get(),
             "active_tab": self.notebook.index(self.notebook.select()),
             "auto_resume_tab": self._auto_resume_tab,
+            "keep_active_when_locked": self.keep_active_var.get(),
             "dashboard": dashboard_cfg,
             "video": {
                 "path": self.video_path.get().strip() or None,

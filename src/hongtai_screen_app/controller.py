@@ -26,6 +26,7 @@ from . import image_store
 from . import startup_registration
 from . import theme_kwargs
 from . import weather
+from . import power_state
 from .driver import hongtai_screen
 from .screen_engine import ScreenEngine
 from .themes import dashboard_theme
@@ -47,6 +48,8 @@ class AppController:
     def __init__(self):
         self.cfg = config_store.load_config()
         self._lock = threading.RLock()
+        power_state.set_keep_active_when_locked(self.cfg.get("keep_active_when_locked", True))
+        power_state.start_polling()
         self.running_theme = None      # display name, e.g. "Dashboard"
         self.active_screen = None      # set via on_connected once connect() succeeds
         self._log_history = deque(maxlen=self.LOG_HISTORY)
@@ -171,11 +174,34 @@ class AppController:
     # the HTTP API (a future in-process UI, say) gets the same surface.
     # ------------------------------------------------------------------ #
     def system_info(self):
+        with self._lock:
+            keep_active = self.cfg.get("keep_active_when_locked", True)
         return {
             "platform": sys.platform,
             "startup_supported": sys.platform == "win32",
             "startup_enabled": startup_registration.is_startup_enabled(),
+            "keep_active_when_locked": keep_active,
+            "keep_active_supported": power_state.IS_WINDOWS,
         }
+
+    def set_keep_active_when_locked(self, value):
+        """Whether a running theme keeps pushing frames to the panel
+        while Windows is locked (True, the default -- this app's
+        original behavior, before this setting existed) or pauses and
+        resumes automatically on unlock (False) -- see power_state.py's
+        docstring, and the official XTRM Lab app's own "Keep playing
+        when screen is off" setting this mirrors. Applies immediately,
+        the same "no restart needed" deal as set_brightness() above,
+        since every theme's render loop checks power_state.should_
+        pause() itself on every frame rather than a decision baked in
+        at Start time."""
+        value = bool(value)
+        with self._lock:
+            self.cfg["keep_active_when_locked"] = value
+            config_store.save_config(self.cfg)
+        power_state.set_keep_active_when_locked(value)
+        power_state.start_polling()
+        return {"keep_active_when_locked": value}
 
     def set_startup(self, enabled):
         if enabled:
