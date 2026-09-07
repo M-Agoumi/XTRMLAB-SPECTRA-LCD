@@ -305,278 +305,294 @@ export default function App() {
         </span>
       </header>
 
-      <Collapsible id="panel-port" title="Panel port" defaultOpen={true}>
-        <p className="hint">
-          Pick which serial port your screen is connected on -- everything else on this
-          page needs this set first.
-        </p>
-        <div className="row">
-          <label className="grow">
-            Port
-            <select value={portDraft} onChange={(e) => handlePortChange(e.target.value)} disabled={busy}>
-              <option value="" disabled>
-                {portsList.length || autoDetectValue ? "Select a port…" : "Click Detect screens ->"}
-              </option>
-              {autoDetectValue && (
-                <option value={autoDetectValue}>Auto-detect (only works with exactly one screen plugged in)</option>
-              )}
-              {portsList.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.device} -- {p.description || "USB serial device"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button onClick={handleDetectClick} disabled={busy}>
-            Detect screens
-          </button>
-        </div>
-        {portsStatus && <p className="hint">{portsStatus}</p>}
-        {portsError && <p className="error">Couldn't scan for screens: {portsError}</p>}
-        {!portSelected && (
-          <p className="error">
-            No port selected -- the rest of this app stays disabled until you pick one above.
-          </p>
-        )}
-      </Collapsible>
-
-      <Collapsible id="preview" title="Preview" defaultOpen={true}>
-        <div className="preview-box">
-          {frameUrl ? (
-            <img className="preview-img" src={frameUrl} alt="Live panel preview" />
-          ) : (
-            <div className="preview-placeholder">
-              {running ? "waiting for first frame..." : "start a theme to see a preview"}
-            </div>
-          )}
-        </div>
-      </Collapsible>
-
-      <Collapsible id="system" title="System" defaultOpen={false}>
-        {system?.startup_supported === false ? (
-          <p className="hint">
-            Launch-at-startup and desktop shortcuts are Windows-only.
-          </p>
-        ) : (
-          <>
+      {/* Two columns on a wide window -- app-level controls (port,
+          system, start/stop, brightness, log) on the left, since those
+          are read once and left alone; the live preview and whatever
+          the current theme needs (including the dashboard design
+          canvas, by far the widest thing on this page) on the right,
+          since that's what's actually being looked at and worked on
+          while this page is open. styles.css collapses this back to
+          one column (left column first) below a width where two side
+          by side would just squeeze the canvas, same breakpoint the
+          rest of this app already treats as "narrow". */}
+      <div className="app-columns">
+        <div className="app-col app-col-left">
+          <Collapsible id="panel-port" title="Panel port" defaultOpen={true}>
+            <p className="hint">
+              Pick which serial port your screen is connected on -- everything else on this
+              page needs this set first.
+            </p>
             <div className="row">
-              <label className="row-inline">
-                <input
-                  type="checkbox"
-                  checked={!!system?.startup_enabled}
-                  disabled={busy || !system}
-                  onChange={(e) => handleToggleStartup(e.target.checked)}
-                />
-                Launch at Windows startup
-              </label>
-              <button onClick={handleCreateShortcut} disabled={busy}>
-                Create Desktop Shortcut
-              </button>
-            </div>
-            {shortcutMsg && <p className="hint">{shortcutMsg}</p>}
-          </>
-        )}
-        <div className="row">
-          <label className="row-inline">
-            <input
-              type="checkbox"
-              checked={!!system?.keep_active_when_locked}
-              disabled={busy || !system || system?.keep_active_supported === false}
-              onChange={(e) => handleToggleKeepActive(e.target.checked)}
-            />
-            Keep the panel updating while Windows is locked
-          </label>
-          {system?.keep_active_supported === false && (
-            <span className="hint">(Windows only)</span>
-          )}
-        </div>
-        {systemError && <p className="error">{systemError}</p>}
-      </Collapsible>
-
-      <Collapsible id="controls" title="Controls" defaultOpen={true} className="panel controls">
-        {!portSelected ? (
-          <p className="hint">Select a panel port above to enable this.</p>
-        ) : (
-          <>
-            <div className="row">
-              <label>
-                Theme
-                <select
-                  value={theme}
-                  onChange={(e) => setTheme(e.target.value)}
-                  disabled={busy}
-                >
-                  {api.THEMES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+              <label className="grow">
+                Port
+                <select value={portDraft} onChange={(e) => handlePortChange(e.target.value)} disabled={busy}>
+                  <option value="" disabled>
+                    {portsList.length || autoDetectValue ? "Select a port…" : "Click Detect screens ->"}
+                  </option>
+                  {autoDetectValue && (
+                    <option value={autoDetectValue}>Auto-detect (only works with exactly one screen plugged in)</option>
+                  )}
+                  {portsList.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.device} -- {p.description || "USB serial device"}
                     </option>
                   ))}
                 </select>
               </label>
-              <button
-                onClick={handleStart}
-                disabled={busy}
-                title={running ? "Switch live to the selected theme -- no reconnect" : undefined}
-              >
-                {running ? "Switch" : "Start"}
-              </button>
-              <button onClick={handleStop} disabled={busy || !running}>
-                Stop
-              </button>
-              <button onClick={handleApply} disabled={busy || !running} title="Restart the running theme with the latest saved settings">
-                Apply (restart)
+              <button onClick={handleDetectClick} disabled={busy}>
+                Detect screens
               </button>
             </div>
-            {state?.running_theme && (
-              <p className="hint">Running: {state.running_theme}</p>
+            {portsStatus && <p className="hint">{portsStatus}</p>}
+            {portsError && <p className="error">Couldn't scan for screens: {portsError}</p>}
+            {!portSelected && (
+              <p className="error">
+                No port selected -- the rest of this app stays disabled until you pick one above.
+              </p>
             )}
-          </>
-        )}
-        {actionError && <p className="error">{actionError}</p>}
-      </Collapsible>
+          </Collapsible>
 
-      {portSelected && theme === "video" && (
-        <section className="panel">
-          <h2>Video settings</h2>
-          <div className="row">
-            <label className="grow">
-              Video file (full path)
-              <input
-                type="text"
-                value={videoDraft.path}
-                onChange={(e) => setVideoDraft({ ...videoDraft, path: e.target.value })}
-                placeholder="C:\path\to\video.mp4"
-              />
-            </label>
-          </div>
-          <div className="row">
-            <label className="row-inline">
-              <input
-                type="checkbox"
-                checked={videoDraft.loop}
-                onChange={(e) => setVideoDraft({ ...videoDraft, loop: e.target.checked })}
-              />
-              Loop when it ends
-            </label>
-            <label className="row-inline">
-              <input
-                type="checkbox"
-                checked={videoDraft.bw}
-                onChange={(e) => setVideoDraft({ ...videoDraft, bw: e.target.checked })}
-              />
-              Force black &amp; white
-            </label>
-            <label className="row-inline">
-              <input
-                type="checkbox"
-                checked={videoDraft.audio}
-                onChange={(e) => setVideoDraft({ ...videoDraft, audio: e.target.checked })}
-              />
-              Also play audio (needs ffmpeg + pygame)
-            </label>
-          </div>
-          <div className="row">
-            <label>
-              FPS override (blank = the video's own rate)
-              <input
-                type="text"
-                value={videoDraft.fps}
-                onChange={(e) => setVideoDraft({ ...videoDraft, fps: e.target.value })}
-                placeholder="auto"
-                style={{ width: "6em" }}
-              />
-            </label>
-            <button onClick={handleSaveVideo} disabled={busy}>
-              Save
-            </button>
-          </div>
-          <p className="hint">No video is bundled with this app -- point it at any file on this machine.</p>
-        </section>
-      )}
+          <Collapsible id="controls" title="Controls" defaultOpen={true} className="panel controls">
+            {!portSelected ? (
+              <p className="hint">Select a panel port above to enable this.</p>
+            ) : (
+              <>
+                <div className="row">
+                  <label>
+                    Theme
+                    <select
+                      value={theme}
+                      onChange={(e) => setTheme(e.target.value)}
+                      disabled={busy}
+                    >
+                      {api.THEMES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    onClick={handleStart}
+                    disabled={busy}
+                    title={running ? "Switch live to the selected theme -- no reconnect" : undefined}
+                  >
+                    {running ? "Switch" : "Start"}
+                  </button>
+                  <button onClick={handleStop} disabled={busy || !running}>
+                    Stop
+                  </button>
+                  <button onClick={handleApply} disabled={busy || !running} title="Restart the running theme with the latest saved settings">
+                    Apply (restart)
+                  </button>
+                </div>
+                {state?.running_theme && (
+                  <p className="hint">Running: {state.running_theme}</p>
+                )}
+              </>
+            )}
+            {actionError && <p className="error">{actionError}</p>}
+          </Collapsible>
 
-      {portSelected && theme === "webpage" && (
-        <section className="panel">
-          <h2>Webpage settings</h2>
-          <div className="row">
-            <label className="grow">
-              URL
-              <input
-                type="text"
-                value={webpageDraft.url}
-                onChange={(e) => setWebpageDraft({ ...webpageDraft, url: e.target.value })}
-                placeholder="https://..."
-              />
-            </label>
-          </div>
-          <div className="row">
-            <label>
-              Screenshot interval (seconds)
-              <input
-                type="text"
-                value={webpageDraft.interval}
-                onChange={(e) => setWebpageDraft({ ...webpageDraft, interval: e.target.value })}
-                style={{ width: "6em" }}
-              />
-            </label>
-            <label>
-              Full reload every N seconds (blank = never)
-              <input
-                type="text"
-                value={webpageDraft.reloadEvery}
-                onChange={(e) => setWebpageDraft({ ...webpageDraft, reloadEvery: e.target.value })}
-                placeholder="never"
-                style={{ width: "6em" }}
-              />
-            </label>
-            <button onClick={handleSaveWebpage} disabled={busy}>
-              Save
-            </button>
-          </div>
-          <p className="hint">
-            Needs Playwright on the backend (pip install playwright, then playwright
-            install chromium) -- best kept simple and landscape.
-          </p>
-        </section>
-      )}
+          <Collapsible id="config" title="Config" defaultOpen={true}>
+            <div className="row">
+              <label className="grow">
+                Brightness: {brightnessDraft}
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={brightnessDraft}
+                  onChange={(e) => handleBrightnessChange(e.target.value)}
+                />
+              </label>
+            </div>
+            <p className="hint">Applies immediately, running or not. (Panel port moved to its own section above.)</p>
+          </Collapsible>
 
-      {portSelected && theme === "clock" && (
-        <section className="panel">
-          <h2>Clock settings</h2>
-          <p className="hint">A live clock with CPU/RAM bars -- no settings beyond port and brightness below.</p>
-        </section>
-      )}
+          <Collapsible id="system" title="System" defaultOpen={false}>
+            {system?.startup_supported === false ? (
+              <p className="hint">
+                Launch-at-startup and desktop shortcuts are Windows-only.
+              </p>
+            ) : (
+              <>
+                <div className="row">
+                  <label className="row-inline">
+                    <input
+                      type="checkbox"
+                      checked={!!system?.startup_enabled}
+                      disabled={busy || !system}
+                      onChange={(e) => handleToggleStartup(e.target.checked)}
+                    />
+                    Launch at Windows startup
+                  </label>
+                  <button onClick={handleCreateShortcut} disabled={busy}>
+                    Create Desktop Shortcut
+                  </button>
+                </div>
+                {shortcutMsg && <p className="hint">{shortcutMsg}</p>}
+              </>
+            )}
+            <div className="row">
+              <label className="row-inline">
+                <input
+                  type="checkbox"
+                  checked={!!system?.keep_active_when_locked}
+                  disabled={busy || !system || system?.keep_active_supported === false}
+                  onChange={(e) => handleToggleKeepActive(e.target.checked)}
+                />
+                Keep the panel updating while Windows is locked
+              </label>
+              {system?.keep_active_supported === false && (
+                <span className="hint">(Windows only)</span>
+              )}
+            </div>
+            {systemError && <p className="error">{systemError}</p>}
+          </Collapsible>
 
-      {portSelected && theme === "dashboard" && (
-        <DashboardCanvas frameUrl={frameUrl} connected={!!state?.connected} />
-      )}
-
-      {settingsSaved && <p className="hint settings-saved">{settingsSaved}</p>}
-
-      <Collapsible id="config" title="Config" defaultOpen={true}>
-        <div className="row">
-          <label className="grow">
-            Brightness: {brightnessDraft}
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={brightnessDraft}
-              onChange={(e) => handleBrightnessChange(e.target.value)}
-            />
-          </label>
+          <Collapsible id="log" title="Log" defaultOpen={false}>
+            <div className="log-box" ref={logBoxRef}>
+              {logs.length === 0 ? (
+                <div className="log-placeholder">(no log lines yet)</div>
+              ) : (
+                logs.map((line, i) => <div key={i}>{line}</div>)
+              )}
+            </div>
+          </Collapsible>
         </div>
-        <p className="hint">Applies immediately, running or not. (Panel port moved to its own section above.)</p>
-      </Collapsible>
 
-      <Collapsible id="log" title="Log" defaultOpen={false}>
-        <div className="log-box" ref={logBoxRef}>
-          {logs.length === 0 ? (
-            <div className="log-placeholder">(no log lines yet)</div>
-          ) : (
-            logs.map((line, i) => <div key={i}>{line}</div>)
+        <div className="app-col app-col-right">
+          <Collapsible id="preview" title="Preview" defaultOpen={true}>
+            <div className="preview-box">
+              {frameUrl ? (
+                <img className="preview-img" src={frameUrl} alt="Live panel preview" />
+              ) : (
+                <div className="preview-placeholder">
+                  {running ? "waiting for first frame..." : "start a theme to see a preview"}
+                </div>
+              )}
+            </div>
+          </Collapsible>
+
+          {portSelected && theme === "video" && (
+            <section className="panel">
+              <h2>Video settings</h2>
+              <div className="row">
+                <label className="grow">
+                  Video file (full path)
+                  <input
+                    type="text"
+                    value={videoDraft.path}
+                    onChange={(e) => setVideoDraft({ ...videoDraft, path: e.target.value })}
+                    placeholder="C:\path\to\video.mp4"
+                  />
+                </label>
+              </div>
+              <div className="row">
+                <label className="row-inline">
+                  <input
+                    type="checkbox"
+                    checked={videoDraft.loop}
+                    onChange={(e) => setVideoDraft({ ...videoDraft, loop: e.target.checked })}
+                  />
+                  Loop when it ends
+                </label>
+                <label className="row-inline">
+                  <input
+                    type="checkbox"
+                    checked={videoDraft.bw}
+                    onChange={(e) => setVideoDraft({ ...videoDraft, bw: e.target.checked })}
+                  />
+                  Force black &amp; white
+                </label>
+                <label className="row-inline">
+                  <input
+                    type="checkbox"
+                    checked={videoDraft.audio}
+                    onChange={(e) => setVideoDraft({ ...videoDraft, audio: e.target.checked })}
+                  />
+                  Also play audio (needs ffmpeg + pygame)
+                </label>
+              </div>
+              <div className="row">
+                <label>
+                  FPS override (blank = the video's own rate)
+                  <input
+                    type="text"
+                    value={videoDraft.fps}
+                    onChange={(e) => setVideoDraft({ ...videoDraft, fps: e.target.value })}
+                    placeholder="auto"
+                    style={{ width: "6em" }}
+                  />
+                </label>
+                <button onClick={handleSaveVideo} disabled={busy}>
+                  Save
+                </button>
+              </div>
+              <p className="hint">No video is bundled with this app -- point it at any file on this machine.</p>
+            </section>
           )}
+
+          {portSelected && theme === "webpage" && (
+            <section className="panel">
+              <h2>Webpage settings</h2>
+              <div className="row">
+                <label className="grow">
+                  URL
+                  <input
+                    type="text"
+                    value={webpageDraft.url}
+                    onChange={(e) => setWebpageDraft({ ...webpageDraft, url: e.target.value })}
+                    placeholder="https://..."
+                  />
+                </label>
+              </div>
+              <div className="row">
+                <label>
+                  Screenshot interval (seconds)
+                  <input
+                    type="text"
+                    value={webpageDraft.interval}
+                    onChange={(e) => setWebpageDraft({ ...webpageDraft, interval: e.target.value })}
+                    style={{ width: "6em" }}
+                  />
+                </label>
+                <label>
+                  Full reload every N seconds (blank = never)
+                  <input
+                    type="text"
+                    value={webpageDraft.reloadEvery}
+                    onChange={(e) => setWebpageDraft({ ...webpageDraft, reloadEvery: e.target.value })}
+                    placeholder="never"
+                    style={{ width: "6em" }}
+                  />
+                </label>
+                <button onClick={handleSaveWebpage} disabled={busy}>
+                  Save
+                </button>
+              </div>
+              <p className="hint">
+                Needs Playwright on the backend (pip install playwright, then playwright
+                install chromium) -- best kept simple and landscape.
+              </p>
+            </section>
+          )}
+
+          {portSelected && theme === "clock" && (
+            <section className="panel">
+              <h2>Clock settings</h2>
+              <p className="hint">A live clock with CPU/RAM bars -- no settings beyond port and brightness.</p>
+            </section>
+          )}
+
+          {portSelected && theme === "dashboard" && (
+            <DashboardCanvas frameUrl={frameUrl} connected={!!state?.connected} />
+          )}
+
+          {settingsSaved && <p className="hint settings-saved">{settingsSaved}</p>}
         </div>
-      </Collapsible>
+      </div>
     </div>
   );
 }

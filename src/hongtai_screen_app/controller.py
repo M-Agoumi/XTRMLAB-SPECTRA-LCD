@@ -302,6 +302,9 @@ class AppController:
                 "not_playing_message": d.get("not_playing_message") or None,
                 "default_message": dashboard_theme.DEFAULT_NOT_PLAYING_MESSAGE,
             },
+            "clockFaces": dict(dashboard_theme.CLOCK_FACES),
+            "clockAnalogStyles": dict(dashboard_theme.ANALOG_CLOCK_STYLES),
+            "clockHourFormats": dict(dashboard_theme.DIGITAL_CLOCK_HOUR_FORMATS),
             "middleContent": {
                 "value": d.get("middle_content") or "none",
                 "options": dict(dashboard_theme.MIDDLE_CONTENT_OPTIONS),
@@ -312,13 +315,20 @@ class AppController:
         }
 
     def save_dashboard_elements(self, elements):
-        """Persists a new gauge layout -- takes effect on the next
-        Start/Apply, same as any other "needs a restart" dashboard
-        setting (see build_static_background()'s docstring). Doesn't
-        validate element shape beyond "is it a list" -- a malformed
-        element just fails loudly inside dashboard_theme.py's own
-        render path the next time it's started, same as a bad video
-        path or URL does for those themes."""
+        """Persists a new gauge layout and, if the dashboard theme is
+        currently running, applies it live -- same "no Stop/Start
+        needed" deal as save_dashboard_now_playing() (see
+        dashboard_theme.set_pending_dashboard_layout()). It used to only
+        take effect on the next Start/Apply, since the layout is baked
+        into a static image once for performance (see
+        build_static_background()'s docstring); the running render loop
+        now rebakes with the new elements on its very next frame
+        instead, which is also what fixed the design canvas visibly
+        showing an element at its new position while the real panel
+        kept showing it at the old one. Doesn't validate element shape
+        beyond "is it a list" -- a malformed element just fails loudly
+        inside dashboard_theme.py's own render path, same as a bad
+        video path or URL does for those themes."""
         if not isinstance(elements, list):
             raise ValueError("elements must be a list")
         with self._lock:
@@ -326,19 +336,20 @@ class AppController:
             dashboard_cfg["elements"] = elements
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
+            dashboard_theme.set_pending_dashboard_layout(elements=elements)
             return dict(self.cfg["dashboard"])
 
     def save_dashboard_background(self, background):
         """Persists the panel background (preset mode, color scheme,
         and/or custom image path) -- same merge-into-"dashboard" shape
-        as save_dashboard_elements(), and the same "needs a restart"
-        deal: it's baked into the static background image at Start/
-        Apply time (see build_static_background()'s docstring), not
-        re-rendered live. Doesn't validate image_path exists or mode/
-        scheme are known keys -- dashboard_theme.py already falls back
-        to the default background silently if the image can't be
-        opened or a key is unrecognized, same tolerance app.py's own
-        Tkinter picker has always relied on."""
+        and same live-apply behavior as save_dashboard_elements() just
+        above (it's baked into the same static image, so it rebakes
+        alongside any pending elements change on the running theme's
+        next frame). Doesn't validate image_path exists or mode/scheme
+        are known keys -- dashboard_theme.py already falls back to the
+        default background silently if the image can't be opened or a
+        key is unrecognized, same tolerance app.py's own Tkinter picker
+        has always relied on."""
         if not isinstance(background, dict):
             raise ValueError("background must be an object")
         with self._lock:
@@ -348,6 +359,7 @@ class AppController:
             dashboard_cfg["background"] = existing
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
+            dashboard_theme.set_pending_dashboard_layout(background=existing)
             return dict(self.cfg["dashboard"]["background"])
 
     def save_dashboard_now_playing(self, patch):

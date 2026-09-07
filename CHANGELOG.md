@@ -606,6 +606,109 @@ dashboard designer) this is laying groundwork for.
   arrow keys nudge the selected element's X/Y by the expected amount
   (1%/5% with Shift) and Undo reverts a nudge; and the collapsed/open
   state of each section matches its configured default on first load.
+- **Fixed the clock element visually duplicating itself on the design
+  canvas.** Its SVG mockup always drew a hardcoded sample time string
+  ("12:34:56") on top of the canvas, which is fine on its own -- but
+  whenever the canvas is overlaid on the live panel frame (`connected
+  && frameUrl`), that live frame *already* shows the panel's real,
+  actually-ticking clock at the exact same spot, so the sample text
+  landed right on top of it -- two different clocks fighting each
+  other ("12:34:56" printed over "17:49:16"), read as one clock
+  duplicating itself. The sample text now only renders when there's no
+  live frame under it to collide with; an invisible hit-rect the same
+  size keeps it clickable/draggable either way, and the selection
+  outline/handle are unaffected. Verified via Playwright, faking the
+  connected state and frame image via `page.route()` interception
+  (the test backend has no real hardware, so `connected` is always
+  false in normal headless testing).
+- **Live layout/background apply -- fixes the "ghost" element and
+  "Reset to defaults keeps my images" bugs.** Both turned out to be
+  the same root cause: `dashboard.elements`/`background` were only
+  baked into the running panel's static background image at
+  Start/Apply time (a deliberate perf trade-off, see
+  `build_static_background()`'s docstring) -- so dragging an element
+  on the live design canvas moved the SVG mockup instantly (it's just
+  React state) while the *real* panel kept showing it at the old spot
+  until a manual Stop/Start, which reads as the element duplicating
+  itself; the same staleness meant "Reset to defaults" reset the
+  canvas's own state just fine, but the live panel kept showing
+  whatever (any since-removed image included) was baked in at the last
+  Start/Apply. Layout and background are now live-appliable the same
+  way the "Nothing playing" placeholder and Middle content already
+  were: `dashboard_theme.set_pending_dashboard_layout()` queues an
+  edit, and the running render loop rebakes with it (a full rebake,
+  not a diff -- cheap relative to a 100ms frame budget) at the start of
+  its very next frame, no Stop/Start needed. `controller.py`'s
+  `save_dashboard_elements()`/`save_dashboard_background()` call it
+  right after persisting to config. Verified headlessly: queuing an
+  elements-only, background-only, and combined update each landed the
+  expected keys for the render loop to pick up on its next iteration;
+  `save_dashboard_elements()`/`save_dashboard_background()` both queue
+  correctly through `AppController`; and (via Playwright) adding an
+  image element then clicking Reset to defaults removes it from the
+  element list, same as it always should have.
+- **Clock customization: analog styles, more digital formats, and a
+  custom image face.** A clock element now picks a `face` --
+  "digital" (the only option before this; every existing saved clock
+  element is one, and nothing about its look changed), "analog", or
+  "image" -- each with its own options, same idea as a gauge picking a
+  stat.
+  - Digital gained an `hour_format` (24h, or 12h with AM/PM) beyond the
+    existing seconds on/off toggle, plus an optional `show_date` line
+    underneath the time.
+  - Analog is a procedurally-drawn round face (ticks, hour/minute/
+    second hands, computed from the real system time every frame,
+    never baked into the static background -- same as the digital face
+    always was) in one of three styles (`analog_style`): Classic
+    (white face, black hands), Minimal (thin ring, no ticks, just
+    hands), Neon (dark face, hands/ticks glowing in the clock's own
+    color). Sized by `radius`, same fraction-of-min(width,height)
+    convention as a gauge's.
+  - Image lets you pick literally any picture (reusing the exact same
+    upload flow as an image element -- `image_store.py`) as a
+    decorative clock face/skin, fit into its `width`/`height` box, with
+    the digital time (and optionally the date) drawn on top of it,
+    shadowed so it stays legible over any picture's own colors.
+  Backend: `_draw_clock_element()` in `dashboard_theme.py` now
+  dispatches to `_draw_analog_clock_face()`/`_draw_image_clock_face()`;
+  a one-slot-per-path cache (`_clock_face_cache`) avoids re-decoding a
+  custom face PNG from disk 10 times a second. Frontend:
+  `DashboardCanvas.jsx`'s clock SVG mockup and property panel both grew
+  matching per-face previews/controls (analog gets a static "ten past
+  ten" preview circle + a radius resize handle; image gets an
+  image-element-style picker + width/height handles); `dashboard_meta()`
+  exposes `clockFaces`/`clockAnalogStyles`/`clockHourFormats` so the
+  frontend doesn't need to hardcode the option lists. Fully backward
+  compatible -- every new field has a `.get()` fallback that reproduces
+  the exact old digital-only look, so an existing saved clock element
+  needs no migration. Verified: `render_frame()` renders all three
+  faces (digital in both hour formats with/without a date line, analog
+  in all three styles with real ticking hands, image with a fake
+  decorative PNG) to a real 960x480 image with no crash and the
+  expected pixels-on-canvas; and via Playwright, switching faces in the
+  property panel shows the right controls for each and the canvas
+  mockup updates to match.
+- **"Nothing playing" placeholder settings moved into the now-playing
+  element's own property panel** -- it used to be a standalone,
+  always-visible collapsible section regardless of whether a
+  now-playing element even existed on the layout; now it only shows up
+  in the property panel when a now-playing element is selected,
+  matching how every other element-specific setting already works.
+  Purely a frontend display change -- the settings are still
+  dashboard-level config (shared across any now-playing elements, same
+  as before), just conditionally shown based on canvas selection
+  instead of always rendered as its own section.
+- **Two-column page layout** -- `App.jsx`'s single centered
+  `max-width: 720px` column wasted most of a wide window's width, most
+  visibly on the dashboard design canvas (by far the widest thing on
+  the page). New `.app-columns` CSS grid splits the page into a fixed
+  280-380px left column (Panel port, Controls, Config, System, Log --
+  app-level settings read once and left alone) and a flexible right
+  column (Preview and whatever the current theme needs, including the
+  design canvas, free to use however much width is left). Collapses
+  back to one column (left column's settings first) below ~860px,
+  where two side by side would just squeeze the canvas back down to
+  the same cramped width this replaced.
 
 ## [1.0.0] — 2026-08-29
 
