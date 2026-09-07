@@ -802,20 +802,41 @@ export default function DashboardCanvas({ frameUrl, connected }) {
               // this canvas is a layout editor, not a second clock to
               // keep in sync; what matters here is the size/position,
               // same as how a graph/gauge element shows placeholder
-              // values rather than live stats.
+              // values rather than live stats. BUT: when this canvas is
+              // overlaid on the real live frame (connected && frameUrl,
+              // see canvas-frame below), that live frame already shows
+              // the panel's actual, real, ticking clock at this exact
+              // spot -- drawing this sample text on top of it reads as
+              // two different clocks fighting each other (e.g.
+              // "12:34:56" printed right over "17:49:16"), not as an
+              // editor overlay. So the sample text only renders when
+              // there's no live frame under it to collide with; an
+              // invisible hit-rect the same size keeps it clickable/
+              // draggable either way, and the selection outline/handle
+              // below are unaffected -- you can still always tell it's
+              // there and where it is once it's selected.
               const sample = el.show_seconds ?? true ? "12:34:56" : "12:34";
               const halfW = Math.max(24, (sample.length * fontSize) / 3.4);
+              const overLiveFrame = connected && !!frameUrl;
               return (
                 <g key={el.id}>
                   {isSelected && (
                     <rect x={x - halfW} y={y - fontSize * 0.7} width={halfW * 2} height={fontSize * 1.4}
                           fill="none" stroke="#ffd85e" strokeDasharray="4 3" />
                   )}
-                  <text x={x} y={y} textAnchor="middle" dominantBaseline="middle"
-                        fontSize={fontSize} fill={color} opacity={el.opacity ?? 1}
-                        onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move", userSelect: "none" }}>
-                    {sample}
-                  </text>
+                  {overLiveFrame ? (
+                    <rect x={x - halfW} y={y - fontSize * 0.7} width={halfW * 2} height={fontSize * 1.4}
+                          fill="transparent"
+                          onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }}>
+                      <title>Clock -- showing the real live time from the panel behind it</title>
+                    </rect>
+                  ) : (
+                    <text x={x} y={y} textAnchor="middle" dominantBaseline="middle"
+                          fontSize={fontSize} fill={color} opacity={el.opacity ?? 1}
+                          onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move", userSelect: "none" }}>
+                      {sample}
+                    </text>
+                  )}
                   {isSelected && (
                     <rect x={x + halfW - 7} y={y + fontSize * 0.7 - 7} width={14} height={14}
                           fill="#ffd85e" stroke="#fff" strokeWidth={1}
