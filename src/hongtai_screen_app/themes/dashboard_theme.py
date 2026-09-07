@@ -2121,6 +2121,88 @@ def _draw_weather_middle(img, draw, mid_cx, mid_w, height, fonts):
                    fill=(150, 145, 175), anchor="ma")
 
 
+def _media_box(el, width, height):
+    """A media (now-playing) element's pixel box, from its center x/y
+    and its own width/height -- same idea as _graph_box()/_element's
+    image sizing, just for the widget that used to be pinned to the
+    fixed middle column (_draw_spotify_middle above). Kept generous by
+    default (see makeElement()'s default shape on the frontend) since
+    it has to fit album art *and* two lines of text *and* a progress
+    bar stacked vertically."""
+    w = max(60.0, el.get("width", 0.32) * width)
+    h = max(60.0, el.get("height", 0.52) * height)
+    cx, cy = el["x"] * width, el["y"] * height
+    x0, y0 = cx - w / 2, cy - h / 2
+    return {"x0": x0, "y0": y0, "w": w, "h": h, "cx": cx, "cy": cy}
+
+
+def _draw_media_element(img, el, box, media, fonts):
+    """The Spotify now-playing widget (album art + track/artist +
+    progress bar), but as its own movable/resizable element instead of
+    being pinned to the fixed middle column -- for anyone who wants it
+    somewhere other than dead center, or wants it alongside a `weather`
+    or `none` middle_content choice rather than instead of it. Fully
+    dynamic (playback position advances every frame, same as a graph's
+    plotted line) so it's redrawn here in render_frame(), never baked
+    into the static background the way text/image elements are."""
+    mid_cx, mid_w, box_h = box["cx"], box["w"], box["h"]
+    opacity = el.get("opacity", 1.0)
+
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+
+    art_size = int(max(24, min(mid_w * 0.75, box_h * 0.55)))
+    art = None
+    title = artist = None
+    position = duration = None
+    if media:
+        title, artist = media.get("title"), media.get("artist")
+        position, duration = media.get("position"), media.get("duration")
+        if media.get("art") is not None:
+            art = fit_album_art(media["art"], art_size, radius=14)
+    if art is None:
+        art = default_art(art_size, radius=14)
+
+    art_x = int(mid_cx - art_size / 2)
+    art_y = int(box["y0"])
+    glow_tile, glow_pad = art_glow_frame(art_size, 14, ACCENT_MID)
+    glow_paste(layer, glow_tile, (art_x - glow_pad, art_y - glow_pad), blur=8, glow_alpha=0.55)
+    # `art` comes back as plain RGB (fit_album_art()/default_art()), so
+    # -- unlike the fixed-column version, which pastes straight onto an
+    # opaque background and needs no mask -- pasting it onto this
+    # transparent RGBA layer needs an explicit opaque mask, or the art
+    # would come through with alpha 0 (invisible) once opacity is
+    # applied below.
+    art_rgba = art.convert("RGBA")
+    layer.paste(art_rgba, (art_x, art_y), art_rgba)
+
+    y = art_y + art_size + 12
+    if title:
+        track_line = truncate(draw, title.upper(), fonts.track, mid_w - 12)
+        draw.text((mid_cx, y), track_line, font=fonts.track, fill=(238, 238, 244), anchor="ma")
+        y += 24
+        if artist:
+            artist_line = truncate(draw, artist, fonts.artist, mid_w - 12)
+            draw.text((mid_cx, y), artist_line, font=fonts.artist, fill=(200, 192, 220), anchor="ma")
+            y += 22
+        if duration and y + 20 <= box["y0"] + box_h:
+            bar_w = int(mid_w * 0.85)
+            bar_h = 6
+            bar_x = int(mid_cx - bar_w / 2)
+            bar_y = y + 4
+            fraction = max(0.0, min(1.0, (position or 0.0) / duration))
+            progress_bar_glow(layer, bar_x, bar_y, bar_w, bar_h, fraction, ACCENT_MID)
+    elif _MEDIA_OK:
+        for line in wrap_text(draw, get_not_playing_message(), fonts.message, mid_w - 12):
+            if y > box["y0"] + box_h:
+                break
+            draw.text((mid_cx, y), line, font=fonts.message, fill=(200, 190, 220), anchor="ma")
+            y += 24
+
+    layer = _apply_tile_opacity(layer, opacity)
+    img.paste(layer, (0, 0), layer)
+
+
 def render_frame(background, layout, width, height, fonts, stats, media, history=None):
     """`stats` is a flat dict keyed by STAT_DEFS key -- any key can be
     missing or None, which just draws that gauge's dim track with no
@@ -2158,6 +2240,9 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
                 continue
             accent = _element_color(el, default=ACCENT_CPU)
             _draw_graph_dynamic(img, el, box, history.get(el["id"], ()), accent)
+        elif etype == "media":
+            box = _media_box(el, width, height)
+            _draw_media_element(img, el, box, media, fonts)
         # text/image elements are fully static -- baked into
         # `background` already, nothing to redraw here.
 

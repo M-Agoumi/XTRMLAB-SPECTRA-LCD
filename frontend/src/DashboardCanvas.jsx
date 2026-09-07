@@ -90,6 +90,14 @@ function makeElement(type, elements, meta) {
     return { id: makeId(elements, "image"), type: "image", image_path: "",
              width: 0.15, height: 0.15, ...base };
   }
+  if (type === "media") {
+    // The Spotify now-playing widget (album art + track/artist +
+    // progress bar) as a movable/resizable element -- see
+    // dashboard_theme.py's _draw_media_element(). Generously sized by
+    // default since it has to fit album art plus two lines of text
+    // plus a progress bar stacked vertically.
+    return { id: makeId(elements, "media"), type: "media", width: 0.32, height: 0.52, ...base };
+  }
   return null;
 }
 
@@ -300,6 +308,9 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     setSelectedId(null);
   };
 
+  const centerHorizontally = () => updateSelected({ x: 0.5 });
+  const centerVertically = () => updateSelected({ y: 0.5 });
+
   const bringToFront = () => {
     if (!selectedId || !elements) return;
     const maxZ = elements.reduce((m, el) => Math.max(m, el.z ?? 0), -1);
@@ -464,6 +475,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         <button onClick={() => addElement("text")}>+ Add text</button>
         <button onClick={() => addElement("graph")}>+ Add graph</button>
         <button onClick={() => addElement("image")}>+ Add image</button>
+        <button onClick={() => addElement("media")}>+ Add now-playing</button>
         <button onClick={undo} disabled={historyRef.current.length === 0}>Undo</button>
         <button onClick={redo} disabled={futureRef.current.length === 0}>Redo</button>
         <button onClick={resetToDefaults}>Reset to defaults</button>
@@ -522,13 +534,15 @@ export default function DashboardCanvas({ frameUrl, connected }) {
               );
             }
 
-            if (el.type === "graph" || el.type === "image") {
-              const w = (el.width ?? 0.2) * REF_W;
-              const h = (el.height ?? 0.14) * REF_H;
+            if (el.type === "graph" || el.type === "image" || el.type === "media") {
+              const w = (el.width ?? (el.type === "media" ? 0.32 : 0.2)) * REF_W;
+              const h = (el.height ?? (el.type === "media" ? 0.52 : 0.14)) * REF_H;
               const x0 = el.x * REF_W - w / 2;
               const y0 = el.y * REF_H - h / 2;
-              const accent = el.type === "graph" ? accentFor(el) : "rgb(150, 170, 200)";
-              const label = el.type === "graph" ? (meta.stats[el.stat]?.title || el.stat) : "IMAGE";
+              const accent = el.type === "graph" ? accentFor(el)
+                : el.type === "media" ? ACCENT_GPU : "rgb(150, 170, 200)";
+              const label = el.type === "graph" ? (meta.stats[el.stat]?.title || el.stat)
+                : el.type === "media" ? "NOW PLAYING" : "IMAGE";
               return (
                 <g key={el.id}>
                   <rect x={x0} y={y0} width={w} height={h}
@@ -688,6 +702,21 @@ export default function DashboardCanvas({ frameUrl, connected }) {
             </div>
           )}
 
+          {selected.type === "media" && (
+            <div className="row">
+              <label>
+                Opacity
+                <input type="range" min={20} max={100}
+                       value={Math.round((selected.opacity ?? 1) * 100)}
+                       onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
+              </label>
+              <span className="hint">
+                Shows the same Spotify now-playing display as the "Middle content" section below,
+                but positioned/sized here instead of locked to the middle column.
+              </span>
+            </div>
+          )}
+
           {(!selected.type || selected.type === "gauge") && (
             <>
               <div className="row">
@@ -777,18 +806,18 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                        value={Math.round(selected.y * 100)}
                        onChange={(e) => updateSelected({ y: clamp(Number(e.target.value) / 100, 0, 1) })} />
               </label>
-              {(selected.type === "graph" || selected.type === "image") && (
+              {(selected.type === "graph" || selected.type === "image" || selected.type === "media") && (
                 <>
                   <label>
                     Width %
                     <input type="number" min={4} max={90} style={{ width: "5em" }}
-                           value={Math.round((selected.width ?? 0.2) * 100)}
+                           value={Math.round((selected.width ?? (selected.type === "media" ? 0.32 : 0.2)) * 100)}
                            onChange={(e) => updateSelected({ width: clamp(Number(e.target.value) / 100, 0.04, 0.9) })} />
                   </label>
                   <label>
                     Height %
                     <input type="number" min={4} max={90} style={{ width: "5em" }}
-                           value={Math.round((selected.height ?? 0.14) * 100)}
+                           value={Math.round((selected.height ?? (selected.type === "media" ? 0.52 : 0.14)) * 100)}
                            onChange={(e) => updateSelected({ height: clamp(Number(e.target.value) / 100, 0.04, 0.9) })} />
                   </label>
                 </>
@@ -796,6 +825,10 @@ export default function DashboardCanvas({ frameUrl, connected }) {
             </div>
           )}
 
+          <div className="row">
+            <button onClick={centerHorizontally} title="Set X to 50% -- centers it left/right">Center horizontally</button>
+            <button onClick={centerVertically} title="Set Y to 50% -- centers it top/bottom">Center vertically</button>
+          </div>
           <div className="row">
             <button onClick={bringToFront}>Bring to front</button>
             <button onClick={sendToBack}>Send to back</button>

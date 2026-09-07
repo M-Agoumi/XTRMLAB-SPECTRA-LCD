@@ -139,6 +139,61 @@ input[type="range"] {
   width: 100%;
 }
 
+/* The browser's default "Choose File" control doesn't take any of the
+   above styling (it's not a normal form control -- it's a button plus
+   a filename readout glued together, each themed by the OS/browser,
+   not by us), so it's restyled by hand here: the filename readout gets
+   the same look as a text input, and ::file-selector-button gets the
+   same look as every other button on the page. Firefox doesn't
+   support ::file-selector-button yet -- ::-moz-file-selector-button is
+   its (Firefox-prefixed) equivalent, kept in a separate rule since an
+   unsupported selector in the same comma-list invalidates the whole
+   rule in some browsers. */
+input[type="file"] {
+  background: #101216;
+  border: 1px solid #33383f;
+  color: #9aa1ab;
+  border-radius: 6px;
+  padding: 5px 8px 5px 5px;
+  font-size: 0.82rem;
+  max-width: 100%;
+}
+
+/* Deliberately two separate rules, not one comma-joined selector list:
+   an unknown pseudo-element inside a selector list invalidates the
+   WHOLE rule in most browsers, so Chromium (which knows
+   ::file-selector-button but not the Firefox-prefixed one) would
+   silently drop both if they shared a rule. */
+input[type="file"]::file-selector-button {
+  background: #2c3542;
+  border: 1px solid #3e4a5c;
+  color: #e6e8eb;
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+input[type="file"]::-moz-file-selector-button {
+  background: #2c3542;
+  border: 1px solid #3e4a5c;
+  color: #e6e8eb;
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+input[type="file"]:hover::file-selector-button {
+  background: #354254;
+}
+
+input[type="file"]:hover::-moz-file-selector-button {
+  background: #354254;
+}
+
 button {
   background: #2c3542;
   border: 1px solid #3e4a5c;
