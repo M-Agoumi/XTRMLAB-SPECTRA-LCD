@@ -994,7 +994,26 @@ def slots_to_elements(slots=None):
     return elements
 
 
-DEFAULT_ELEMENTS = slots_to_elements()
+# Same margin/mid-column arithmetic build_static_background() uses for
+# its layout, just computed once here (at REFERENCE_WIDTH/HEIGHT, same
+# as every other DEFAULT_ELEMENTS entry) so DEFAULT_ELEMENTS' clock
+# element starts out in exactly the spot the clock has always been
+# drawn -- see _draw_clock_element()/render_frame()'s "no clock
+# element -> fall back to the old fixed position" migration note.
+_DEFAULT_MARGIN = int(REFERENCE_WIDTH * 0.015)
+_DEFAULT_COL_W = int(REFERENCE_WIDTH * 0.235)
+_DEFAULT_MID_X0 = _DEFAULT_MARGIN + _DEFAULT_COL_W + int(REFERENCE_WIDTH * 0.03)
+_DEFAULT_MID_X1 = REFERENCE_WIDTH - _DEFAULT_MARGIN - _DEFAULT_COL_W - int(REFERENCE_WIDTH * 0.03)
+_DEFAULT_CLOCK_X = (_DEFAULT_MID_X0 + _DEFAULT_MID_X1) / 2 / REFERENCE_WIDTH
+_DEFAULT_CLOCK_Y = int(REFERENCE_HEIGHT * 0.885) / REFERENCE_HEIGHT
+
+DEFAULT_ELEMENTS = slots_to_elements() + [{
+    "id": "clock", "type": "clock",
+    "x": _DEFAULT_CLOCK_X, "y": _DEFAULT_CLOCK_Y,
+    "font_size": 24 / REFERENCE_HEIGHT,  # matches Fonts.time = load_font(24)
+    "color": None, "opacity": 1.0, "show_seconds": True,
+    "z": 100,
+}]
 
 
 def _element_accent(el):
@@ -1064,15 +1083,75 @@ def _draw_text_element(img, el, width, height):
     img.paste(layer, (0, 0), layer)
 
 
+def _fit_into_box(src, w, h, mode):
+    """Scales `src` (any PIL image) into a `w`x`h` RGBA canvas per
+    `mode`:
+
+    - "contain" (the default): the whole image is always visible,
+      scaled down/up to fit inside the box and centered, with
+      transparent padding on whichever axis doesn't fill exactly (like
+      CSS `object-fit: contain`). Nothing is ever cropped.
+    - "cover": scaled up just enough to fill the box completely on both
+      axes, cropping whatever overflows (like CSS `object-fit: cover`
+      -- this was this function's only behavior before `fit` existed).
+    - "stretch": resized to exactly `w`x`h`, ignoring the image's own
+      aspect ratio -- can distort it, but fills the box exactly with
+      nothing cropped or padded.
+    """
+    if mode == "stretch":
+        return src.resize((w, h), Image.LANCZOS)
+    if mode == "cover":
+        return ImageOps.fit(src, (w, h), method=Image.LANCZOS)
+    # contain
+    src_ratio = src.width / max(1, src.height)
+    box_ratio = w / max(1, h)
+    if src_ratio > box_ratio:
+        new_w, new_h = w, max(1, round(w / src_ratio))
+    else:
+        new_h, new_w = h, max(1, round(h * src_ratio))
+    scaled = src.resize((new_w, new_h), Image.LANCZOS)
+    canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    canvas.paste(scaled, ((w - new_w) // 2, (h - new_h) // 2), scaled)
+    return canvas
+
+
+def _draw_clock_element(img, el, width, height, fonts):
+    """A free-standing clock element -- like _draw_text_element() above,
+    but showing the current time instead of a fixed string. Unlike
+    every other element type here, this used to be the ONE thing
+    render_frame() always drew unconditionally at a hardcoded spot
+    (see its own docstring); it's now just another element, addable/
+    movable/removable/resizable/re-colorable from the canvas like
+    everything else. Redrawn every frame (never baked into the static
+    background) since its content changes every second, same reasoning
+    as a graph's plotted line or the media element's progress bar."""
+    x, y = el["x"] * width, el["y"] * height
+    size_px = max(8, int(el.get("font_size", 24 / REFERENCE_HEIGHT) * height))
+    font = load_font(size_px, bold=bool(el.get("bold", False)))
+    color = _element_color(el, default=(235, 235, 242))
+    fmt = "%H:%M:%S" if el.get("show_seconds", True) else "%H:%M"
+    time_str = datetime.datetime.now().strftime(fmt)
+    opacity = el.get("opacity", 1.0)
+    if opacity >= 1.0:
+        ImageDraw.Draw(img).text((x, y), time_str, font=font, fill=color, anchor="mm")
+        return
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(layer).text((x, y), time_str, font=font, fill=(*color, 255), anchor="mm")
+    layer = _apply_tile_opacity(layer, opacity)
+    img.paste(layer, (0, 0), layer)
+
+
 def _draw_image_element(img, el, width, height):
     """A user-supplied photo/logo dropped onto the layout as its own
-    positioned element -- cover-fit into its box (same ImageOps.fit
-    approach as the background image and album art elsewhere in this
-    theme) and alpha-composited at its own opacity. Baked into the
-    static background since it's a fixed picture, not a live reading --
-    a bad/missing/unreadable path is skipped silently rather than
-    erroring the whole theme out, same tolerance the background image
-    and app.py's Tkinter background picker already have."""
+    positioned element, fit into its box per `el["fit"]` (see
+    _fit_into_box() -- "contain" by default, so a freshly-picked image
+    is never cropped or stretched just because its box's aspect ratio
+    doesn't match the picture's own) and alpha-composited at its own
+    opacity. Baked into the static background since it's a fixed
+    picture, not a live reading -- a bad/missing/unreadable path is
+    skipped silently rather than erroring the whole theme out, same
+    tolerance the background image and app.py's Tkinter background
+    picker already have."""
     path = el.get("image_path")
     if not path:
         return
@@ -1082,7 +1161,7 @@ def _draw_image_element(img, el, width, height):
         return
     w = max(4, int(el.get("width", 0.15) * width))
     h = max(4, int(el.get("height", 0.15) * height))
-    fitted = ImageOps.fit(src, (w, h), method=Image.LANCZOS)
+    fitted = _fit_into_box(src, w, h, el.get("fit", "contain"))
     fitted = _apply_tile_opacity(fitted, el.get("opacity", 1.0))
     cx, cy = el["x"] * width, el["y"] * height
     img.paste(fitted, (int(cx - w / 2), int(cy - h / 2)), fitted)
@@ -2144,60 +2223,87 @@ def _draw_media_element(img, el, box, media, fonts):
     or `none` middle_content choice rather than instead of it. Fully
     dynamic (playback position advances every frame, same as a graph's
     plotted line) so it's redrawn here in render_frame(), never baked
-    into the static background the way text/image elements are."""
+    into the static background the way text/image elements are.
+
+    `show_art`/`show_name`/`show_time` (each default True) let each of
+    the three pieces -- cover art, track/artist text, progress bar -- be
+    switched off independently, since not everyone wants all three
+    (e.g. just the art, or just a compact time readout with no cover
+    taking up space). Whichever pieces are on stack top-to-bottom in
+    that same order, starting from the top of the box, so turning one
+    off doesn't leave a gap where it used to be."""
     mid_cx, mid_w, box_h = box["cx"], box["w"], box["h"]
     opacity = el.get("opacity", 1.0)
+    show_art = el.get("show_art", True)
+    show_name = el.get("show_name", True)
+    show_time = el.get("show_time", True)
 
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
 
-    art_size = int(max(24, min(mid_w * 0.75, box_h * 0.55)))
-    art = None
     title = artist = None
     position = duration = None
     if media:
         title, artist = media.get("title"), media.get("artist")
         position, duration = media.get("position"), media.get("duration")
-        if media.get("art") is not None:
+
+    y = int(box["y0"])
+
+    if show_art:
+        # However many of the other two pieces are also on, sizes the
+        # art off the box's remaining space so all of them fit --
+        # art-only (both others off) lets it use nearly the whole box.
+        art_frac = 0.9 if not (show_name or show_time) else 0.55
+        art_size = int(max(24, min(mid_w * 0.75, box_h * art_frac)))
+        art = None
+        if media and media.get("art") is not None:
             art = fit_album_art(media["art"], art_size, radius=14)
-    if art is None:
-        art = default_art(art_size, radius=14)
+        if art is None:
+            art = default_art(art_size, radius=14)
 
-    art_x = int(mid_cx - art_size / 2)
-    art_y = int(box["y0"])
-    glow_tile, glow_pad = art_glow_frame(art_size, 14, ACCENT_MID)
-    glow_paste(layer, glow_tile, (art_x - glow_pad, art_y - glow_pad), blur=8, glow_alpha=0.55)
-    # `art` comes back as plain RGB (fit_album_art()/default_art()), so
-    # -- unlike the fixed-column version, which pastes straight onto an
-    # opaque background and needs no mask -- pasting it onto this
-    # transparent RGBA layer needs an explicit opaque mask, or the art
-    # would come through with alpha 0 (invisible) once opacity is
-    # applied below.
-    art_rgba = art.convert("RGBA")
-    layer.paste(art_rgba, (art_x, art_y), art_rgba)
+        art_x = int(mid_cx - art_size / 2)
+        art_y = int(y)
+        glow_tile, glow_pad = art_glow_frame(art_size, 14, ACCENT_MID)
+        glow_paste(layer, glow_tile, (art_x - glow_pad, art_y - glow_pad), blur=8, glow_alpha=0.55)
+        # `art` comes back as plain RGB (fit_album_art()/default_art()),
+        # so -- unlike the fixed-column version, which pastes straight
+        # onto an opaque background and needs no mask -- pasting it onto
+        # this transparent RGBA layer needs an explicit opaque mask, or
+        # the art would come through with alpha 0 (invisible) once
+        # opacity is applied below.
+        art_rgba = art.convert("RGBA")
+        layer.paste(art_rgba, (art_x, art_y), art_rgba)
+        y = art_y + art_size + 12
 
-    y = art_y + art_size + 12
-    if title:
-        track_line = truncate(draw, title.upper(), fonts.track, mid_w - 12)
-        draw.text((mid_cx, y), track_line, font=fonts.track, fill=(238, 238, 244), anchor="ma")
-        y += 24
-        if artist:
-            artist_line = truncate(draw, artist, fonts.artist, mid_w - 12)
-            draw.text((mid_cx, y), artist_line, font=fonts.artist, fill=(200, 192, 220), anchor="ma")
-            y += 22
-        if duration and y + 20 <= box["y0"] + box_h:
-            bar_w = int(mid_w * 0.85)
-            bar_h = 6
-            bar_x = int(mid_cx - bar_w / 2)
-            bar_y = y + 4
-            fraction = max(0.0, min(1.0, (position or 0.0) / duration))
-            progress_bar_glow(layer, bar_x, bar_y, bar_w, bar_h, fraction, ACCENT_MID)
-    elif _MEDIA_OK:
-        for line in wrap_text(draw, get_not_playing_message(), fonts.message, mid_w - 12):
-            if y > box["y0"] + box_h:
-                break
-            draw.text((mid_cx, y), line, font=fonts.message, fill=(200, 190, 220), anchor="ma")
+    if show_name:
+        if title:
+            track_line = truncate(draw, title.upper(), fonts.track, mid_w - 12)
+            draw.text((mid_cx, y), track_line, font=fonts.track, fill=(238, 238, 244), anchor="ma")
             y += 24
+            if artist:
+                artist_line = truncate(draw, artist, fonts.artist, mid_w - 12)
+                draw.text((mid_cx, y), artist_line, font=fonts.artist, fill=(200, 192, 220), anchor="ma")
+                y += 22
+        elif _MEDIA_OK:
+            for line in wrap_text(draw, get_not_playing_message(), fonts.message, mid_w - 12):
+                if y > box["y0"] + box_h:
+                    break
+                draw.text((mid_cx, y), line, font=fonts.message, fill=(200, 190, 220), anchor="ma")
+                y += 24
+
+    if show_time and title and duration and y + 20 <= box["y0"] + box_h:
+        bar_w = int(mid_w * 0.85)
+        bar_h = 6
+        bar_x = int(mid_cx - bar_w / 2)
+        bar_y = y + 4
+        fraction = max(0.0, min(1.0, (position or 0.0) / duration))
+        progress_bar_glow(layer, bar_x, bar_y, bar_w, bar_h, fraction, ACCENT_MID)
+        y = bar_y + bar_h + 16
+        if y <= box["y0"] + box_h:
+            draw.text((bar_x, y), fmt_mmss(position), font=fonts.progress,
+                       fill=(170, 165, 190), anchor="lm")
+            draw.text((bar_x + bar_w, y), fmt_mmss(duration), font=fonts.progress,
+                       fill=(170, 165, 190), anchor="rm")
 
     layer = _apply_tile_opacity(layer, opacity)
     img.paste(layer, (0, 0), layer)
@@ -2243,10 +2349,12 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
         elif etype == "media":
             box = _media_box(el, width, height)
             _draw_media_element(img, el, box, media, fonts)
+        elif etype == "clock":
+            _draw_clock_element(img, el, width, height, fonts)
         # text/image elements are fully static -- baked into
         # `background` already, nothing to redraw here.
 
-    # --- middle: Spotify / weather / nothing, then the clock ----------
+    # --- middle: Spotify / weather / nothing -------------------------
     mid_x0, mid_w = layout["mid_x0"], layout["mid_w"]
     mid_cx = mid_x0 + mid_w / 2
     draw = ImageDraw.Draw(img)
@@ -2259,14 +2367,19 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
     else:
         _draw_spotify_middle(img, draw, mid_cx, mid_w, height, fonts, media)
 
-    # Fixed vertical position (not whatever flowing `y` the content
-    # above ended at) -- see
-    # build_static_background()'s comment on why: the disk/VRAM gauges
-    # flanking it need a stable spot baked into the static background,
-    # so the clock can no longer drift with how much media info is
-    # showing above it.
-    time_str = datetime.datetime.now().strftime("%H:%M:%S")
-    draw.text((mid_cx, layout["clock_cy"]), time_str, font=fonts.time, fill=(235, 235, 242), anchor="mm")
+    # The clock USED to be drawn unconditionally right here, at a
+    # hardcoded spot -- it's now just another element (see DEFAULT_
+    # ELEMENTS' "clock" entry / _draw_clock_element() above), drawn in
+    # the per-element loop instead. This fallback only fires for an
+    # `elements` list saved before that existed (no "clock"-type entry
+    # at all) -- without it, upgrading would make the clock silently
+    # vanish for anyone whose saved layout predates this. It draws at
+    # the exact old fixed position, so nothing shifts for those configs
+    # until they actually add a clock element themselves, at which
+    # point this stops (no double clock).
+    if not any(el.get("type") == "clock" for el in layout["elements"]):
+        time_str = datetime.datetime.now().strftime("%H:%M:%S")
+        draw.text((mid_cx, layout["clock_cy"]), time_str, font=fonts.time, fill=(235, 235, 242), anchor="mm")
 
     return img
 

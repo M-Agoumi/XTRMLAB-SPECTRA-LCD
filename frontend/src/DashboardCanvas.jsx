@@ -87,18 +87,50 @@ function makeElement(type, elements, meta) {
              history_seconds: 20, ...base };
   }
   if (type === "image") {
+    // width/height here are just a placeholder box until a picture's
+    // actually picked -- uploadImage() below replaces them with a box
+    // that matches the picked image's own aspect ratio, since a
+    // freshly-added element has no image yet to size itself from.
     return { id: makeId(elements, "image"), type: "image", image_path: "",
-             width: 0.15, height: 0.15, ...base };
+             width: 0.15, height: 0.15, fit: "contain", ...base };
   }
   if (type === "media") {
     // The Spotify now-playing widget (album art + track/artist +
     // progress bar) as a movable/resizable element -- see
     // dashboard_theme.py's _draw_media_element(). Generously sized by
     // default since it has to fit album art plus two lines of text
-    // plus a progress bar stacked vertically.
-    return { id: makeId(elements, "media"), type: "media", width: 0.32, height: 0.52, ...base };
+    // plus a progress bar stacked vertically. show_art/show_name/
+    // show_time let each piece be switched off independently.
+    return { id: makeId(elements, "media"), type: "media", width: 0.32, height: 0.52,
+             show_art: true, show_name: true, show_time: true, ...base };
+  }
+  if (type === "clock") {
+    return { id: makeId(elements, "clock"), type: "clock",
+             font_size: 0.05, color: [235, 235, 242], show_seconds: true, ...base };
   }
   return null;
+}
+
+// Reads a just-picked File's own pixel dimensions in the browser (no
+// upload round-trip needed for this) -- used so a new image element
+// starts out matching the picture's own aspect ratio instead of
+// whatever generic default box was there before. Resolves null (never
+// rejects) on anything that isn't decodable as an image, so a caller
+// can just skip the auto-sizing rather than having to handle an error.
+function readImageDimensions(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    img.src = url;
+  });
 }
 
 export default function DashboardCanvas({ frameUrl, connected }) {
@@ -284,7 +316,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         if (axis !== "width") patch.height = clamp((Math.abs(dyPx) * 2) / REF_H, 0.04, 0.9);
         return prev.map((it) => (it.id === drag.id ? { ...it, ...patch } : it));
       }
-      if (el.type === "text") {
+      if (el.type === "text" || el.type === "clock") {
         const font_size = clamp((Math.abs(dyPx) * 2) / REF_H, 0.02, 0.25);
         return prev.map((it) => (it.id === drag.id ? { ...it, font_size } : it));
       }
@@ -364,13 +396,17 @@ export default function DashboardCanvas({ frameUrl, connected }) {
   // (image_store.py) and hands back that copy's path, which is what
   // actually gets saved. `uploadingId` just drives a "Uploading..."
   // label near whichever field is mid-upload.
+  // `onStored` gets (path, dims) -- dims is the picked file's own
+  // {width, height} in pixels (or null if it couldn't be read), read
+  // client-side in parallel with the upload so the image element case
+  // can size its box to match, see makeElement()'s comment.
   const uploadImage = (id, file, onStored, onError) => {
     if (!file) return;
     setUploadingId(id);
-    api.uploadDashboardImage(file).then(
-      (r) => {
+    Promise.all([api.uploadDashboardImage(file), readImageDimensions(file)]).then(
+      ([r, dims]) => {
         setUploadingId(null);
-        onStored(r.path);
+        onStored(r.path, dims);
       },
       (e) => {
         setUploadingId(null);
@@ -502,6 +538,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         <button onClick={() => addElement("graph")}>+ Add graph</button>
         <button onClick={() => addElement("image")}>+ Add image</button>
         <button onClick={() => addElement("media")}>+ Add now-playing</button>
+        <button onClick={() => addElement("clock")}>+ Add clock</button>
         <button onClick={undo} disabled={historyRef.current.length === 0}>Undo</button>
         <button onClick={redo} disabled={futureRef.current.length === 0}>Redo</button>
         <button onClick={resetToDefaults}>Reset to defaults</button>
@@ -579,6 +616,15 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                 : el.type === "media" ? "NOW PLAYING" : "PICK AN IMAGE BELOW";
               const imageUrl = el.type === "image" ? api.dashboardImageUrl(el.image_path) : null;
               const clipId = `clip_${el.id}`;
+              // Mirrors dashboard_theme.py's _fit_into_box(): "contain"
+              // (default) never crops, "cover" fills the box and crops
+              // overflow, "stretch" ignores aspect ratio entirely --
+              // same three SVG preserveAspectRatio values do the same
+              // job here, so this preview matches what actually renders.
+              const preserveAspectRatio =
+                el.type === "image" && el.fit === "cover" ? "xMidYMid slice"
+                : el.type === "image" && el.fit === "stretch" ? "none"
+                : "xMidYMid meet";
               return (
                 <g key={el.id}>
                   {imageUrl && (
@@ -592,7 +638,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                     // uploadImage()'s comment on why this can render
                     // immediately.
                     <image href={imageUrl} x={x0} y={y0} width={w} height={h}
-                           preserveAspectRatio="xMidYMid slice" clipPath={`url(#${clipId})`}
+                           preserveAspectRatio={preserveAspectRatio} clipPath={`url(#${clipId})`}
                            opacity={el.opacity ?? 1}
                            onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
                   ) : (
@@ -641,6 +687,38 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                         <title>Drag to resize width and height together</title>
                       </rect>
                     </>
+                  )}
+                </g>
+              );
+            }
+
+            if (el.type === "clock") {
+              const x = el.x * REF_W;
+              const y = el.y * REF_H;
+              const fontSize = Math.max(8, (el.font_size ?? 0.05) * REF_H);
+              const color = el.color ? `rgb(${el.color[0]}, ${el.color[1]}, ${el.color[2]})` : "#fff";
+              // A representative sample, not the actual current time --
+              // this canvas is a layout editor, not a second clock to
+              // keep in sync; what matters here is the size/position,
+              // same as how a graph/gauge element shows placeholder
+              // values rather than live stats.
+              const sample = el.show_seconds ?? true ? "12:34:56" : "12:34";
+              const halfW = Math.max(24, (sample.length * fontSize) / 3.4);
+              return (
+                <g key={el.id}>
+                  {isSelected && (
+                    <rect x={x - halfW} y={y - fontSize * 0.7} width={halfW * 2} height={fontSize * 1.4}
+                          fill="none" stroke="#ffd85e" strokeDasharray="4 3" />
+                  )}
+                  <text x={x} y={y} textAnchor="middle" dominantBaseline="middle"
+                        fontSize={fontSize} fill={color} opacity={el.opacity ?? 1}
+                        onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move", userSelect: "none" }}>
+                    {sample}
+                  </text>
+                  {isSelected && (
+                    <rect x={x + halfW - 7} y={y + fontSize * 0.7 - 7} width={14} height={14}
+                          fill="#ffd85e" stroke="#fff" strokeWidth={1}
+                          onPointerDown={onPointerDownHandle(el)} style={{ cursor: "ns-resize" }} />
                   )}
                 </g>
               );
@@ -771,7 +849,36 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                 Image
                 <input type="file" accept="image/*"
                        onChange={(e) => uploadImage(selected.id, e.target.files[0],
-                         (path) => updateSelected({ image_path: path }), setError)} />
+                         (path, dims) => {
+                           const patch = { image_path: path };
+                           if (dims && dims.width && dims.height) {
+                             // Box the new picture at roughly its own on-screen
+                             // footprint, matching ITS aspect ratio -- not the
+                             // small square default (or whatever box a
+                             // previous picture left behind), so a freshly
+                             // picked image doesn't start out looking
+                             // squished/cropped before anyone's touched the
+                             // resize handles.
+                             const target = 0.28;
+                             const ratio = dims.width / dims.height;
+                             if (ratio >= 1) {
+                               patch.width = target;
+                               patch.height = clamp((target * REF_W) / ratio / REF_H, 0.02, 0.9);
+                             } else {
+                               patch.height = target;
+                               patch.width = clamp((target * REF_H) * ratio / REF_W, 0.02, 0.9);
+                             }
+                           }
+                           updateSelected(patch);
+                         }, setError)} />
+              </label>
+              <label>
+                Fit
+                <select value={selected.fit || "contain"} onChange={(e) => updateSelected({ fit: e.target.value })}>
+                  <option value="contain">Contain (show the whole image)</option>
+                  <option value="cover">Cover (fill the box, may crop)</option>
+                  <option value="stretch">Stretch (fill exactly, may distort)</option>
+                </select>
               </label>
               <label>
                 Opacity
@@ -790,17 +897,64 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           )}
 
           {selected.type === "media" && (
+            <>
+              <div className="row">
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_art ?? true}
+                         onChange={(e) => updateSelected({ show_art: e.target.checked })} />
+                  Cover art
+                </label>
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_name ?? true}
+                         onChange={(e) => updateSelected({ show_name: e.target.checked })} />
+                  Track/artist name
+                </label>
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_time ?? true}
+                         onChange={(e) => updateSelected({ show_time: e.target.checked })} />
+                  Progress/time
+                </label>
+              </div>
+              <div className="row">
+                <label>
+                  Opacity
+                  <input type="range" min={20} max={100}
+                         value={Math.round((selected.opacity ?? 1) * 100)}
+                         onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
+                </label>
+                <span className="hint">
+                  Shows the same Spotify now-playing display as the "Middle content" section below,
+                  but positioned/sized here instead of locked to the middle column. Turn off
+                  whichever pieces you don't want -- e.g. just the cover art, or just the time.
+                </span>
+              </div>
+            </>
+          )}
+
+          {selected.type === "clock" && (
             <div className="row">
+              <label className="row-inline">
+                <input type="checkbox" checked={selected.show_seconds ?? true}
+                       onChange={(e) => updateSelected({ show_seconds: e.target.checked })} />
+                Show seconds
+              </label>
+              <label>
+                Color
+                <input type="color" value={rgbToHex(selected.color || [235, 235, 242])}
+                       onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
+              </label>
+              <label>
+                Font size %
+                <input type="number" min={2} max={25} style={{ width: "5em" }}
+                       value={Math.round((selected.font_size ?? 0.05) * 100)}
+                       onChange={(e) => updateSelected({ font_size: clamp(Number(e.target.value) / 100, 0.02, 0.25) })} />
+              </label>
               <label>
                 Opacity
                 <input type="range" min={20} max={100}
                        value={Math.round((selected.opacity ?? 1) * 100)}
                        onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
               </label>
-              <span className="hint">
-                Shows the same Spotify now-playing display as the "Middle content" section below,
-                but positioned/sized here instead of locked to the middle column.
-              </span>
             </div>
           )}
 
