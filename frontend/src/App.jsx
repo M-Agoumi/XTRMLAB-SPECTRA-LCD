@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api.js";
 import DashboardCanvas from "./DashboardCanvas.jsx";
+import Collapsible from "./Collapsible.jsx";
 
 const STATE_POLL_MS = 1500;
 const FRAME_POLL_MS = 400; // control_server.py serves one JPEG per
@@ -304,8 +305,7 @@ export default function App() {
         </span>
       </header>
 
-      <section className="panel">
-        <h2>Panel port</h2>
+      <Collapsible id="panel-port" title="Panel port" defaultOpen={true}>
         <p className="hint">
           Pick which serial port your screen is connected on -- everything else on this
           page needs this set first.
@@ -338,10 +338,9 @@ export default function App() {
             No port selected -- the rest of this app stays disabled until you pick one above.
           </p>
         )}
-      </section>
+      </Collapsible>
 
-      <section className="panel">
-        <h2>Preview</h2>
+      <Collapsible id="preview" title="Preview" defaultOpen={true}>
         <div className="preview-box">
           {frameUrl ? (
             <img className="preview-img" src={frameUrl} alt="Live panel preview" />
@@ -351,10 +350,9 @@ export default function App() {
             </div>
           )}
         </div>
-      </section>
+      </Collapsible>
 
-      <section className="panel">
-        <h2>System</h2>
+      <Collapsible id="system" title="System" defaultOpen={false}>
         {system?.startup_supported === false ? (
           <p className="hint">
             Launch-at-startup and desktop shortcuts are Windows-only.
@@ -393,10 +391,9 @@ export default function App() {
           )}
         </div>
         {systemError && <p className="error">{systemError}</p>}
-      </section>
+      </Collapsible>
 
-      <section className="panel controls">
-        <h2>Controls</h2>
+      <Collapsible id="controls" title="Controls" defaultOpen={true} className="panel controls">
         {!portSelected ? (
           <p className="hint">Select a panel port above to enable this.</p>
         ) : (
@@ -436,7 +433,7 @@ export default function App() {
           </>
         )}
         {actionError && <p className="error">{actionError}</p>}
-      </section>
+      </Collapsible>
 
       {portSelected && theme === "video" && (
         <section className="panel">
@@ -555,8 +552,7 @@ export default function App() {
 
       {settingsSaved && <p className="hint settings-saved">{settingsSaved}</p>}
 
-      <section className="panel">
-        <h2>Config</h2>
+      <Collapsible id="config" title="Config" defaultOpen={true}>
         <div className="row">
           <label className="grow">
             Brightness: {brightnessDraft}
@@ -570,10 +566,9 @@ export default function App() {
           </label>
         </div>
         <p className="hint">Applies immediately, running or not. (Panel port moved to its own section above.)</p>
-      </section>
+      </Collapsible>
 
-      <section className="panel">
-        <h2>Log</h2>
+      <Collapsible id="log" title="Log" defaultOpen={false}>
         <div className="log-box" ref={logBoxRef}>
           {logs.length === 0 ? (
             <div className="log-placeholder">(no log lines yet)</div>
@@ -581,7 +576,7 @@ export default function App() {
             logs.map((line, i) => <div key={i}>{line}</div>)
           )}
         </div>
-      </section>
+      </Collapsible>
     </div>
   );
 }

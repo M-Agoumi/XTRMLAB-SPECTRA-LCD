@@ -565,6 +565,47 @@ dashboard designer) this is laying groundwork for.
   any now-playing element, not tied to Middle content) rendered
   unconditionally instead of being gated behind the removed `"spotify"`
   option.
+- **Design canvas UX pass: an element list, arrow-key nudging, and
+  collapsible sections.** The only way to select something used to be
+  clicking it directly on the canvas -- fine for well-spread-out
+  elements, but a real problem for small ones (the mini gauges) or
+  ones another element sits on top of (the now-playing box overlapping
+  several gauges): no way to tell what's there, no way to grab it
+  precisely. New element list (`ELEMENT_BADGES`/`elementLabel()`,
+  `.element-list` in `DashboardCanvas.jsx`) shows every element by type
+  and id regardless of size or stacking; clicking a row selects it
+  exactly like clicking it on the canvas would, and the selected row
+  highlights to match. Also fixed the root cause of a duplicate-id bug
+  this surfaced: `makeId()` used to count `existing.length` in
+  whatever array the current browser tab happened to have loaded, which
+  isn't unique if the backend's file changes underneath an open tab
+  (e.g. a migration runs while the canvas is still open from before
+  it) -- two different stale/fresh views can independently compute the
+  same next id. It now always appends a short random suffix, so a
+  duplicate id can't happen even from a stale tab.
+
+  New arrow-key nudging for the selected element (plain arrow = 1% of
+  the panel, Shift+arrow = 5%, matching the property panel's own "X
+  %"/"Y %" units) -- mouse-only dragging was fiddly for pixel-level
+  alignment, especially on the small gauges. Each nudge commits through
+  the same `commit()` path a drag does, so Undo steps through
+  individual nudges same as it already did for drags.
+
+  New `Collapsible.jsx` wraps every top-level settings section (Panel
+  port, Preview, System, Controls, Config, Log in `App.jsx`; Background,
+  Middle content, "Nothing playing" placeholder inside
+  `DashboardCanvas.jsx`) behind a click-to-toggle header, open/closed
+  state persisted per-section in `localStorage` so it survives a
+  reload. System, Log, and the three occasional dashboard sub-settings
+  default collapsed; Panel port, Preview, Controls, Dashboard layout,
+  and Config default open -- cutting the page down from one long
+  scroll past everything to just the sections actually being used.
+  Verified via Playwright: the element list renders one row per element
+  (badge + label + id) and clicking a row both highlights it and
+  selects the matching canvas element (dashed outline, resize handles);
+  arrow keys nudge the selected element's X/Y by the expected amount
+  (1%/5% with Shift) and Undo reverts a nudge; and the collapsed/open
+  state of each section matches its configured default on first load.
 
 ## [1.0.0] — 2026-08-29
 

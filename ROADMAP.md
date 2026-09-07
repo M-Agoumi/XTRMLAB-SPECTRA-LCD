@@ -1011,6 +1011,30 @@ None, and the "Nothing playing" placeholder section rendered
 unconditionally instead of being gated behind the removed `"spotify"`
 option.
 
+**UX pass: element list, arrow-key nudging, collapsible sections.**
+Selecting anything meant clicking it directly on the canvas, which
+doesn't work for small or fully-overlapped elements -- no way to even
+tell two things were stacked there. New element list panel
+(`DashboardCanvas.jsx`) shows every element by type/label/id, click to
+select, highlighted to match the canvas selection. This also surfaced
+and fixed a real bug: `makeId()`'s uniqueness check was scoped to
+whatever array the current tab happened to have loaded, not globally
+unique, so a stale tab (open across a backend-side config migration,
+say) could generate an id that collided with one already saved --
+exactly what caused a duplicate, only-one-selectable clock. `makeId()`
+now always appends a random suffix. New arrow-key nudging (1%/5% with
+Shift, matching the property panel's own X%/Y% units) for finer
+positioning than mouse-dragging allows, going through the same
+`commit()` path a drag does so Undo covers it too. New
+`Collapsible.jsx` wraps every top-level section (both `App.jsx`'s and
+`DashboardCanvas.jsx`'s) behind a click-to-toggle header with its
+open/closed state remembered in `localStorage` -- System/Log/the three
+occasional dashboard sub-settings default collapsed, cutting a lot off
+what used to be one long scroll. Verified via Playwright: list rows
+select their matching canvas element, arrow keys nudge by the expected
+amount and Undo reverts it, and each section's collapsed/open state
+matches its configured default on load.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files
