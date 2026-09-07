@@ -913,6 +913,28 @@ Verified by rendering a standalone `media` element (with/without live
 media, opacity < 1) and via Playwright against the real built frontend
 + live backend.
 
+**Fix: the canvas now shows the actual picked image, and the resize/
+save workflow is legible.** User feedback: picking an image only
+updated a filename label -- the canvas kept drawing a generic "IMAGE"
+placeholder, so it looked broken, and it wasn't obvious dragging the
+one corner handle always changed width and height together, or that
+this canvas is already a live preview (no Save/Start needed just to
+see an edit reflected here). New `GET /api/dashboard/image?path=`
+serves a previously-picked image's actual bytes back (restricted to
+`image_store.py`'s own managed folder), so an image element renders
+the real picture inline (clipped, opacity-aware) and all three file
+pickers show a thumbnail, the instant a file's picked. Graph/image/
+media elements gained separate width-only and height-only edge
+handles alongside the existing corner handle. A "Save layout*" /
+"Unsaved changes" indicator now shows once the layout differs from
+what's actually saved, and the top hint spells out the three-stage
+model explicitly (canvas preview is instant; Save layout persists it;
+Start/Apply pushes it to the panel). Verified via Playwright against
+the real built frontend + live backend: upload → inline render +
+thumbnail in one interaction, a real mouse-drag on the width-only
+handle leaving height untouched, and the dirty indicator's on-edit/
+on-save transitions.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files

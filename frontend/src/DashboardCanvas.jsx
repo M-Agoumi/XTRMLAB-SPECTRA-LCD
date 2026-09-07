@@ -123,6 +123,12 @@ export default function DashboardCanvas({ frameUrl, connected }) {
 
   const historyRef = useRef([]);
   const futureRef = useRef([]);
+  // What's currently saved on the backend, so the toolbar can show an
+  // honest "you have unsaved changes" state instead of leaving it to
+  // guesswork -- see the "Unsaved changes" hint below Save layout.
+  // Reference equality is enough: commit()/undo()/redo()/load() always
+  // hand back a *new* array, never mutate elements in place.
+  const savedElementsRef = useRef(null);
   const dragRef = useRef(null); // {id, mode: 'move'|'resize', beforeElements}
   const svgRef = useRef(null);
 
@@ -132,6 +138,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
       (m) => {
         setMeta(m);
         setElements(m.elements);
+        savedElementsRef.current = m.elements;
         setBgDraft(m.background);
         setNpDraft(m.nowPlaying);
         setMcDraft(m.middleContent);
@@ -211,11 +218,16 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     dragRef.current = { id: el.id, mode: "move", beforeElements: elements };
   };
 
-  const onPointerDownHandle = (el) => (e) => {
+  // `axis` picks which dimension(s) a given handle drags -- "both" (the
+  // original corner handle, still there for a quick freeform resize),
+  // "width", or "height". Only graph/image/media elements have
+  // independent width/height to begin with (a gauge resizes via one
+  // `radius`, text via one `font_size`), so this is a no-op for those.
+  const onPointerDownHandle = (el, axis = "both") => (e) => {
     e.stopPropagation();
     e.target.setPointerCapture(e.pointerId);
     setSelectedId(el.id);
-    dragRef.current = { id: el.id, mode: "resize", beforeElements: elements };
+    dragRef.current = { id: el.id, mode: "resize", axis, beforeElements: elements };
   };
 
   const onPointerMove = (e) => {
@@ -261,10 +273,16 @@ export default function DashboardCanvas({ frameUrl, connected }) {
       // scales font_size off the vertical drag distance instead.
       const dxPx = px * REF_W - el.x * REF_W;
       const dyPx = py * REF_H - el.y * REF_H;
-      if (el.type === "graph" || el.type === "image") {
-        const width = clamp((Math.abs(dxPx) * 2) / REF_W, 0.04, 0.9);
-        const height = clamp((Math.abs(dyPx) * 2) / REF_H, 0.04, 0.9);
-        return prev.map((it) => (it.id === drag.id ? { ...it, width, height } : it));
+      if (el.type === "graph" || el.type === "image" || el.type === "media") {
+        // `axis` (set by which handle was grabbed -- see
+        // onPointerDownHandle) picks whether this drag touches width,
+        // height, or both -- e.g. dragging the right-edge handle
+        // straight up shouldn't also shrink the height.
+        const axis = drag.axis || "both";
+        const patch = {};
+        if (axis !== "height") patch.width = clamp((Math.abs(dxPx) * 2) / REF_W, 0.04, 0.9);
+        if (axis !== "width") patch.height = clamp((Math.abs(dyPx) * 2) / REF_H, 0.04, 0.9);
+        return prev.map((it) => (it.id === drag.id ? { ...it, ...patch } : it));
       }
       if (el.type === "text") {
         const font_size = clamp((Math.abs(dyPx) * 2) / REF_H, 0.02, 0.25);
@@ -331,7 +349,10 @@ export default function DashboardCanvas({ frameUrl, connected }) {
 
   const saveLayout = () =>
     api.saveDashboardElements(elements).then(
-      () => setStatus("Layout saved -- takes effect on the next Start/Apply."),
+      () => {
+        savedElementsRef.current = elements;
+        setStatus("Layout saved -- takes effect on the next Start/Apply.");
+      },
       (e) => setError(e.message)
     );
 
@@ -461,13 +482,18 @@ export default function DashboardCanvas({ frameUrl, connected }) {
 
   const selected = elements.find((el) => el.id === selectedId) || null;
   const ordered = [...elements].sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+  const dirty = elements !== savedElementsRef.current;
 
   return (
     <section className="panel">
       <h2>Dashboard layout</h2>
       <p className="hint">
-        Drag an element to move it, drag its handle to resize, click to select.
-        {connected ? " Shown over the panel's live frame." : " Start the Dashboard to see it over the live frame."}
+        Drag an element to move it, click to select. A selected element with independent
+        width/height (graph, image, now-playing) gets three resize handles: the one on its
+        right edge changes width only, the one on its bottom edge changes height only, and
+        the corner changes both. Everything below updates live in this box as you edit --
+        no need to save just to see it.
+        {connected ? " It's overlaid on the panel's live frame too." : " Start the Dashboard to also see it over the live frame."}
       </p>
 
       <div className="canvas-toolbar">
@@ -479,8 +505,16 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         <button onClick={undo} disabled={historyRef.current.length === 0}>Undo</button>
         <button onClick={redo} disabled={futureRef.current.length === 0}>Redo</button>
         <button onClick={resetToDefaults}>Reset to defaults</button>
-        <button onClick={saveLayout}>Save layout</button>
+        <button onClick={saveLayout} className={dirty ? "btn-attention" : undefined}>
+          {dirty ? "Save layout*" : "Save layout"}
+        </button>
       </div>
+      {dirty && (
+        <p className="hint">
+          * You have unsaved changes -- this preview is live, but Save layout is what keeps
+          them (and Start/Apply is what pushes them to the physical panel).
+        </p>
+      )}
 
       <div
         className="canvas-box"
@@ -542,22 +576,72 @@ export default function DashboardCanvas({ frameUrl, connected }) {
               const accent = el.type === "graph" ? accentFor(el)
                 : el.type === "media" ? ACCENT_GPU : "rgb(150, 170, 200)";
               const label = el.type === "graph" ? (meta.stats[el.stat]?.title || el.stat)
-                : el.type === "media" ? "NOW PLAYING" : "IMAGE";
+                : el.type === "media" ? "NOW PLAYING" : "PICK AN IMAGE BELOW";
+              const imageUrl = el.type === "image" ? api.dashboardImageUrl(el.image_path) : null;
+              const clipId = `clip_${el.id}`;
               return (
                 <g key={el.id}>
-                  <rect x={x0} y={y0} width={w} height={h}
-                        fill={accent} fillOpacity={0.1 * (el.opacity ?? 1)}
-                        stroke={accent} strokeOpacity={el.opacity ?? 1}
-                        strokeWidth={isSelected ? 3 : 1.5}
-                        strokeDasharray={isSelected ? "6 3" : undefined}
-                        onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
-                  <text x={x0 + w / 2} y={y0 + h / 2} textAnchor="middle" dominantBaseline="middle"
-                        fill="#fff" fontSize={12} style={{ pointerEvents: "none" }}>
-                    {label}
-                  </text>
-                  <rect x={x0 + w - 7} y={y0 + h - 7} width={14} height={14}
-                        fill={accent} stroke="#fff" strokeWidth={1}
-                        onPointerDown={onPointerDownHandle(el)} style={{ cursor: "nwse-resize" }} />
+                  {imageUrl && (
+                    <clipPath id={clipId}>
+                      <rect x={x0} y={y0} width={w} height={h} rx={4} />
+                    </clipPath>
+                  )}
+                  {imageUrl ? (
+                    // The actual picked image, shown here the moment
+                    // it's uploaded -- not just once Saved/Started, see
+                    // uploadImage()'s comment on why this can render
+                    // immediately.
+                    <image href={imageUrl} x={x0} y={y0} width={w} height={h}
+                           preserveAspectRatio="xMidYMid slice" clipPath={`url(#${clipId})`}
+                           opacity={el.opacity ?? 1}
+                           onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                  ) : (
+                    <rect x={x0} y={y0} width={w} height={h}
+                          fill={accent} fillOpacity={0.1 * (el.opacity ?? 1)}
+                          stroke={accent} strokeOpacity={el.opacity ?? 1}
+                          strokeWidth={isSelected ? 3 : 1.5}
+                          strokeDasharray={isSelected ? "6 3" : undefined}
+                          onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                  )}
+                  {imageUrl && (
+                    <rect x={x0} y={y0} width={w} height={h} rx={4}
+                          fill="none" stroke={isSelected ? "#ffd85e" : accent}
+                          strokeOpacity={isSelected ? 1 : 0.6}
+                          strokeWidth={isSelected ? 3 : 1.5}
+                          strokeDasharray={isSelected ? "6 3" : undefined}
+                          style={{ pointerEvents: "none" }} />
+                  )}
+                  {!imageUrl && (
+                    <text x={x0 + w / 2} y={y0 + h / 2} textAnchor="middle" dominantBaseline="middle"
+                          fill="#fff" fontSize={12} style={{ pointerEvents: "none" }}>
+                      {label}
+                    </text>
+                  )}
+                  {isSelected && (
+                    <>
+                      {/* Right-edge handle: width only. */}
+                      <rect x={x0 + w - 5} y={y0 + h / 2 - 7} width={10} height={14} rx={2}
+                            fill={accent} stroke="#fff" strokeWidth={1}
+                            onPointerDown={onPointerDownHandle(el, "width")}
+                            style={{ cursor: "ew-resize" }}>
+                        <title>Drag to resize width only</title>
+                      </rect>
+                      {/* Bottom-edge handle: height only. */}
+                      <rect x={x0 + w / 2 - 7} y={y0 + h - 5} width={14} height={10} rx={2}
+                            fill={accent} stroke="#fff" strokeWidth={1}
+                            onPointerDown={onPointerDownHandle(el, "height")}
+                            style={{ cursor: "ns-resize" }}>
+                        <title>Drag to resize height only</title>
+                      </rect>
+                      {/* Corner handle: both at once. */}
+                      <rect x={x0 + w - 7} y={y0 + h - 7} width={14} height={14}
+                            fill={accent} stroke="#fff" strokeWidth={1}
+                            onPointerDown={onPointerDownHandle(el, "both")}
+                            style={{ cursor: "nwse-resize" }}>
+                        <title>Drag to resize width and height together</title>
+                      </rect>
+                    </>
+                  )}
                 </g>
               );
             }
@@ -696,7 +780,10 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                        onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
               </label>
               {selected.image_path && (
-                <span className="hint">{basename(selected.image_path)}</span>
+                <>
+                  <img className="file-thumb" src={api.dashboardImageUrl(selected.image_path)} alt="" />
+                  <span className="hint">{basename(selected.image_path)}</span>
+                </>
               )}
               {uploadingId === selected.id && <span className="hint">Uploading…</span>}
             </div>
@@ -877,7 +964,12 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                     (path) => updateBgDraft({ image_path: path }), setBgError)}
                 />
               </label>
-              {bgDraft.image_path && <span className="hint">{basename(bgDraft.image_path)}</span>}
+              {bgDraft.image_path && (
+                <>
+                  <img className="file-thumb" src={api.dashboardImageUrl(bgDraft.image_path)} alt="" />
+                  <span className="hint">{basename(bgDraft.image_path)}</span>
+                </>
+              )}
               {uploadingId === "background" && <span className="hint">Uploading…</span>}
             </div>
           )}
@@ -960,6 +1052,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
             </label>
             {npDraft.default_art_path && (
               <>
+                <img className="file-thumb" src={api.dashboardImageUrl(npDraft.default_art_path)} alt="" />
                 <span className="hint">{basename(npDraft.default_art_path)}</span>
                 <button type="button" onClick={() => updateNpDraft({ default_art_path: "" })}>Clear</button>
               </>

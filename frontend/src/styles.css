@@ -213,6 +213,16 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.btn-attention {
+  background: #4a3a1a;
+  border-color: #ffd85e;
+  color: #ffe9ae;
+}
+
+.btn-attention:hover:not(:disabled) {
+  background: #5a4622;
+}
+
 .hint {
   font-size: 0.78rem;
   color: #7d8390;
@@ -284,6 +294,15 @@ button:disabled {
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
   pointer-events: none;
+}
+
+.file-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #3e4a5c;
+  background: #101216;
 }
 
 .canvas-props {
