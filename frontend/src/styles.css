@@ -10,12 +10,45 @@ body {
 }
 
 .app {
-  max-width: 720px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 20px 24px 48px;
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+/* Two columns on a wide window: app-level controls (port, controls,
+   config, system, log) on the left at a fixed comfortable reading
+   width, the live preview and whatever the current theme needs --
+   including the dashboard design canvas, by far the widest thing on
+   this page -- on the right, free to use whatever space is left
+   instead of being squeezed into the same ~720px column everything
+   else was. `align-items: start` keeps each column's height
+   independent (a short left column doesn't stretch to match a tall
+   canvas, and vice versa) -- same reason it's a grid and not a plain
+   two-item flex row. Collapses to one column (left column's app-level
+   settings first, then the right column's preview/canvas) below
+   ~860px, where two side by side would just squeeze the canvas back
+   down to the same cramped width this replaced. */
+.app-columns {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.app-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0; /* lets a wide child (e.g. the canvas box) shrink instead of overflowing the column */
+}
+
+@media (max-width: 860px) {
+  .app-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 header {

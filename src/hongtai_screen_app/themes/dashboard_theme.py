@@ -995,6 +995,16 @@ def default_clock_element():
         "x": _DEFAULT_CLOCK_X, "y": _DEFAULT_CLOCK_Y,
         "font_size": 24 / REFERENCE_HEIGHT,  # matches Fonts.time = load_font(24)
         "color": None, "opacity": 1.0, "show_seconds": True,
+        # Clock customization (face/hour_format/show_date/analog_style/
+        # radius/image_path/width/height) -- see CLOCK_FACES' comment
+        # above _draw_clock_element(). "digital" with these values
+        # reproduces exactly the old (and only) look, so an existing
+        # saved clock element that predates these keys still renders
+        # identically -- _draw_clock_element()/the property panel both
+        # fall back to the same defaults via .get() either way.
+        "face": "digital", "hour_format": "24h", "show_date": False,
+        "analog_style": "classic", "radius": 0.12,
+        "image_path": None, "width": 0.22, "height": 0.22,
         "z": 100,
     }
 
@@ -1156,6 +1166,59 @@ def _fit_into_box(src, w, h, mode):
     return canvas
 
 
+# Clock customization -- originally just one hardcoded digital format,
+# now three selectable "faces" (el["face"]) each with their own extra
+# options, picked per-element the same way a gauge picks a stat:
+#
+#   "digital" (default -- every clock element saved before this existed
+#     is one) -- the time as text. Used to be just an HH:MM:SS/HH:MM
+#     toggle (`show_seconds`); now also has `hour_format` (24h/12h,
+#     with AM/PM in 12h) and an optional `show_date` line underneath.
+#   "analog" -- a procedurally drawn round face with hour/minute/second
+#     hands, in one of ANALOG_CLOCK_STYLES below. `radius` sizes it,
+#     same fraction-of-min(width,height) convention as a gauge's.
+#   "image" -- a user-supplied PNG (`image_path`, uploaded the exact
+#     same way an image element's picture is) as a decorative clock
+#     face/skin, fit into its `width`/`height` box, with the digital
+#     time (same formatting options as the "digital" face) drawn on top
+#     of it -- a shadow behind the text keeps it legible over any
+#     picture without having to know its colors ahead of time.
+#
+# All three are redrawn every frame (never baked into the static
+# background), same as the original digital-only clock always was --
+# see this function's own docstring below for why.
+DIGITAL_CLOCK_HOUR_FORMATS = {
+    "24h": "24-hour",
+    "12h": "12-hour (AM/PM)",
+}
+
+ANALOG_CLOCK_STYLES = {
+    "classic": "Classic -- white face, black ticks and hands",
+    "minimal": "Minimal -- thin ring, no ticks, just hands",
+    "neon": "Neon -- dark face, glowing hands in the clock's color",
+}
+
+CLOCK_FACES = {
+    "digital": "Digital",
+    "analog": "Analog",
+    "image": "Custom image",
+}
+
+
+def _clock_time_format(el):
+    """The strftime() format a digital time readout uses -- shared by
+    the "digital" face and the time overlay the "image" face draws on
+    top of its picture, so both respect the same hour_format/
+    show_seconds options."""
+    twelve_hour = el.get("hour_format", "24h") == "12h"
+    fmt = ("%I" if twelve_hour else "%H") + ":%M"
+    if el.get("show_seconds", True):
+        fmt += ":%S"
+    if twelve_hour:
+        fmt += " %p"
+    return fmt
+
+
 def _draw_clock_element(img, el, width, height, fonts):
     """A free-standing clock element -- like _draw_text_element() above,
     but showing the current time instead of a fixed string. Unlike
@@ -1165,19 +1228,185 @@ def _draw_clock_element(img, el, width, height, fonts):
     movable/removable/resizable/re-colorable from the canvas like
     everything else. Redrawn every frame (never baked into the static
     background) since its content changes every second, same reasoning
-    as a graph's plotted line or the media element's progress bar."""
+    as a graph's plotted line or the media element's progress bar.
+    Dispatches on `el["face"]` -- see the comment above CLOCK_FACES."""
+    face = el.get("face", "digital")
+    if face == "analog":
+        _draw_analog_clock_face(img, el, width, height)
+        return
+    if face == "image":
+        _draw_image_clock_face(img, el, width, height)
+        return
+
     x, y = el["x"] * width, el["y"] * height
     size_px = max(8, int(el.get("font_size", 24 / REFERENCE_HEIGHT) * height))
     font = load_font(size_px, bold=bool(el.get("bold", False)))
     color = _element_color(el, default=(235, 235, 242))
-    fmt = "%H:%M:%S" if el.get("show_seconds", True) else "%H:%M"
-    time_str = datetime.datetime.now().strftime(fmt)
+    time_str = datetime.datetime.now().strftime(_clock_time_format(el))
     opacity = el.get("opacity", 1.0)
-    if opacity >= 1.0:
+    show_date = bool(el.get("show_date"))
+    if opacity >= 1.0 and not show_date:
         ImageDraw.Draw(img).text((x, y), time_str, font=font, fill=color, anchor="mm")
         return
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(layer).text((x, y), time_str, font=font, fill=(*color, 255), anchor="mm")
+    draw = ImageDraw.Draw(layer)
+    draw.text((x, y), time_str, font=font, fill=(*color, 255), anchor="mm")
+    if show_date:
+        date_str = datetime.datetime.now().strftime("%a, %b %d")
+        date_font = load_font(max(7, int(size_px * 0.45)))
+        draw.text((x, y + size_px * 0.75), date_str, font=date_font, fill=(*color, 210), anchor="ma")
+    layer = _apply_tile_opacity(layer, opacity)
+    img.paste(layer, (0, 0), layer)
+
+
+def _draw_analog_clock_face(img, el, width, height):
+    """A procedurally-drawn round clock face -- ticks plus hour/minute/
+    (optionally) second hands, all computed from the actual system
+    time every frame. `el["analog_style"]` (see ANALOG_CLOCK_STYLES)
+    picks the palette/decoration; `el["color"]` tints the hands/ticks
+    (and, for "neon", the glow) rather than being a fixed part of any
+    one style, so the same three styles still work with whatever accent
+    color the rest of the layout uses. Drawn on its own RGBA layer and
+    composited once so `opacity` applies to the whole face uniformly,
+    same approach every other semi-transparent element here uses."""
+    cx, cy = el["x"] * width, el["y"] * height
+    radius = max(10.0, el.get("radius", 0.12) * min(width, height))
+    style = el.get("analog_style", "classic")
+    color = _element_color(el, default=(235, 235, 242))
+    opacity = el.get("opacity", 1.0)
+    now = datetime.datetime.now()
+
+    hour_angle = math.radians((now.hour % 12 + now.minute / 60) * 30 - 90)
+    minute_angle = math.radians((now.minute + now.second / 60) * 6 - 90)
+    second_angle = math.radians(now.second * 6 - 90)
+
+    if style == "neon":
+        face_fill = (12, 14, 20, 235)
+        ring_color = (*color, 255)
+        tick_color = (*color, 190)
+        hour_color = (*color, 255)
+        minute_color = (*color, 255)
+        second_color = (255, 90, 90, 255)
+        ring_width = max(2, round(radius * 0.05))
+    elif style == "minimal":
+        face_fill = None
+        ring_color = (*color, 150)
+        tick_color = None
+        hour_color = (*color, 255)
+        minute_color = (*color, 220)
+        second_color = (*color, 160)
+        ring_width = max(1, round(radius * 0.02))
+    else:  # classic
+        face_fill = (250, 250, 252, 235)
+        ring_color = (40, 40, 46, 255)
+        tick_color = (40, 40, 46, 210)
+        hour_color = (30, 30, 34, 255)
+        minute_color = (30, 30, 34, 255)
+        second_color = (200, 40, 40, 255)
+        ring_width = max(2, round(radius * 0.035))
+
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    bbox = [cx - radius, cy - radius, cx + radius, cy + radius]
+    if face_fill:
+        draw.ellipse(bbox, fill=face_fill)
+    draw.ellipse(bbox, outline=ring_color, width=ring_width)
+
+    if tick_color:
+        for i in range(12):
+            ang = math.radians(i * 30 - 90)
+            major = i % 3 == 0
+            outer_r = radius * 0.92
+            inner_r = radius * (0.78 if major else 0.85)
+            x1, y1 = cx + outer_r * math.cos(ang), cy + outer_r * math.sin(ang)
+            x2, y2 = cx + inner_r * math.cos(ang), cy + inner_r * math.sin(ang)
+            draw.line([(x1, y1), (x2, y2)], fill=tick_color,
+                      width=max(1, round(radius * (0.045 if major else 0.02))))
+
+    def hand(angle, length_frac, width_frac, fill):
+        length = radius * length_frac
+        half_w = radius * width_frac
+        px, py = math.cos(angle), math.sin(angle)
+        nx, ny = -py, px
+        tip = (cx + px * length, cy + py * length)
+        base_l = (cx + nx * half_w, cy + ny * half_w)
+        base_r = (cx - nx * half_w, cy - ny * half_w)
+        tail = (cx - px * length * 0.15, cy - py * length * 0.15)
+        draw.polygon([base_l, tip, base_r, tail], fill=fill)
+
+    hand(hour_angle, 0.5, 0.045, hour_color)
+    hand(minute_angle, 0.72, 0.03, minute_color)
+    if el.get("show_seconds", True):
+        length = radius * 0.8
+        tail_len = radius * 0.18
+        tip = (cx + math.cos(second_angle) * length, cy + math.sin(second_angle) * length)
+        tail = (cx - math.cos(second_angle) * tail_len, cy - math.sin(second_angle) * tail_len)
+        draw.line([tail, tip], fill=second_color, width=max(1, round(radius * 0.02)))
+
+    center_r = max(2, round(radius * 0.05))
+    draw.ellipse([cx - center_r, cy - center_r, cx + center_r, cy + center_r], fill=hour_color)
+
+    layer = _apply_tile_opacity(layer, opacity)
+    img.paste(layer, (0, 0), layer)
+
+
+# One-slot-per-path cache for a custom clock face image, same idea as
+# _default_art_cache above -- avoids re-decoding the same PNG from disk
+# 10 times a second just because the clock face is redrawn every frame
+# (its background PICTURE never changes frame to frame even though the
+# time text on top of it does). Not size-bounded since realistically
+# there's at most a small handful of distinct clock-face elements in
+# any one layout, nowhere near enough distinct paths to matter.
+_clock_face_cache = {}
+
+
+def _load_clock_face_image(path):
+    if path not in _clock_face_cache:
+        try:
+            _clock_face_cache[path] = Image.open(path).convert("RGBA")
+        except Exception:  # noqa: BLE001 -- bad/missing/corrupt file
+            _clock_face_cache[path] = False
+    return _clock_face_cache[path] or None
+
+
+def _draw_image_clock_face(img, el, width, height):
+    """The "image" clock face: a user-supplied picture (`image_path`,
+    uploaded the same way as an image element's -- see image_store.py)
+    as a decorative background/skin, fit into its `width`/`height` box
+    (same _fit_into_box() convention as an image element), with the
+    digital time drawn on top of it at its own center. A dark shadow
+    behind the light-colored time text (and date, if `show_date`) keeps
+    it readable over any picture without needing to know its colors
+    ahead of time; falls back to just the time on a transparent
+    background if the picture can't be loaded, same tolerance every
+    other image-backed element here has for a bad/missing path."""
+    cx, cy = el["x"] * width, el["y"] * height
+    w = max(4, int(el.get("width", 0.22) * width))
+    h = max(4, int(el.get("height", 0.22) * height))
+    opacity = el.get("opacity", 1.0)
+
+    src = _load_clock_face_image(el.get("image_path")) if el.get("image_path") else None
+    if src is not None:
+        fitted = _fit_into_box(src, w, h, el.get("fit", "contain"))
+        fitted = _apply_tile_opacity(fitted, opacity)
+        img.paste(fitted, (int(cx - w / 2), int(cy - h / 2)), fitted)
+
+    size_px = max(8, int(el.get("font_size", 24 / REFERENCE_HEIGHT) * height))
+    font = load_font(size_px, bold=bool(el.get("bold", False)))
+    color = _element_color(el, default=(235, 235, 242))
+    time_str = datetime.datetime.now().strftime(_clock_time_format(el))
+    shadow = max(1, size_px // 16)
+
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    draw.text((cx + shadow, cy + shadow), time_str, font=font, fill=(0, 0, 0, 180), anchor="mm")
+    draw.text((cx, cy), time_str, font=font, fill=(*color, 255), anchor="mm")
+    if el.get("show_date"):
+        date_str = datetime.datetime.now().strftime("%a, %b %d")
+        date_font = load_font(max(7, int(size_px * 0.45)))
+        date_y = cy + size_px * 0.75
+        draw.text((cx + shadow, date_y + shadow), date_str, font=date_font, fill=(0, 0, 0, 160), anchor="ma")
+        draw.text((cx, date_y), date_str, font=date_font, fill=(*color, 230), anchor="ma")
     layer = _apply_tile_opacity(layer, opacity)
     img.paste(layer, (0, 0), layer)
 
@@ -1773,6 +2002,66 @@ def set_middle_content(value):
 
 def get_middle_content():
     return _middle_content
+
+
+# Layout (elements) and background used to only take effect on the next
+# Start/Apply -- build_static_background() bakes gauge rings, graph/
+# image/text boxes and their titles into one static image once, purely
+# for performance (see that function's docstring), so the running
+# render loop kept using the old bake until the whole theme was
+# stopped and restarted. That's a reasonable trade-off for a layout
+# tweak saved for later, but it reads as an outright bug the moment
+# someone drags an element on the live design canvas: the canvas's SVG
+# overlay jumps to the new spot immediately (it's just React state)
+# while the real panel behind it -- and the "It's overlaid on the
+# panel's live frame too" preview, which mirrors the real panel --
+# keeps showing the old bake, i.e. the element visually appears to
+# duplicate itself. Same complaint applies to "Reset to defaults":
+# resetting the canvas's own state works fine, but the *live* panel
+# kept showing whatever (including any since-removed image elements)
+# was baked in at the last Start/Apply until one happened again.
+#
+# Layout/background are now live-appliable the same way
+# DEFAULT_ART_PATH/_not_playing_message/_middle_content already are:
+# controller.py's save_dashboard_elements()/save_dashboard_background()
+# call set_pending_dashboard_layout() below (mirroring
+# set_default_art_path() etc.), and the render loop in run() takes
+# whatever's pending at the top of its next frame and rebakes with it
+# -- a full rebake, not an attempt to patch the existing image, since a
+# bake is cheap relative to a 100ms frame budget and "elements added,
+# removed, resized, restyled" is too open-ended to patch incrementally
+# anyway.
+_pending_layout = None  # {"elements": [...], "background": {...}} or None; either key may be absent
+_pending_layout_lock = threading.Lock()
+
+
+def set_pending_dashboard_layout(elements=None, background=None):
+    """Queues a live layout and/or background update for the running
+    dashboard render loop to pick up on its very next frame. Either
+    argument can be omitted (left as None) to leave that half of the
+    layout alone -- e.g. saving just the background doesn't also force
+    a stale copy of `elements` to be re-applied. A no-op if the
+    dashboard theme isn't actually running right now; the queued value
+    just sits here until the next time it is (or is silently replaced
+    by a newer call before that happens)."""
+    global _pending_layout
+    with _pending_layout_lock:
+        current = dict(_pending_layout or {})
+        if elements is not None:
+            current["elements"] = elements
+        if background is not None:
+            current["background"] = background
+        _pending_layout = current
+
+
+def _take_pending_dashboard_layout():
+    """Atomically reads and clears whatever's queued -- called once per
+    frame by run()'s render loop. Returns None (not {}) when nothing's
+    pending, so the caller can use a plain `if pending:` check."""
+    global _pending_layout
+    with _pending_layout_lock:
+        pending, _pending_layout = _pending_layout, None
+        return pending or None
 
 
 # Accent color per weather.categorize() icon category -- picked to read
@@ -2469,6 +2758,38 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     try:
         while stop_event is None or not stop_event.is_set():
             frame_start = time.time()
+
+            # Pick up a live layout/background edit from the design
+            # canvas, if one's queued -- see set_pending_dashboard_
+            # layout()'s docstring. Checked every frame (not just while
+            # unpaused) so a change made while the panel's paused is
+            # already baked in and ready the moment it resumes, rather
+            # than showing stale content for one extra frame after
+            # waking up.
+            pending_layout = _take_pending_dashboard_layout()
+            if pending_layout:
+                if "elements" in pending_layout:
+                    elements = pending_layout["elements"]
+                if "background" in pending_layout:
+                    background = pending_layout["background"]
+                bg_image, layout = build_static_background(info.width, info.height, fonts, elements, background)
+                # Rebuild the per-graph history dict to match: keep an
+                # existing element's buffer (so its trend line doesn't
+                # visibly reset) unless its history_seconds changed, in
+                # which case its maxlen needs to change too; drop
+                # buffers for graphs that no longer exist, add fresh
+                # ones for graphs that are new.
+                new_history = {}
+                for el in elements:
+                    if el.get("type") != "graph":
+                        continue
+                    maxlen = max(2, int(el.get("history_seconds", 20) / target_period))
+                    old = history.get(el["id"])
+                    new_history[el["id"]] = (
+                        old if old is not None and old.maxlen == maxlen
+                        else deque(old or (), maxlen=maxlen)
+                    )
+                history = new_history
 
             # "Keep the panel updating while Windows is locked" setting
             # (power_state.py, on by default -- matches this app's

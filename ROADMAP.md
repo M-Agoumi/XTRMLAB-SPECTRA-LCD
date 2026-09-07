@@ -1035,6 +1035,83 @@ select their matching canvas element, arrow keys nudge by the expected
 amount and Undo reverts it, and each section's collapsed/open state
 matches its configured default on load.
 
+**Fixed the clock visually duplicating itself when the canvas is
+overlaid on the live panel frame.** The SVG mockup always drew a
+hardcoded sample time on top of the canvas; whenever the canvas is
+overlaid on the live frame, that frame already shows the real,
+ticking clock at the same spot, so the sample text landed right on
+top of it. It now only renders when there's no live frame under it to
+collide with (an invisible hit-rect keeps it clickable either way).
+Verified via Playwright, faking the connected state and frame image
+via `page.route()` since the test backend has no real hardware.
+
+**Live layout/background apply -- the "ghost element" and "Reset to
+defaults keeps my images" bugs, and their shared root cause.**
+`dashboard.elements`/`background` were only baked into the running
+panel's static image at Start/Apply time (a deliberate perf choice,
+see `build_static_background()`'s docstring), so moving an element on
+the live canvas moved the SVG mockup instantly while the real panel
+kept showing the old position until a manual restart -- reading as
+duplication -- and the same staleness meant a canvas Reset didn't
+clear whatever was still baked into the live panel. Both are fixed the
+same way the "Nothing playing" placeholder and Middle content were
+already live: `dashboard_theme.set_pending_dashboard_layout()` queues
+an elements/background edit, and the running render loop rebakes with
+it (a full rebake -- cheap next to a 100ms frame budget) at the top of
+its very next frame, no Stop/Start needed.
+`save_dashboard_elements()`/`save_dashboard_background()` in
+`controller.py` queue it right after persisting to config. Verified
+headlessly (queuing elements-only/background-only/combined updates
+each land the right keys; both controller methods queue correctly)
+and via Playwright (adding an image element then Reset to defaults
+removes it from the element list).
+
+**Clock customization: analog styles, more digital formats, a custom
+image face.** A clock element now picks a `face` -- digital (the only
+option before this, and every existing saved clock is one, unchanged
+in appearance), analog, or image -- the same way a gauge picks a stat.
+Digital gained `hour_format` (24h/12h with AM/PM) and an optional
+`show_date` line. Analog is a procedurally-drawn round face (ticks,
+hour/minute/second hands from the real system time, redrawn every
+frame same as digital always was) in one of three `analog_style`s:
+Classic, Minimal, Neon -- sized by `radius`, the same
+fraction-of-min(width,height) convention as a gauge. Image lets you
+pick any picture (same upload flow as an image element) as a
+decorative clock skin, with the digital time drawn on top of it,
+shadowed for legibility over any picture's own colors. Backend:
+`_draw_clock_element()` dispatches to
+`_draw_analog_clock_face()`/`_draw_image_clock_face()`, with a small
+path-keyed cache for a custom face image so it isn't re-decoded from
+disk 10 times a second. Frontend: the canvas SVG mockup and property
+panel both grew per-face previews/controls; `dashboard_meta()` exposes
+the option lists (`clockFaces`/`clockAnalogStyles`/`clockHourFormats`)
+so the frontend doesn't hardcode them. Every new field falls back via
+`.get()` to reproduce the exact old digital look, so no migration is
+needed for an existing saved clock element. Verified: `render_frame()`
+renders all three faces to a real image with no crash (digital in both
+hour formats with/without a date line, analog in all three styles with
+real ticking hands, image with a fake decorative PNG); Playwright
+confirms switching faces shows the right controls and the canvas
+mockup updates to match.
+
+**"Nothing playing" placeholder folded into the now-playing element's
+property panel.** It used to be a standalone, always-visible
+collapsible section regardless of whether a now-playing element even
+existed on the layout; now it only appears in the property panel when
+a now-playing element is selected, matching every other
+element-specific setting. Purely a frontend display change -- the
+settings are still shared dashboard-level config, just conditionally
+shown instead of always rendered as its own section.
+
+**Two-column page layout.** The single centered `max-width: 720px`
+column wasted most of a wide window's width, most visibly on the
+design canvas. New `.app-columns` CSS grid: a fixed 280-380px left
+column for app-level settings read once and left alone (Panel port,
+Controls, Config, System, Log), and a flexible right column for the
+Preview and whatever the current theme needs (including the canvas,
+free to use whatever width is left). Collapses back to one column
+below ~860px.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files

@@ -150,8 +150,14 @@ function makeElement(type, elements, meta) {
              show_art: true, show_name: true, show_time: true, ...base };
   }
   if (type === "clock") {
+    // Mirrors default_clock_element() in dashboard_theme.py -- "digital"
+    // with these values renders identically to the plain HH:MM:SS clock
+    // this used to be the only option.
     return { id: makeId(elements, "clock"), type: "clock",
-             font_size: 0.05, color: [235, 235, 242], show_seconds: true, ...base };
+             font_size: 0.05, color: [235, 235, 242], show_seconds: true,
+             face: "digital", hour_format: "24h", show_date: false,
+             analog_style: "classic", radius: 0.12,
+             image_path: "", width: 0.22, height: 0.22, fit: "contain", ...base };
   }
   return null;
 }
@@ -393,7 +399,19 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         if (axis !== "width") patch.height = clamp((Math.abs(dyPx) * 2) / REF_H, 0.04, 0.9);
         return prev.map((it) => (it.id === drag.id ? { ...it, ...patch } : it));
       }
-      if (el.type === "text" || el.type === "clock") {
+      // A clock's resize handle means something different per face --
+      // width/height for an image face (it's a picture box, same as an
+      // image element), radius for an analog face (it's a circle, same
+      // as a gauge), font_size for a digital face (it's just text,
+      // same as a text element).
+      if (el.type === "clock" && el.face === "image") {
+        const axis = drag.axis || "both";
+        const patch = {};
+        if (axis !== "height") patch.width = clamp((Math.abs(dxPx) * 2) / REF_W, 0.04, 0.9);
+        if (axis !== "width") patch.height = clamp((Math.abs(dyPx) * 2) / REF_H, 0.04, 0.9);
+        return prev.map((it) => (it.id === drag.id ? { ...it, ...patch } : it));
+      }
+      if (el.type === "text" || (el.type === "clock" && (!el.face || el.face === "digital"))) {
         const font_size = clamp((Math.abs(dyPx) * 2) / REF_H, 0.02, 0.25);
         return prev.map((it) => (it.id === drag.id ? { ...it, font_size } : it));
       }
@@ -460,7 +478,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     api.saveDashboardElements(elements).then(
       () => {
         savedElementsRef.current = elements;
-        setStatus("Layout saved -- takes effect on the next Start/Apply.");
+        setStatus("Layout saved -- applies live, even while the dashboard is already running.");
       },
       (e) => setError(e.message)
     );
@@ -503,7 +521,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     api.saveDashboardBackground(bgDraft).then(
       (bg) => {
         setBgDraft(bg);
-        setBgStatus("Background saved -- takes effect on the next Start/Apply.");
+        setBgStatus("Background saved -- applies live, even while the dashboard is already running.");
       },
       (e) => setBgError(e.message)
     );
@@ -626,7 +644,8 @@ export default function DashboardCanvas({ frameUrl, connected }) {
       {dirty && (
         <p className="hint">
           * You have unsaved changes -- this preview is live, but Save layout is what keeps
-          them (and Start/Apply is what pushes them to the physical panel).
+          them and pushes them to the physical panel (instantly, if the dashboard's already
+          running -- no need to Stop/Start).
         </p>
       )}
 
@@ -796,28 +815,147 @@ export default function DashboardCanvas({ frameUrl, connected }) {
             if (el.type === "clock") {
               const x = el.x * REF_W;
               const y = el.y * REF_H;
-              const fontSize = Math.max(8, (el.font_size ?? 0.05) * REF_H);
               const color = el.color ? `rgb(${el.color[0]}, ${el.color[1]}, ${el.color[2]})` : "#fff";
-              // A representative sample, not the actual current time --
-              // this canvas is a layout editor, not a second clock to
-              // keep in sync; what matters here is the size/position,
-              // same as how a graph/gauge element shows placeholder
-              // values rather than live stats. BUT: when this canvas is
-              // overlaid on the real live frame (connected && frameUrl,
-              // see canvas-frame below), that live frame already shows
-              // the panel's actual, real, ticking clock at this exact
-              // spot -- drawing this sample text on top of it reads as
-              // two different clocks fighting each other (e.g.
-              // "12:34:56" printed right over "17:49:16"), not as an
-              // editor overlay. So the sample text only renders when
-              // there's no live frame under it to collide with; an
-              // invisible hit-rect the same size keeps it clickable/
-              // draggable either way, and the selection outline/handle
-              // below are unaffected -- you can still always tell it's
-              // there and where it is once it's selected.
-              const sample = el.show_seconds ?? true ? "12:34:56" : "12:34";
-              const halfW = Math.max(24, (sample.length * fontSize) / 3.4);
+              const face = el.face || "digital";
+              // When this canvas is overlaid on the real live frame
+              // (connected && frameUrl, see canvas-frame below), that
+              // live frame already shows the panel's actual, real,
+              // ticking clock at this exact spot -- drawing a mockup on
+              // top of it reads as two different clocks fighting each
+              // other, not as an editor overlay. So every face below
+              // only draws its visible mockup when there's no live
+              // frame under it to collide with; an invisible hit-shape
+              // the same size/position keeps it clickable/draggable
+              // either way, and the selection outline/handle are
+              // unaffected -- you can still always tell it's there and
+              // where it is once it's selected. Same reasoning/pattern
+              // for all three faces, just a different hit-shape each.
               const overLiveFrame = connected && !!frameUrl;
+
+              if (face === "analog") {
+                const r = Math.max(10, (el.radius ?? 0.12) * Math.min(REF_W, REF_H));
+                const style = el.analog_style || "classic";
+                const ringColor = style === "classic" ? "#2a2a2e" : color;
+                const faceFill = style === "neon" ? "#0c0e14" : style === "minimal" ? null : "#fafafc";
+                const handColor = style === "classic" ? "#1e1e22" : color;
+                // A static "ten past ten" hand position -- purely
+                // decorative, not the actual time (same reasoning as
+                // the digital face's fixed "12:34:56" sample below):
+                // this is a layout editor, not a second ticking clock.
+                const hourAng = (-60 * Math.PI) / 180;
+                const minAng = (60 * Math.PI) / 180;
+                const hx = x + Math.cos(hourAng) * r * 0.5;
+                const hy = y + Math.sin(hourAng) * r * 0.5;
+                const mx = x + Math.cos(minAng) * r * 0.72;
+                const my = y + Math.sin(minAng) * r * 0.72;
+                return (
+                  <g key={el.id}>
+                    {isSelected && (
+                      <rect x={x - r - 4} y={y - r - 4} width={(r + 4) * 2} height={(r + 4) * 2}
+                            fill="none" stroke="#ffd85e" strokeDasharray="4 3" />
+                    )}
+                    {overLiveFrame ? (
+                      <circle cx={x} cy={y} r={r} fill="transparent"
+                              onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }}>
+                        <title>Clock (analog) -- showing the real live time from the panel behind it</title>
+                      </circle>
+                    ) : (
+                      <g onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }}>
+                        {faceFill && <circle cx={x} cy={y} r={r} fill={faceFill} opacity={el.opacity ?? 1} />}
+                        <circle cx={x} cy={y} r={r} fill="none" stroke={ringColor}
+                                strokeWidth={Math.max(1, r * 0.05)} opacity={el.opacity ?? 1} />
+                        <line x1={x} y1={y} x2={hx} y2={hy} stroke={handColor}
+                              strokeWidth={Math.max(2, r * 0.07)} strokeLinecap="round" opacity={el.opacity ?? 1} />
+                        <line x1={x} y1={y} x2={mx} y2={my} stroke={handColor}
+                              strokeWidth={Math.max(1.5, r * 0.045)} strokeLinecap="round" opacity={el.opacity ?? 1} />
+                      </g>
+                    )}
+                    {isSelected && (
+                      <rect x={x + r * 0.707 - 7} y={y + r * 0.707 - 7} width={14} height={14}
+                            fill="#ffd85e" stroke="#fff" strokeWidth={1}
+                            onPointerDown={onPointerDownHandle(el)} style={{ cursor: "nwse-resize" }} />
+                    )}
+                  </g>
+                );
+              }
+
+              if (face === "image") {
+                const w = (el.width ?? 0.22) * REF_W;
+                const h = (el.height ?? 0.22) * REF_H;
+                const x0 = x - w / 2;
+                const y0 = y - h / 2;
+                const imageUrl = el.image_path ? api.dashboardImageUrl(el.image_path) : null;
+                const clipId = `clip_${el.id}`;
+                const sample = el.show_seconds ?? true ? "12:34:56" : "12:34";
+                return (
+                  <g key={el.id}>
+                    {imageUrl && (
+                      <clipPath id={clipId}><rect x={x0} y={y0} width={w} height={h} rx={4} /></clipPath>
+                    )}
+                    {overLiveFrame ? (
+                      <rect x={x0} y={y0} width={w} height={h} fill="transparent"
+                            onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }}>
+                        <title>Clock (custom image) -- showing the real live time from the panel behind it</title>
+                      </rect>
+                    ) : (
+                      <>
+                        {imageUrl ? (
+                          <image href={imageUrl} x={x0} y={y0} width={w} height={h}
+                                 preserveAspectRatio="xMidYMid meet" clipPath={`url(#${clipId})`}
+                                 opacity={el.opacity ?? 1}
+                                 onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                        ) : (
+                          <rect x={x0} y={y0} width={w} height={h}
+                                fill="rgb(150,170,200)" fillOpacity={0.1 * (el.opacity ?? 1)}
+                                stroke="rgb(150,170,200)" strokeOpacity={el.opacity ?? 1}
+                                strokeWidth={isSelected ? 3 : 1.5}
+                                strokeDasharray={isSelected ? "6 3" : undefined}
+                                onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                        )}
+                        {!imageUrl && (
+                          <text x={x} y={y0 + 14} textAnchor="middle" fill="#fff" fontSize={11}
+                                style={{ pointerEvents: "none" }}>
+                            PICK A CLOCK FACE IMAGE
+                          </text>
+                        )}
+                        <text x={x} y={imageUrl ? y : y + h * 0.22} textAnchor="middle" dominantBaseline="middle"
+                              fontSize={Math.max(10, h * 0.16)} fill={color} style={{ pointerEvents: "none" }}>
+                          {sample}
+                        </text>
+                      </>
+                    )}
+                    {imageUrl && (
+                      <rect x={x0} y={y0} width={w} height={h} rx={4} fill="none"
+                            stroke={isSelected ? "#ffd85e" : "rgb(150,170,200)"}
+                            strokeOpacity={isSelected ? 1 : 0.6}
+                            strokeWidth={isSelected ? 3 : 1.5}
+                            strokeDasharray={isSelected ? "6 3" : undefined}
+                            style={{ pointerEvents: "none" }} />
+                    )}
+                    {isSelected && (
+                      <>
+                        <rect x={x0 + w - 5} y={y0 + h / 2 - 7} width={10} height={14} rx={2}
+                              fill="rgb(150,170,200)" stroke="#fff" strokeWidth={1}
+                              onPointerDown={onPointerDownHandle(el, "width")} style={{ cursor: "ew-resize" }} />
+                        <rect x={x0 + w / 2 - 7} y={y0 + h - 5} width={14} height={10} rx={2}
+                              fill="rgb(150,170,200)" stroke="#fff" strokeWidth={1}
+                              onPointerDown={onPointerDownHandle(el, "height")} style={{ cursor: "ns-resize" }} />
+                        <rect x={x0 + w - 7} y={y0 + h - 7} width={14} height={14}
+                              fill="rgb(150,170,200)" stroke="#fff" strokeWidth={1}
+                              onPointerDown={onPointerDownHandle(el, "both")} style={{ cursor: "nwse-resize" }} />
+                      </>
+                    )}
+                  </g>
+                );
+              }
+
+              // digital (default / back-compat)
+              const fontSize = Math.max(8, (el.font_size ?? 0.05) * REF_H);
+              const twelveHour = el.hour_format === "12h";
+              const sample = (el.show_seconds ?? true)
+                ? (twelveHour ? "12:34:56 PM" : "12:34:56")
+                : (twelveHour ? "12:34 PM" : "12:34");
+              const halfW = Math.max(24, (sample.length * fontSize) / 3.4);
               return (
                 <g key={el.id}>
                   {isSelected && (
@@ -1050,34 +1188,184 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                   -- e.g. just the cover art, or just the time.
                 </span>
               </div>
+
+              {npDraft && (
+                <div className="canvas-props">
+                  <p className="hint">
+                    "Nothing playing" placeholder -- shown in place of the album art/track
+                    title whenever nothing's actually playing. Shared by every now-playing
+                    element on the canvas, not just this one.
+                  </p>
+                  <div className="row">
+                    <label className="grow">
+                      Placeholder image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => uploadImage("nowPlaying", e.target.files[0],
+                          (path) => updateNpDraft({ default_art_path: path }), setNpError)}
+                      />
+                    </label>
+                    {npDraft.default_art_path && (
+                      <>
+                        <img className="file-thumb" src={api.dashboardImageUrl(npDraft.default_art_path)} alt="" />
+                        <span className="hint">{basename(npDraft.default_art_path)}</span>
+                        <button type="button" onClick={() => updateNpDraft({ default_art_path: "" })}>Clear</button>
+                      </>
+                    )}
+                    {uploadingId === "nowPlaying" && <span className="hint">Uploading…</span>}
+                  </div>
+                  <div className="row">
+                    <label className="grow">
+                      Message
+                      <input
+                        type="text"
+                        value={npDraft.not_playing_message || ""}
+                        onChange={(e) => updateNpDraft({ not_playing_message: e.target.value })}
+                        placeholder={npDraft.default_message}
+                      />
+                    </label>
+                  </div>
+                  <p className="hint">
+                    Leave either blank to fall back to the default. Both apply live, even
+                    while the dashboard is already running -- no need to Stop/Start.
+                  </p>
+                  <div className="row">
+                    <button onClick={saveNowPlaying}>Save placeholder</button>
+                  </div>
+                  {npStatus && <p className="hint settings-saved">{npStatus}</p>}
+                  {npError && <p className="error">{npError}</p>}
+                </div>
+              )}
             </>
           )}
 
           {selected.type === "clock" && (
-            <div className="row">
-              <label className="row-inline">
-                <input type="checkbox" checked={selected.show_seconds ?? true}
-                       onChange={(e) => updateSelected({ show_seconds: e.target.checked })} />
-                Show seconds
-              </label>
-              <label>
-                Color
-                <input type="color" value={rgbToHex(selected.color || [235, 235, 242])}
-                       onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
-              </label>
-              <label>
-                Font size %
-                <input type="number" min={2} max={25} style={{ width: "5em" }}
-                       value={Math.round((selected.font_size ?? 0.05) * 100)}
-                       onChange={(e) => updateSelected({ font_size: clamp(Number(e.target.value) / 100, 0.02, 0.25) })} />
-              </label>
-              <label>
-                Opacity
-                <input type="range" min={20} max={100}
-                       value={Math.round((selected.opacity ?? 1) * 100)}
-                       onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
-              </label>
-            </div>
+            <>
+              <div className="row">
+                <label>
+                  Face
+                  <select value={selected.face || "digital"} onChange={(e) => updateSelected({ face: e.target.value })}>
+                    {Object.entries(meta.clockFaces || { digital: "Digital", analog: "Analog", image: "Custom image" })
+                      .map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                  </select>
+                </label>
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_seconds ?? true}
+                         onChange={(e) => updateSelected({ show_seconds: e.target.checked })} />
+                  {selected.face === "analog" ? "Second hand" : "Show seconds"}
+                </label>
+                <label>
+                  Opacity
+                  <input type="range" min={20} max={100}
+                         value={Math.round((selected.opacity ?? 1) * 100)}
+                         onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
+                </label>
+              </div>
+
+              {(!selected.face || selected.face === "digital") && (
+                <div className="row">
+                  <label>
+                    Format
+                    <select value={selected.hour_format || "24h"} onChange={(e) => updateSelected({ hour_format: e.target.value })}>
+                      {Object.entries(meta.clockHourFormats || { "24h": "24-hour", "12h": "12-hour (AM/PM)" })
+                        .map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label className="row-inline">
+                    <input type="checkbox" checked={!!selected.show_date}
+                           onChange={(e) => updateSelected({ show_date: e.target.checked })} />
+                    Show date
+                  </label>
+                  <label>
+                    Color
+                    <input type="color" value={rgbToHex(selected.color || [235, 235, 242])}
+                           onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
+                  </label>
+                  <label>
+                    Font size %
+                    <input type="number" min={2} max={25} style={{ width: "5em" }}
+                           value={Math.round((selected.font_size ?? 0.05) * 100)}
+                           onChange={(e) => updateSelected({ font_size: clamp(Number(e.target.value) / 100, 0.02, 0.25) })} />
+                  </label>
+                </div>
+              )}
+
+              {selected.face === "analog" && (
+                <div className="row">
+                  <label>
+                    Style
+                    <select value={selected.analog_style || "classic"} onChange={(e) => updateSelected({ analog_style: e.target.value })}>
+                      {Object.entries(meta.clockAnalogStyles || { classic: "Classic", minimal: "Minimal", neon: "Neon" })
+                        .map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Color
+                    <input type="color" value={rgbToHex(selected.color || [235, 235, 242])}
+                           onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
+                  </label>
+                  <label>
+                    Radius %
+                    <input type="number" min={2} max={45} style={{ width: "5em" }}
+                           value={Math.round((selected.radius ?? 0.12) * 100)}
+                           onChange={(e) => updateSelected({ radius: clamp(Number(e.target.value) / 100, MIN_RADIUS, MAX_RADIUS) })} />
+                  </label>
+                </div>
+              )}
+
+              {selected.face === "image" && (
+                <>
+                  <div className="row">
+                    <label className="grow">
+                      Clock face image
+                      <input type="file" accept="image/*"
+                             onChange={(e) => uploadImage(selected.id, e.target.files[0],
+                               (path) => updateSelected({ image_path: path }), setError)} />
+                    </label>
+                    <label>
+                      Fit
+                      <select value={selected.fit || "contain"} onChange={(e) => updateSelected({ fit: e.target.value })}>
+                        <option value="contain">Contain (show the whole image)</option>
+                        <option value="cover">Cover (fill the box, may crop)</option>
+                        <option value="stretch">Stretch (fill exactly, may distort)</option>
+                      </select>
+                    </label>
+                    {selected.image_path && (
+                      <>
+                        <img className="file-thumb" src={api.dashboardImageUrl(selected.image_path)} alt="" />
+                        <span className="hint">{basename(selected.image_path)}</span>
+                      </>
+                    )}
+                    {uploadingId === selected.id && <span className="hint">Uploading…</span>}
+                  </div>
+                  <div className="row">
+                    <label>
+                      Time color
+                      <input type="color" value={rgbToHex(selected.color || [235, 235, 242])}
+                             onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
+                    </label>
+                    <label>
+                      Time font size %
+                      <input type="number" min={2} max={25} style={{ width: "5em" }}
+                             value={Math.round((selected.font_size ?? 0.05) * 100)}
+                             onChange={(e) => updateSelected({ font_size: clamp(Number(e.target.value) / 100, 0.02, 0.25) })} />
+                    </label>
+                    <label className="row-inline">
+                      <input type="checkbox" checked={!!selected.show_date}
+                             onChange={(e) => updateSelected({ show_date: e.target.checked })} />
+                      Show date
+                    </label>
+                  </div>
+                  <p className="hint">
+                    Pick any picture as the clock's background/skin -- a real clock face
+                    graphic, a photo, a logo, anything. The time (and date, if turned on) is
+                    drawn on top of it, with a shadow behind the text so it stays legible over
+                    any picture.
+                  </p>
+                </>
+              )}
+            </>
           )}
 
           {(!selected.type || selected.type === "gauge") && (
@@ -1169,18 +1457,19 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                        value={Math.round(selected.y * 100)}
                        onChange={(e) => updateSelected({ y: clamp(Number(e.target.value) / 100, 0, 1) })} />
               </label>
-              {(selected.type === "graph" || selected.type === "image" || selected.type === "media") && (
+              {(selected.type === "graph" || selected.type === "image" || selected.type === "media"
+                || (selected.type === "clock" && selected.face === "image")) && (
                 <>
                   <label>
                     Width %
                     <input type="number" min={4} max={90} style={{ width: "5em" }}
-                           value={Math.round((selected.width ?? (selected.type === "media" ? 0.32 : 0.2)) * 100)}
+                           value={Math.round((selected.width ?? (selected.type === "media" ? 0.32 : selected.type === "clock" ? 0.22 : 0.2)) * 100)}
                            onChange={(e) => updateSelected({ width: clamp(Number(e.target.value) / 100, 0.04, 0.9) })} />
                   </label>
                   <label>
                     Height %
                     <input type="number" min={4} max={90} style={{ width: "5em" }}
-                           value={Math.round((selected.height ?? (selected.type === "media" ? 0.52 : 0.14)) * 100)}
+                           value={Math.round((selected.height ?? (selected.type === "media" ? 0.52 : selected.type === "clock" ? 0.22 : 0.14)) * 100)}
                            onChange={(e) => updateSelected({ height: clamp(Number(e.target.value) / 100, 0.04, 0.9) })} />
                   </label>
                 </>
@@ -1308,55 +1597,6 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           </div>
           {mcStatus && <p className="hint settings-saved">{mcStatus}</p>}
           {mcError && <p className="error">{mcError}</p>}
-        </Collapsible>
-      )}
-
-      {npDraft && (
-        <Collapsible id="dashboard-now-playing-placeholder" title='"Nothing playing" placeholder' defaultOpen={false} as="div" className="canvas-props">
-          <p className="hint">
-            Used by any now-playing element on the canvas (see "+ Add now-playing") whenever
-            nothing's actually playing -- not tied to Middle content above any more.
-          </p>
-          <div className="row">
-            <label className="grow">
-              Placeholder image
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => uploadImage("nowPlaying", e.target.files[0],
-                  (path) => updateNpDraft({ default_art_path: path }), setNpError)}
-              />
-            </label>
-            {npDraft.default_art_path && (
-              <>
-                <img className="file-thumb" src={api.dashboardImageUrl(npDraft.default_art_path)} alt="" />
-                <span className="hint">{basename(npDraft.default_art_path)}</span>
-                <button type="button" onClick={() => updateNpDraft({ default_art_path: "" })}>Clear</button>
-              </>
-            )}
-            {uploadingId === "nowPlaying" && <span className="hint">Uploading…</span>}
-          </div>
-          <div className="row">
-            <label className="grow">
-              Message
-              <input
-                type="text"
-                value={npDraft.not_playing_message || ""}
-                onChange={(e) => updateNpDraft({ not_playing_message: e.target.value })}
-                placeholder={npDraft.default_message}
-              />
-            </label>
-          </div>
-          <p className="hint">
-            Shown in place of the album art/track title whenever nothing is playing.
-            Leave either blank to fall back to the default. Both apply live, even while
-            the dashboard is already running -- no need to Stop/Start or Save layout.
-          </p>
-          <div className="row">
-            <button onClick={saveNowPlaying}>Save</button>
-          </div>
-          {npStatus && <p className="hint settings-saved">{npStatus}</p>}
-          {npError && <p className="error">{npError}</p>}
         </Collapsible>
       )}
 
