@@ -434,6 +434,70 @@ dashboard designer) this is laying groundwork for.
   the disabled state and its message before any port is selected,
   picking "Auto-detect" immediately persisting to config and
   unlocking Controls, and the selection surviving a page reload.
+- **Fixed an image element not showing the whole picture, and made
+  resizing it on one axis alone actually behave like a resize.** Every
+  image element (and the background/now-playing images too, though
+  those aren't user-resizable boxes) used to be cover-fit -- cropped to
+  exactly fill its box on both axes -- which meant (a) a freshly-added
+  element's small fixed default box cropped almost any real picture
+  down to a sliver of itself before anyone touched it, and (b) dragging
+  just the width handle didn't "scale" the image at all from the user's
+  perspective -- it only slid the crop window over a picture that
+  already filled the box, which reads as the image being overwritten
+  rather than resized. New `dashboard_theme._fit_into_box()` supports
+  three modes via a new `fit` field on image elements -- `"contain"`
+  (new default: the whole image always visible, letterboxed, never
+  cropped), `"cover"` (the old crop-to-fill behavior, still available),
+  and `"stretch"` (fills the box exactly, ignoring aspect ratio) -- with
+  a matching selector in the element's property panel. And a freshly
+  picked image now sizes its own box to match: `DashboardCanvas.jsx`
+  reads the picked file's actual pixel dimensions client-side
+  (`readImageDimensions()`, no upload round-trip needed for just this)
+  and sets width/height to fit that aspect ratio at a sensible on-canvas
+  size, instead of leaving a brand-new element's small default square in
+  place regardless of what was picked.
+- **Now-playing elements can show just the pieces you want.** New
+  `show_art`/`show_name`/`show_time` fields (each on by default, a
+  checkbox per piece in the element's property panel) let a media
+  element show any combination of cover art, track/artist text, and the
+  progress bar/timestamps -- e.g. cover art alone with no text, or a
+  compact time-only readout with no art. Whichever pieces are on stack
+  top-to-bottom starting from the top of the box, so turning one off
+  doesn't leave a gap.
+- **The clock is a movable/addable element now, not a hardcoded fixed
+  drawing.** It used to be the one thing `render_frame()` always drew
+  unconditionally at one fixed spot, with no element, no property panel,
+  and no way to move, restyle, remove, or add a second one. New
+  `"clock"` element type (`+ Add clock` in the canvas toolbar) with its
+  own x/y/font size/color/opacity and a "Show seconds" toggle -- added,
+  dragged, resized (drag its handle, or the Center buttons), and deleted
+  like any other element. `DEFAULT_ELEMENTS` now includes one at the
+  exact position the fixed clock always occupied, so "Reset to defaults"
+  gives back the same look as an editable element. Backward compatible
+  with every layout saved before this: `render_frame()` only falls back
+  to drawing the old fixed-position clock when the saved `elements` list
+  has no `"clock"`-type entry at all, so nothing shifts or disappears for
+  an existing config until it's actually edited to add one (at which
+  point the fallback stops -- no double clock).
+
+  Verified headlessly: a wide (4:1) test image inside a near-square box
+  renders fully visible with letterboxing (not cropped) under the new
+  `"contain"` default; a media element with only `show_art` set draws
+  art with no text/progress bar, and one with only `show_time` draws the
+  progress bar/timestamps with no art or text (this also caught and
+  fixed a real bug -- a non-integer coordinate feeding into the glow-draw
+  helper whenever `show_art` was off, crashing that render path
+  entirely); `DEFAULT_ELEMENTS` includes exactly one clock element and
+  renders identically to the pre-existing fixed clock at the reference
+  resolution; and an `elements` list with the clock entry stripped back
+  out (simulating a pre-upgrade saved layout) still renders the fallback
+  clock, pixel-identical to before. Also verified via a Playwright
+  session against the real built frontend + live backend: adding a
+  clock element and seeing its property panel, uploading a wide (4:1)
+  test image to a fresh image element and confirming its width/height
+  fields land on the matching aspect ratio automatically, and the
+  media element's three show/hide checkboxes and the image element's
+  Fit selector both rendering as expected.
 
 ## [1.0.0] — 2026-08-29
 

@@ -951,6 +951,33 @@ chosen, rather than silently defaulting. Verified via Playwright: the
 disabled state before any pick, picking "Auto-detect" persisting and
 unlocking Controls immediately, and the selection surviving reload.
 
+**Fixes: image elements now show the whole picture and size themselves
+from it; now-playing elements can hide any of art/name/time; the clock
+is a real element.** Image elements were cover-fit (crop to fill),
+which cropped a freshly-added element's small default box down to a
+sliver of most real pictures, and made a width-only resize look like
+the picture was being overwritten rather than scaled. New `fit` field
+("contain" default -- whole image visible, letterboxed; "cover"; or
+"stretch") on image elements, plus a picked file's own aspect ratio
+now sets the new element's box client-side (no upload round-trip)
+instead of leaving the generic default square. Media elements gained
+`show_art`/`show_name`/`show_time` toggles (each on by default) so any
+combination can be shown. And the clock -- previously the one thing
+`render_frame()` always drew unconditionally at a fixed spot -- is now
+a `"clock"` element type (x/y/font size/color/opacity/show-seconds),
+addable/movable/deletable like anything else; `DEFAULT_ELEMENTS`
+includes one at the exact old fixed position, and `render_frame()`
+only falls back to the old hardcoded draw when a saved `elements` list
+has no clock entry at all, so nothing changes for a pre-upgrade config
+until it's actually edited. Verified headlessly (a 4:1 test image
+fully visible/letterboxed under contain-fit; art-only and time-only
+media renders, which also caught and fixed a real crash -- a
+non-integer coordinate reaching the glow-draw helper whenever
+`show_art` was off; `DEFAULT_ELEMENTS` rendering identically to the
+old fixed clock, and a clock-stripped `elements` list still rendering
+the fallback pixel-identical to before) and via Playwright against the
+real built frontend + live backend.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files
