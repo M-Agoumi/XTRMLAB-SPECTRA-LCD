@@ -65,7 +65,7 @@ def dashboard_kwargs(cfg, port, brightness):
     web_port = _parse_int(d.get("web_port"), default=8765)
     art_path = d.get("default_art_path") or None
     not_playing_message = d.get("not_playing_message") or None
-    middle_content = d.get("middle_content") or "spotify"
+    middle_content = d.get("middle_content") or "none"
     weather_location = d.get("weather_location") or None
     weather_units = d.get("weather_units") or "celsius"
     elements = resolve_dashboard_elements(cfg)

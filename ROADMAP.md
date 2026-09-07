@@ -978,6 +978,39 @@ old fixed clock, and a clock-stripped `elements` list still rendering
 the fallback pixel-identical to before) and via Playwright against the
 real built frontend + live backend.
 
+**Cleanup: removed the static clock/Spotify fallback paths and replaced
+them with a real one-time migration.** The clock's "no element -> draw
+the old hardcoded clock" fallback in `render_frame()` and
+`_draw_spotify_middle()`/the `"spotify"` `middle_content` option (the
+original fixed, un-movable, always-on now-playing display, predating
+and silently overlapping the `"media"` element it's the actual
+replacement for) are both gone. `slots_to_elements()` now appends a
+default clock and media element directly (via new
+`dashboard_theme.default_clock_element()`/`default_media_element()`),
+so every layout derived fresh from `slots` -- `DEFAULT_ELEMENTS` and
+`theme_kwargs.resolve_dashboard_elements()`'s fallback alike (the
+latter didn't even get a clock before this) -- has both with nothing
+to migrate. The one case that can't just derive its way out of this --
+a config with a concrete saved `elements` list from before either
+type existed -- gets a new `config_store.migrate_dashboard_elements()`,
+called once from both `AppController.__init__` and `App.__init__`
+right after `load_config()`. It adds a clock if missing, and a media
+element (+ resets `middle_content` to `"none"`) if there's no media
+element and `middle_content` was `"spotify"`/unset -- leaving alone
+anyone who'd already deliberately chosen weather/none. Flagged via
+`dashboard._migrated_elements_v1` so it's truly one-time: deleting the
+clock/now-playing element afterward sticks. Verified headlessly (six
+migration scenarios covering no-config/slots-only/old-saved-list with
+each middle_content value/already-migrated/re-migration, plus a full
+render pass over the new default layout with no crash) and via
+Playwright against the real built frontend + a live backend seeded
+with a pre-migration config: the backend migrated and persisted it on
+startup, the canvas showed both widgets as separately selectable/
+movable elements, the Middle content dropdown offered only Weather/
+None, and the "Nothing playing" placeholder section rendered
+unconditionally instead of being gated behind the removed `"spotify"`
+option.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files

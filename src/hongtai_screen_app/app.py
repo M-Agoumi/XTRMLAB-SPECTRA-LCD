@@ -66,7 +66,7 @@ from .themes import demo_clock
 # its own module, so the same logic can eventually be driven by a
 # non-Tkinter UI too. This file is now just the Tkinter layer on top.
 from .paths import ICON_PATH, _write_startup_log
-from .config_store import AUTO_DETECT, THEME_TAB_ORDER, load_config, save_config
+from .config_store import AUTO_DETECT, THEME_TAB_ORDER, load_config, save_config, migrate_dashboard_elements
 from .startup_registration import is_startup_enabled, enable_startup, disable_startup
 from .desktop_shortcut import create_desktop_shortcut
 from .single_instance import _ensure_single_instance
@@ -117,6 +117,8 @@ class App(tk.Tk):
             print(f"(couldn't set the window icon from {ICON_PATH}: {e})")
 
         self.cfg = load_config()
+        if migrate_dashboard_elements(self.cfg):
+            save_config(self.cfg)
         self.log_queue = queue.Queue()
         self.worker = None
         self.stop_event = None
@@ -360,15 +362,16 @@ class App(tk.Tk):
         middle_labels = list(dashboard_theme.MIDDLE_CONTENT_OPTIONS.values())
         self._middle_label_to_key = {v: k for k, v in dashboard_theme.MIDDLE_CONTENT_OPTIONS.items()}
         self.dash_middle_content = tk.StringVar(
-            value=dashboard_theme.MIDDLE_CONTENT_OPTIONS.get(d.get("middle_content", "spotify"), middle_labels[0]))
+            value=dashboard_theme.MIDDLE_CONTENT_OPTIONS.get(d.get("middle_content", "none"), middle_labels[0]))
         self.dash_middle_content.trace_add("write", self._on_dash_middle_change)
         ttk.Label(f, text="Show:").grid(row=row, column=0, sticky="w", pady=(6, 0))
         ttk.Combobox(f, textvariable=self.dash_middle_content, values=middle_labels,
                      state="readonly", width=26).grid(row=row, column=1, columnspan=2, sticky="w", pady=(6, 0))
         row += 1
 
-        ttk.Label(f, text="What goes between the two gauge columns -- Spotify's now-playing\n"
-                          "display (below), a weather readout, or nothing at all.",
+        ttk.Label(f, text="What goes between the two gauge columns -- a weather readout, or\n"
+                          "nothing at all. The now-playing display isn't tied to this any more --\n"
+                          "add it (and move it wherever you like) from the web design canvas.",
                   foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(0, 4))
         row += 1
 
@@ -769,7 +772,7 @@ class App(tk.Tk):
         # Same "applies live, no restart" reasoning as _on_dash_art_
         # change() above -- render_frame() calls get_middle_content()
         # fresh every frame.
-        key = self._middle_label_to_key.get(self.dash_middle_content.get(), "spotify")
+        key = self._middle_label_to_key.get(self.dash_middle_content.get(), "none")
         dashboard_theme.set_middle_content(key)
 
     def _on_dash_weather_change(self, *_args):
@@ -935,7 +938,7 @@ class App(tk.Tk):
         web_port = self._parse_int(self.dash_web_port.get(), "Web mirror port", default=8765)
         art_path = self.dash_art_path.get().strip() or None
         not_playing_message = self.dash_not_playing_message.get().strip() or None
-        middle_content = self._middle_label_to_key.get(self.dash_middle_content.get(), "spotify")
+        middle_content = self._middle_label_to_key.get(self.dash_middle_content.get(), "none")
         weather_location = self.dash_weather_location.get().strip() or None
         weather_units = self._unit_label_to_key.get(self.dash_weather_units.get(), "celsius")
         slots = {slot_key: self._stat_label_to_key.get(var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
@@ -1023,7 +1026,7 @@ class App(tk.Tk):
             "web_port": self.dash_web_port.get(),
             "default_art_path": self.dash_art_path.get().strip() or None,
             "not_playing_message": self.dash_not_playing_message.get().strip() or None,
-            "middle_content": self._middle_label_to_key.get(self.dash_middle_content.get(), "spotify"),
+            "middle_content": self._middle_label_to_key.get(self.dash_middle_content.get(), "none"),
             "weather_location": self.dash_weather_location.get().strip() or None,
             "weather_units": self._unit_label_to_key.get(self.dash_weather_units.get(), "celsius"),
             "slots": {slot_key: self._stat_label_to_key.get(

@@ -498,6 +498,73 @@ dashboard designer) this is laying groundwork for.
   fields land on the matching aspect ratio automatically, and the
   media element's three show/hide checkboxes and the image element's
   Fit selector both rendering as expected.
+- **Removed the two static/legacy dashboard rendering paths the clock
+  and now-playing elements were only ever a backward-compatible
+  fallback for, and replaced the fallback itself with a real one-time
+  migration.** `render_frame()` no longer falls back to drawing a
+  hardcoded clock at a fixed spot when a saved `elements` list has no
+  `"clock"`-type entry -- that fallback existed only to bridge a saved
+  layout from before the clock became an element, and it's now
+  guaranteed unnecessary (see the migration below). Removed
+  `_draw_spotify_middle()` entirely, along with the `"spotify"` option
+  from `MIDDLE_CONTENT_OPTIONS` -- the fixed, always-on, un-movable
+  Spotify display it drew in the middle column predates (and, for
+  anyone who never touched the design canvas, silently duplicated) the
+  now-playing widget's own life as a proper `"media"` element; that
+  column now only ever shows Weather or nothing. `middle_content`'s
+  default changed from `"spotify"` to `"none"` everywhere it's read
+  (`dashboard_theme.py`, `theme_kwargs.py`, `controller.py`, `app.py`)
+  to match.
+
+  New `dashboard_theme.default_clock_element()` /
+  `default_media_element()` factory functions build a fresh clock/
+  now-playing element dict at the same fixed spots those two used to
+  occupy -- `slots_to_elements()` now appends both directly (so
+  `DEFAULT_ELEMENTS` and every layout derived fresh from `slots`,
+  which is most configs, get them automatically, live, with nothing to
+  migrate), and `theme_kwargs.resolve_dashboard_elements()`'s
+  slots-fallback path now gets a clock element for the first time too
+  (previously only `DEFAULT_ELEMENTS` did, via a separate
+  concatenation -- an inconsistency this closes).
+
+  The one case that couldn't just derive its way out of this: a
+  config with a saved `dashboard.elements` list from before either
+  element type existed. New `config_store.migrate_dashboard_elements()`
+  handles that -- called once from both `AppController.__init__` (the
+  web backend) and `App.__init__` (Tkinter) right after
+  `load_config()`, so whichever UI opens a config first migrates it
+  for both. It appends a clock element if the saved list has none, and
+  a now-playing element (setting `middle_content` to `"none"`) if the
+  list has no media element and `middle_content` was `"spotify"` or
+  unset -- the signal that a config was actually relying on the
+  now-removed static display, as opposed to someone who'd already
+  chosen "weather" or "none" on purpose. Flagged done via
+  `dashboard._migrated_elements_v1` so it runs exactly once -- deleting
+  the clock or now-playing element from the canvas afterward sticks,
+  it doesn't get silently re-added on the next launch.
+
+  Verified headlessly: `DEFAULT_ELEMENTS`/`slots_to_elements()` include
+  exactly one clock and one media element; `MIDDLE_CONTENT_OPTIONS` has
+  no `"spotify"` key and `_draw_spotify_middle` no longer exists;
+  `migrate_dashboard_elements()` against six scenarios (no dashboard
+  config, slots-only config, an old 8-gauge-only saved list with
+  `middle_content` unset, the same with `middle_content` explicitly
+  `"weather"`, a list that already has both elements, and a
+  re-migration after the flag is set) each landed on the right
+  elements/`middle_content`/idempotency; and a full `render_frame()`
+  pass over the new default layout (no media playing, media playing,
+  and weather middle content) rendered correctly with no crash. Also
+  verified via a Playwright session against the real built frontend +
+  a live backend seeded with an old-style pre-migration config: the
+  backend's own startup migrated and persisted it to disk correctly,
+  `/api/dashboard/meta` reflected the migrated elements and
+  `middle_content: "none"`, the design canvas showed the clock and
+  now-playing widgets as separately selectable/movable elements (not
+  the old static display), the Middle content dropdown offered only
+  Weather/None, and the "Nothing playing" placeholder section (used by
+  any now-playing element, not tied to Middle content) rendered
+  unconditionally instead of being gated behind the removed `"spotify"`
+  option.
 
 ## [1.0.0] — 2026-08-29
 

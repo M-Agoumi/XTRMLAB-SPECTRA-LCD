@@ -48,6 +48,8 @@ class AppController:
 
     def __init__(self):
         self.cfg = config_store.load_config()
+        if config_store.migrate_dashboard_elements(self.cfg):
+            config_store.save_config(self.cfg)
         self._lock = threading.RLock()
         power_state.set_keep_active_when_locked(self.cfg.get("keep_active_when_locked", True))
         power_state.start_polling()
@@ -301,7 +303,7 @@ class AppController:
                 "default_message": dashboard_theme.DEFAULT_NOT_PLAYING_MESSAGE,
             },
             "middleContent": {
-                "value": d.get("middle_content") or "spotify",
+                "value": d.get("middle_content") or "none",
                 "options": dict(dashboard_theme.MIDDLE_CONTENT_OPTIONS),
                 "weather_location": d.get("weather_location") or "",
                 "weather_units": d.get("weather_units") or "celsius",
@@ -378,13 +380,16 @@ class AppController:
 
     def save_dashboard_middle_content(self, patch):
         """Persists which content fills the dashboard's middle column
-        -- Spotify now-playing (the original, default behavior), the
-        weather (weather.py -- free, no API key, just a place name), or
-        nothing at all for anyone who wants neither glued to their PC's
-        case. Same merge-into-"dashboard" shape and same "applies live
-        immediately" deal as save_dashboard_now_playing() -- dashboard_
-        theme.py re-reads the current selection every frame and
-        weather.py re-reads the current location/units on its own
+        -- the weather (weather.py -- free, no API key, just a place
+        name), or nothing at all (the default). The now-playing display
+        used to live here too (the original "spotify" option, fixed to
+        this column and always on); it's now just a movable/resizable
+        "media" element instead (see dashboard_theme.default_media_
+        element()), added/removed from the canvas independently of this
+        setting. Same merge-into-"dashboard" shape and same "applies
+        live immediately" deal as save_dashboard_now_playing() --
+        dashboard_theme.py re-reads the current selection every frame
+        and weather.py re-reads the current location/units on its own
         background poll loop, so switching this while the Dashboard is
         already running takes effect without a Stop/Start. Only
         `middle_content`/`weather_location`/`weather_units` keys are
@@ -393,7 +398,7 @@ class AppController:
         endpoint has."""
         if not isinstance(patch, dict):
             raise ValueError("patch must be an object")
-        if "middle_content" in patch and (patch.get("middle_content") or "spotify") not in dashboard_theme.MIDDLE_CONTENT_OPTIONS:
+        if "middle_content" in patch and (patch.get("middle_content") or "none") not in dashboard_theme.MIDDLE_CONTENT_OPTIONS:
             raise ValueError(f"unknown middle_content: {patch.get('middle_content')!r}")
         with self._lock:
             dashboard_cfg = dict(self.cfg.get("dashboard") or {})
@@ -402,7 +407,7 @@ class AppController:
             config_store.save_config(self.cfg)
             result = dict(self.cfg["dashboard"])
         if "middle_content" in patch:
-            dashboard_theme.set_middle_content(patch.get("middle_content") or "spotify")
+            dashboard_theme.set_middle_content(patch.get("middle_content") or "none")
         if "weather_location" in patch:
             weather.set_location(patch.get("weather_location"))
         if "weather_units" in patch:
