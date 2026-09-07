@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api.js";
+import Collapsible from "./Collapsible.jsx";
 
 // The dashboard design canvas (ROADMAP.md Phase 5) -- drag/resize gauge
 // elements over the live panel frame, edit their stat/color/opacity in a
@@ -55,10 +56,54 @@ function basename(path) {
   return path.split(/[\\/]/).pop();
 }
 
+// A short human-readable label for the element list panel -- "what is
+// this thing", not its full config. Mirrors the labels already drawn
+// inline on the canvas itself (gauge's stat title, graph/image/media's
+// placeholder text) so the list and the canvas always agree on what to
+// call something.
+function elementLabel(el, meta) {
+  if (el.type === "gauge") return meta.stats[el.stat]?.title || el.stat;
+  if (el.type === "graph") return meta.stats[el.stat]?.title || el.stat;
+  if (el.type === "text") return el.text?.trim() ? `"${el.text}"` : "(empty text)";
+  if (el.type === "image") return el.image_path ? basename(el.image_path) : "(no image picked)";
+  if (el.type === "media") return "Now playing";
+  if (el.type === "clock") return "Clock";
+  return el.type;
+}
+
+// Short plain-text badges (not emoji, to match the rest of this UI's
+// flat/monochrome look) shown next to each row in the element list.
+const ELEMENT_BADGES = {
+  gauge: "G",
+  graph: "GR",
+  text: "T",
+  image: "IMG",
+  media: "NP",
+  clock: "CLK",
+};
+
+// Always includes a short random suffix rather than just counting up
+// from `existing.length` -- a plain counter is only unique *within
+// whatever array this particular browser tab currently has loaded*,
+// which isn't good enough if the backend's file changes underneath an
+// open tab (e.g. a config migration runs while the canvas is still
+// open from before it): two different stale/fresh views of "how many
+// elements exist" can independently compute the exact same next id
+// even though neither one has actually seen the other's elements. A
+// duplicate id is exactly what caused one clock to render but not be
+// selectable (React collapses duplicate keys; dashboard_theme.py's
+// renderer doesn't dedupe at all, so both drew). The counter prefix is
+// kept purely so the saved JSON still reads as "the 3rd gauge added",
+// not for uniqueness -- the random suffix is what actually guarantees
+// that.
 function makeId(existing, prefix = "el") {
-  let n = existing.length + 1;
-  while (existing.some((el) => el.id === `${prefix}_${n}`)) n += 1;
-  return `${prefix}_${n}`;
+  const used = new Set(existing.map((el) => el.id));
+  const n = existing.length + 1;
+  let id = `${prefix}_${n}_${Math.random().toString(36).slice(2, 6)}`;
+  while (used.has(id)) {
+    id = `${prefix}_${n}_${Math.random().toString(36).slice(2, 6)}`;
+  }
+  return id;
 }
 
 // Default field shapes for each element type ROADMAP.md Phase 6 adds
@@ -234,6 +279,38 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo]);
+
+  // Arrow-key nudging for the selected element -- dragging with a
+  // mouse is the only way to reposition anything otherwise, which is
+  // fiddly for pixel-level alignment (especially the small mini-gauges,
+  // where a drag can easily overshoot). Plain arrow = 1% of the panel,
+  // Shift+arrow = 5%, matching the field labels' own "X %"/"Y %" units
+  // so the step sizes read the same way as the numeric inputs below.
+  // Each press commits (via updateSelected -> commit) so Undo steps
+  // through individual nudges, same as a drag does.
+  const NUDGE_STEP = 0.01;
+  const NUDGE_STEP_FAST = 0.05;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!selectedId) return;
+      if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
+      // Don't hijack arrow keys while editing a text field, a <select>,
+      // etc. -- those need normal cursor/selection behavior.
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      const step = e.shiftKey ? NUDGE_STEP_FAST : NUDGE_STEP;
+      const el = elements?.find((it) => it.id === selectedId);
+      if (!el) return;
+      const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+      const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+      commit(elements.map((it) => (it.id === selectedId
+        ? { ...it, x: clamp(it.x + dx, 0, 1), y: clamp(it.y + dy, 0, 1) }
+        : it)));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, elements, commit]);
 
   const pointerToFraction = (e) => {
     const svg = svgRef.current;
@@ -552,6 +629,30 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           them (and Start/Apply is what pushes them to the physical panel).
         </p>
       )}
+
+      {/* Element list -- clicking directly on the canvas is fine when
+          things are spread out, but small or fully-overlapped elements
+          (a mini gauge, a now-playing box sitting on top of a gauge)
+          are hard or impossible to grab precisely, and there's no way
+          to even tell two overlapping things apart. This lists every
+          element by name regardless of where it sits or what's on top
+          of it, and clicking a row selects it exactly like clicking it
+          on the canvas would. */}
+      <ul className="element-list">
+        {ordered.map((el) => (
+          <li key={el.id}>
+            <button
+              type="button"
+              className={el.id === selectedId ? "element-row selected" : "element-row"}
+              onClick={() => setSelectedId(el.id)}
+            >
+              <span className="element-badge">{ELEMENT_BADGES[el.type] || "?"}</span>
+              <span className="element-label">{elementLabel(el, meta)}</span>
+              <span className="element-id">{el.id}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
 
       <div
         className="canvas-box"
@@ -1079,8 +1180,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
       )}
 
       {bgDraft && (
-        <div className="canvas-props">
-          <h2>Background</h2>
+        <Collapsible id="dashboard-background" title="Background" defaultOpen={false} as="div" className="canvas-props">
           <div className="row">
             <label>
               Style
@@ -1137,12 +1237,11 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           </div>
           {bgStatus && <p className="hint settings-saved">{bgStatus}</p>}
           {bgError && <p className="error">{bgError}</p>}
-        </div>
+        </Collapsible>
       )}
 
       {mcDraft && (
-        <div className="canvas-props">
-          <h2>Middle content</h2>
+        <Collapsible id="dashboard-middle-content" title="Middle content" defaultOpen={false} as="div" className="canvas-props">
           <div className="row">
             <label className="grow">
               Show
@@ -1188,12 +1287,11 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           </div>
           {mcStatus && <p className="hint settings-saved">{mcStatus}</p>}
           {mcError && <p className="error">{mcError}</p>}
-        </div>
+        </Collapsible>
       )}
 
       {npDraft && (
-        <div className="canvas-props">
-          <h2>"Nothing playing" placeholder</h2>
+        <Collapsible id="dashboard-now-playing-placeholder" title='"Nothing playing" placeholder' defaultOpen={false} as="div" className="canvas-props">
           <p className="hint">
             Used by any now-playing element on the canvas (see "+ Add now-playing") whenever
             nothing's actually playing -- not tied to Middle content above any more.
@@ -1238,7 +1336,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           </div>
           {npStatus && <p className="hint settings-saved">{npStatus}</p>}
           {npError && <p className="error">{npError}</p>}
-        </div>
+        </Collapsible>
       )}
 
       <div className="row">
