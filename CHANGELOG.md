@@ -407,6 +407,33 @@ dashboard designer) this is laying groundwork for.
   actual mouse-drag on the width-only handle confirming height stays
   untouched, and the dirty indicator appearing on edit and clearing on
   save.
+- **The web UI's panel port is a "Detect screens" dropdown now, not a
+  free-typed text field -- and it's the first thing on the page,
+  since nothing else here does anything useful without it.** The old
+  "Port (blank = auto-detect)" text field also had a latent bug: its
+  hint text said "Port needs Save", but there was never actually a
+  Save button wired up for it, so a typed port could only ever take
+  effect via the theme-specific settings forms' own Save buttons
+  incidentally re-saving the whole config -- easy to miss entirely.
+  New `GET /api/ports` (`controller.list_ports()`) exposes the same
+  USB-VID serial scan (`driver/hongtai_screen.py`'s
+  `find_hongtai_ports()`) the Tkinter app's own "Refresh" button next
+  to its port Combobox has always used, now over HTTP. The web UI's
+  new "Panel port" section -- moved above Preview, first on the page
+  -- runs that scan automatically on load and again on "Detect
+  screens", picks the obvious choice automatically when exactly one
+  screen is found and nothing's selected yet, and saves a selection
+  the instant it's picked (no separate Save step). Controls,
+  the per-theme settings sections, and the dashboard canvas are all
+  now disabled with a "Select a panel port above" hint until a port
+  (a specific one, or the explicit "Auto-detect" option) is actually
+  chosen -- previously an unset port silently worked via auto-detect,
+  which was convenient with exactly one screen plugged in but gave no
+  indication anything needed picking at all otherwise. Verified via a
+  Playwright session against the real built frontend + live backend:
+  the disabled state and its message before any port is selected,
+  picking "Auto-detect" immediately persisting to config and
+  unlocking Controls, and the selection surviving a page reload.
 
 ## [1.0.0] — 2026-08-29
 

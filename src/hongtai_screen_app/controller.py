@@ -435,6 +435,37 @@ class AppController:
             config_store.save_config(self.cfg)
             return presets
 
+    def list_ports(self):
+        """Scans for Hongtai-family panels right now (driver.
+        find_hongtai_ports() -- matches on USB VID, so it finds any
+        rebrand of this same hardware, not just XTRM Lab's), for the web
+        UI's "Detect screens" button. Same underlying scan app.py's own
+        "Refresh" button next to its port Combobox already uses -- this
+        is that scan, exposed over HTTP for the headless controller.
+
+        Each returned port's `value` is exactly what should be saved as
+        `cfg["port"]` (a ScreenPort.label -- see _selected_port()'s
+        docstring for why the human-readable label, not the raw device
+        name, is what's persisted); `device`/`label` are split out
+        separately so the frontend can build its own display text
+        without parsing the combined label string. `auto_detect` is the
+        sentinel value (config_store.AUTO_DETECT) for "let it pick
+        automatically at connect time (only works if exactly one
+        Hongtai-family panel is plugged in)", so the frontend doesn't
+        need its own copy of that constant."""
+        try:
+            candidates = hongtai_screen.find_hongtai_ports()
+        except Exception as e:  # noqa: BLE001 -- e.g. pyserial enumeration failing oddly
+            self._log(f"(couldn't scan serial ports: {e})")
+            candidates = []
+        return {
+            "ports": [
+                {"value": c.label, "device": c.device, "description": c.description}
+                for c in candidates
+            ],
+            "auto_detect": config_store.AUTO_DETECT,
+        }
+
     def _selected_port(self):
         """app_config.json's "port" is a human-readable *label* (e.g.
         "COM3  (VID 33C3:7804 -- ...)  USB Serial Device (COM3)"), not

@@ -935,6 +935,22 @@ thumbnail in one interaction, a real mouse-drag on the width-only
 handle leaving height untouched, and the dirty indicator's on-edit/
 on-save transitions.
 
+**Fix: the panel port is a "Detect screens" dropdown now, first on the
+page, and the app is disabled until one's picked.** The old free-typed
+port text field also had a latent bug -- its hint claimed "Port needs
+Save" but no Save button was ever wired up for it. New `GET /api/ports`
+(`controller.list_ports()`) exposes the same USB-VID scan
+(`find_hongtai_ports()`) the Tkinter Refresh button already used, now
+over HTTP. The new "Panel port" section (moved above Preview) scans on
+load and on "Detect screens", auto-picks the obvious choice when
+exactly one screen is found and nothing's selected, and saves a pick
+immediately (no separate Save step). Controls/settings/the dashboard
+canvas are disabled with an explanatory hint until a port -- a
+specific one, or the explicit "Auto-detect" option -- is actually
+chosen, rather than silently defaulting. Verified via Playwright: the
+disabled state before any pick, picking "Auto-detect" persisting and
+unlocking Controls immediately, and the selection surviving reload.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files

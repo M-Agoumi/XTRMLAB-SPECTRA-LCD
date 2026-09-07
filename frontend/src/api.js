@@ -41,6 +41,16 @@ export function setBrightness(value) {
   }).then(asJson);
 }
 
+// "Detect screens" -- scans serial ports for a Hongtai-family panel
+// (control_server.py/controller.py's list_ports(), same scan app.py's
+// Tkinter Refresh button already uses). Each returned port's `value`
+// is exactly what updateConfig({ port }) expects; `auto_detect` is the
+// sentinel for "pick automatically at connect time" so this file
+// doesn't need its own copy of that constant.
+export function listPorts() {
+  return fetch("/api/ports").then(asJson);
+}
+
 export function getSystem() {
   return fetch("/api/system").then(asJson);
 }
