@@ -963,6 +963,55 @@ def _slot_geometry(width, height):
     }
 
 
+# Same margin/mid-column arithmetic build_static_background() uses for
+# its layout, just computed once here (at REFERENCE_WIDTH/HEIGHT) so a
+# fresh clock/now-playing element starts out in exactly the spot each
+# has always occupied -- the old fixed clock position and the old fixed
+# Spotify column, respectively. Used by slots_to_elements() below (so
+# every freshly-derived layout gets both) and by config_store's
+# one-time elements migration (so an *existing* saved layout that
+# predates these two element types gets them added at the same spot).
+_DEFAULT_MARGIN = int(REFERENCE_WIDTH * 0.015)
+_DEFAULT_COL_W = int(REFERENCE_WIDTH * 0.235)
+_DEFAULT_MID_X0 = _DEFAULT_MARGIN + _DEFAULT_COL_W + int(REFERENCE_WIDTH * 0.03)
+_DEFAULT_MID_X1 = REFERENCE_WIDTH - _DEFAULT_MARGIN - _DEFAULT_COL_W - int(REFERENCE_WIDTH * 0.03)
+_DEFAULT_CLOCK_X = (_DEFAULT_MID_X0 + _DEFAULT_MID_X1) / 2 / REFERENCE_WIDTH
+_DEFAULT_CLOCK_Y = int(REFERENCE_HEIGHT * 0.885) / REFERENCE_HEIGHT
+_DEFAULT_MEDIA_X = (_DEFAULT_MID_X0 + _DEFAULT_MID_X1) / 2 / REFERENCE_WIDTH
+_DEFAULT_MEDIA_Y = 0.42
+_DEFAULT_MEDIA_W = 0.32
+_DEFAULT_MEDIA_H = 0.52
+
+
+def default_clock_element():
+    """A fresh clock element dict at the old fixed clock spot -- a
+    factory (not a shared constant) so every caller gets its own dict
+    to mutate freely. Used by slots_to_elements() (so any layout
+    derived from `slots` includes a clock) and by config_store's
+    one-time migration for a pre-existing saved `elements` list that
+    has none yet."""
+    return {
+        "id": "clock", "type": "clock",
+        "x": _DEFAULT_CLOCK_X, "y": _DEFAULT_CLOCK_Y,
+        "font_size": 24 / REFERENCE_HEIGHT,  # matches Fonts.time = load_font(24)
+        "color": None, "opacity": 1.0, "show_seconds": True,
+        "z": 100,
+    }
+
+
+def default_media_element():
+    """A fresh now-playing element dict at the old fixed Spotify-column
+    spot -- see default_clock_element()'s docstring for why this is a
+    factory function rather than a shared dict/constant."""
+    return {
+        "id": "now_playing", "type": "media",
+        "x": _DEFAULT_MEDIA_X, "y": _DEFAULT_MEDIA_Y,
+        "width": _DEFAULT_MEDIA_W, "height": _DEFAULT_MEDIA_H,
+        "opacity": 1.0, "show_art": True, "show_name": True, "show_time": True,
+        "z": 101,
+    }
+
+
 def slots_to_elements(slots=None):
     """Converts the old slot-based picks (`slots`, same shape as
     DEFAULT_SLOTS -- any of its 8 keys mapped to a STAT_DEFS key, missing
@@ -972,7 +1021,16 @@ def slots_to_elements(slots=None):
     size the connected panel actually reports. Element `id`s are kept as
     the original slot names purely so a saved layout stays readable and
     a repeat migration (nothing has switched to "elements" yet) is
-    idempotent -- nothing currently depends on the id being a slot name."""
+    idempotent -- nothing currently depends on the id being a slot name.
+
+    Also appends a default clock and now-playing element (see
+    default_clock_element()/default_media_element() above) -- this is
+    the path every fresh/slots-only config takes (theme_kwargs.
+    resolve_dashboard_elements() calls this whenever `dashboard.elements`
+    hasn't been saved yet), so both widgets are there from the start
+    with no separate migration needed. A saved `elements` list is the
+    only thing that CAN go stale here, which is what config_store's
+    one-time migration handles."""
     slots = dict(DEFAULT_SLOTS, **(slots or {}))
     positions = _slot_geometry(REFERENCE_WIDTH, REFERENCE_HEIGHT)
     base = min(REFERENCE_WIDTH, REFERENCE_HEIGHT)
@@ -991,29 +1049,12 @@ def slots_to_elements(slots=None):
             "opacity": 1.0,
             "z": z,
         })
+    elements.append(default_clock_element())
+    elements.append(default_media_element())
     return elements
 
 
-# Same margin/mid-column arithmetic build_static_background() uses for
-# its layout, just computed once here (at REFERENCE_WIDTH/HEIGHT, same
-# as every other DEFAULT_ELEMENTS entry) so DEFAULT_ELEMENTS' clock
-# element starts out in exactly the spot the clock has always been
-# drawn -- see _draw_clock_element()/render_frame()'s "no clock
-# element -> fall back to the old fixed position" migration note.
-_DEFAULT_MARGIN = int(REFERENCE_WIDTH * 0.015)
-_DEFAULT_COL_W = int(REFERENCE_WIDTH * 0.235)
-_DEFAULT_MID_X0 = _DEFAULT_MARGIN + _DEFAULT_COL_W + int(REFERENCE_WIDTH * 0.03)
-_DEFAULT_MID_X1 = REFERENCE_WIDTH - _DEFAULT_MARGIN - _DEFAULT_COL_W - int(REFERENCE_WIDTH * 0.03)
-_DEFAULT_CLOCK_X = (_DEFAULT_MID_X0 + _DEFAULT_MID_X1) / 2 / REFERENCE_WIDTH
-_DEFAULT_CLOCK_Y = int(REFERENCE_HEIGHT * 0.885) / REFERENCE_HEIGHT
-
-DEFAULT_ELEMENTS = slots_to_elements() + [{
-    "id": "clock", "type": "clock",
-    "x": _DEFAULT_CLOCK_X, "y": _DEFAULT_CLOCK_Y,
-    "font_size": 24 / REFERENCE_HEIGHT,  # matches Fonts.time = load_font(24)
-    "color": None, "opacity": 1.0, "show_seconds": True,
-    "z": 100,
-}]
+DEFAULT_ELEMENTS = slots_to_elements()
 
 
 def _element_accent(el):
@@ -1707,27 +1748,27 @@ def get_not_playing_message():
 
 
 # What goes in the middle column, between the two gauge columns --
-# "spotify" (this theme's original and still-default behavior: album
-# art + track/artist + progress, falling back to the placeholder
-# image/message above when nothing's playing) is one option; "weather"
-# (weather.py -- a free, no-API-key lookup, just a place name) and
-# "none" (nothing drawn there at all, for anyone who wants neither) are
-# the other two, added because not everyone wants a Spotify display
-# glued to their PC's case. Live-settable the same way as
-# DEFAULT_ART_PATH/_not_playing_message above -- render_frame() reads
-# this fresh every frame, so switching it takes effect on the very next
-# frame, no Stop/Start needed.
+# "weather" (weather.py -- a free, no-API-key lookup, just a place
+# name) or "none" (nothing drawn there at all, the default). The
+# now-playing display used to live here too (the "spotify" option),
+# fixed to this column and always on; it's now just another movable/
+# resizable element instead (see default_media_element()/
+# _draw_media_element()), so it no longer needs a middle_content option
+# of its own -- add or remove it from the canvas like anything else,
+# independently of whatever (if anything) this column shows. Live-
+# settable the same way as DEFAULT_ART_PATH/_not_playing_message above
+# -- render_frame() reads this fresh every frame, so switching it takes
+# effect on the very next frame, no Stop/Start needed.
 MIDDLE_CONTENT_OPTIONS = {
-    "spotify": "Spotify (now playing)",
     "weather": "Weather",
     "none": "None",
 }
-_middle_content = "spotify"
+_middle_content = "none"
 
 
 def set_middle_content(value):
     global _middle_content
-    _middle_content = value if value in MIDDLE_CONTENT_OPTIONS else "spotify"
+    _middle_content = value if value in MIDDLE_CONTENT_OPTIONS else "none"
 
 
 def get_middle_content():
@@ -2076,76 +2117,6 @@ def build_static_background(width, height, fonts, elements=None, background=None
     return img, layout
 
 
-def _draw_spotify_middle(img, draw, mid_cx, mid_w, height, fonts, media):
-    """The original (and still default) middle-column content: album
-    art + track/artist + playback progress, falling back to the
-    "nothing playing" placeholder image/message when there's no active
-    session. Pulled out of render_frame() so it's just one of three
-    interchangeable middle_content branches (see MIDDLE_CONTENT_OPTIONS)
-    rather than the only thing that column could ever show."""
-    art_size = int(min(mid_w * 0.62, height * 0.42))
-
-    art = None
-    title = artist = None
-    position = duration = None
-    if media:
-        title, artist = media.get("title"), media.get("artist")
-        position, duration = media.get("position"), media.get("duration")
-        if media.get("art") is not None:
-            art = fit_album_art(media["art"], art_size, radius=14)
-    if art is None:
-        art = default_art(art_size, radius=14)
-
-    art_x = int(mid_cx - art_size / 2)
-    art_y = int(height * 0.09)
-
-    glow_tile, glow_pad = art_glow_frame(art_size, 14, ACCENT_MID)
-    glow_paste(img, glow_tile, (art_x - glow_pad, art_y - glow_pad), blur=8, glow_alpha=0.55)
-    img.paste(art, (art_x, art_y))
-
-    y = art_y + art_size + 16
-    if title:
-        track_line = truncate(draw, title.upper(), fonts.track, mid_w - 16)
-        draw.text((mid_cx, y), track_line, font=fonts.track, fill=(238, 238, 244), anchor="ma")
-        y += 26
-        if artist:
-            draw.text((mid_cx, y), artist, font=fonts.artist, fill=(200, 192, 220), anchor="ma")
-            y += 24
-        else:
-            y += 4
-        # Progress bar + mm:ss -- only while an actual track is loaded
-        # (playing or paused, both land here since `title` is truthy for
-        # both; it's specifically the "nothing loaded at all" case below
-        # that has no timestamp to show). Skipped if we don't have a
-        # duration to measure a fraction against.
-        if duration:
-            bar_w = int(mid_w * 0.72)
-            bar_h = 6
-            bar_x = int(mid_cx - bar_w / 2)
-            bar_y = y + 6
-            fraction = max(0.0, min(1.0, (position or 0.0) / duration))
-            progress_bar_glow(img, bar_x, bar_y, bar_w, bar_h, fraction, ACCENT_MID)
-            y = bar_y + bar_h + 16
-            draw.text((bar_x, y), fmt_mmss(position), font=fonts.progress,
-                       fill=(170, 165, 190), anchor="lm")
-            draw.text((bar_x + bar_w, y), fmt_mmss(duration), font=fonts.progress,
-                       fill=(170, 165, 190), anchor="rm")
-            y += 30
-        else:
-            y += 16
-    elif _MEDIA_OK:
-        # Nothing playing -- shown in full, wrapped over as many lines as
-        # it needs rather than truncated with "...", since there's no
-        # timestamp taking up the space below it anymore.
-        for line in wrap_text(draw, get_not_playing_message(), fonts.message, mid_w - 16):
-            draw.text((mid_cx, y), line, font=fonts.message, fill=(200, 190, 220), anchor="ma")
-            y += 28
-        y += 10
-    else:
-        draw.text((mid_cx, y), "SPOTIFY ART NEEDS WINSDK", font=fonts.track, fill=(238, 238, 244), anchor="ma")
-        y += 66
-
-
 def _draw_weather_middle(img, draw, mid_cx, mid_w, height, fonts):
     """Current-conditions readout (weather.py) for anyone who'd rather
     see the weather than a Spotify display -- an icon, the temperature,
@@ -2203,11 +2174,12 @@ def _draw_weather_middle(img, draw, mid_cx, mid_w, height, fonts):
 def _media_box(el, width, height):
     """A media (now-playing) element's pixel box, from its center x/y
     and its own width/height -- same idea as _graph_box()/_element's
-    image sizing, just for the widget that used to be pinned to the
-    fixed middle column (_draw_spotify_middle above). Kept generous by
-    default (see makeElement()'s default shape on the frontend) since
-    it has to fit album art *and* two lines of text *and* a progress
-    bar stacked vertically."""
+    image sizing, just for the widget that used to be pinned to a fixed
+    middle column and always-on (the old "spotify" middle_content
+    option, since removed -- see MIDDLE_CONTENT_OPTIONS). Kept generous
+    by default (see makeElement()'s default shape on the frontend, and
+    default_media_element() above) since it has to fit album art *and*
+    two lines of text *and* a progress bar stacked vertically."""
     w = max(60.0, el.get("width", 0.32) * width)
     h = max(60.0, el.get("height", 0.52) * height)
     cx, cy = el["x"] * width, el["y"] * height
@@ -2354,7 +2326,15 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
         # text/image elements are fully static -- baked into
         # `background` already, nothing to redraw here.
 
-    # --- middle: Spotify / weather / nothing -------------------------
+    # --- middle: weather / nothing ------------------------------------
+    # The clock and now-playing widgets both used to be drawn
+    # unconditionally right here, at hardcoded spots -- they're now
+    # just elements (see default_clock_element()/default_media_element()
+    # and the per-element loop above), and every layout is guaranteed to
+    # have both: a fresh one via slots_to_elements() appending them, an
+    # existing saved one via config_store's one-time elements migration
+    # (see its docstring). So there's no fallback to draw here any
+    # more -- this column is purely opt-in weather, or nothing.
     mid_x0, mid_w = layout["mid_x0"], layout["mid_w"]
     mid_cx = mid_x0 + mid_w / 2
     draw = ImageDraw.Draw(img)
@@ -2362,24 +2342,8 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
 
     if content == "weather":
         _draw_weather_middle(img, draw, mid_cx, mid_w, height, fonts)
-    elif content == "none":
-        pass  # nothing drawn here -- just the background shows through
-    else:
-        _draw_spotify_middle(img, draw, mid_cx, mid_w, height, fonts, media)
-
-    # The clock USED to be drawn unconditionally right here, at a
-    # hardcoded spot -- it's now just another element (see DEFAULT_
-    # ELEMENTS' "clock" entry / _draw_clock_element() above), drawn in
-    # the per-element loop instead. This fallback only fires for an
-    # `elements` list saved before that existed (no "clock"-type entry
-    # at all) -- without it, upgrading would make the clock silently
-    # vanish for anyone whose saved layout predates this. It draws at
-    # the exact old fixed position, so nothing shifts for those configs
-    # until they actually add a clock element themselves, at which
-    # point this stops (no double clock).
-    if not any(el.get("type") == "clock" for el in layout["elements"]):
-        time_str = datetime.datetime.now().strftime("%H:%M:%S")
-        draw.text((mid_cx, layout["clock_cy"]), time_str, font=fonts.time, fill=(235, 235, 242), anchor="mm")
+    # "none" (or anything unrecognized): nothing drawn here -- just the
+    # background shows through.
 
     return img
 
@@ -2395,10 +2359,12 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     only being usable from the command line.
 
     `middle_content` picks what shows between the two gauge columns --
-    "spotify" (default), "weather", or "none" (see
-    MIDDLE_CONTENT_OPTIONS/set_middle_content()). `weather_location`/
-    `weather_units` are only meaningful when it's "weather" -- see
-    weather.py's set_location()/set_units().
+    "weather" or "none" (default; see MIDDLE_CONTENT_OPTIONS/
+    set_middle_content()). `weather_location`/`weather_units` are only
+    meaningful when it's "weather" -- see weather.py's set_location()/
+    set_units(). The now-playing display is a separate, independently
+    movable "media" element (see default_media_element()), not a
+    middle_content option.
 
     `elements` (ROADMAP.md Phase 4) is the new way to lay the gauges
     out -- a list of dicts in slots_to_elements()'s shape, with their
@@ -2449,7 +2415,7 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
 
     set_default_art_path(default_art_path)
     set_not_playing_message(not_playing_message)
-    set_middle_content(middle_content or "spotify")
+    set_middle_content(middle_content or "none")
     weather.set_location(weather_location)
     weather.set_units(weather_units or "celsius")
     weather.start_polling()
@@ -2570,8 +2536,8 @@ def main():
     ap.add_argument("--not-playing-message", default=None,
                      help="text to show in place of the track title when nothing is "
                           f"playing (default: {DEFAULT_NOT_PLAYING_MESSAGE!r})")
-    ap.add_argument("--middle-content", choices=list(MIDDLE_CONTENT_OPTIONS), default="spotify",
-                     help="what to show between the two gauge columns (default: spotify)")
+    ap.add_argument("--middle-content", choices=list(MIDDLE_CONTENT_OPTIONS), default="none",
+                     help="what to show between the two gauge columns (default: none)")
     ap.add_argument("--weather-location", default=None,
                      help="city/address for --middle-content weather (looked up via Open-Meteo, no API key)")
     ap.add_argument("--weather-units", choices=list(weather.UNIT_OPTIONS), default="celsius",

@@ -467,7 +467,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
       weather_units: mcDraft.weather_units,
     }).then(
       (dashboardCfg) => {
-        setMcDraft((prev) => ({ ...prev, value: dashboardCfg.middle_content || "spotify",
+        setMcDraft((prev) => ({ ...prev, value: dashboardCfg.middle_content || "none",
                                  weather_location: dashboardCfg.weather_location || "",
                                  weather_units: dashboardCfg.weather_units || "celsius" }));
         setMcStatus("Saved -- applies live, even while the dashboard is already running.");
@@ -923,9 +923,9 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                          onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
                 </label>
                 <span className="hint">
-                  Shows the same Spotify now-playing display as the "Middle content" section below,
-                  but positioned/sized here instead of locked to the middle column. Turn off
-                  whichever pieces you don't want -- e.g. just the cover art, or just the time.
+                  Album art, track/artist, and playback progress -- movable and resizable, unlike
+                  the old fixed middle-column display. Turn off whichever pieces you don't want
+                  -- e.g. just the cover art, or just the time.
                 </span>
               </div>
             </>
@@ -1178,10 +1178,10 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           <p className="hint">
             {mcDraft.value === "weather"
               ? "Looked up via Open-Meteo -- a free weather service, no account or API key needed."
-              : mcDraft.value === "none"
-              ? "Nothing is drawn between the two gauge columns -- just the background shows through."
-              : "The Spotify now-playing display below (album art, track/artist, progress)."}
+              : "Nothing is drawn between the two gauge columns -- just the background shows through."}
             {" "}Applies live, even while the dashboard is already running -- no need to Stop/Start.
+            {" "}The now-playing display isn't part of this any more -- add it with "+ Add now-playing"
+            below and move it wherever you like.
           </p>
           <div className="row">
             <button onClick={saveMiddleContent}>Save</button>
@@ -1191,9 +1191,13 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         </div>
       )}
 
-      {npDraft && mcDraft && mcDraft.value === "spotify" && (
+      {npDraft && (
         <div className="canvas-props">
           <h2>"Nothing playing" placeholder</h2>
+          <p className="hint">
+            Used by any now-playing element on the canvas (see "+ Add now-playing") whenever
+            nothing's actually playing -- not tied to Middle content above any more.
+          </p>
           <div className="row">
             <label className="grow">
               Placeholder image
