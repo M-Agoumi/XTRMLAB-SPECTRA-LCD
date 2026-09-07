@@ -893,6 +893,26 @@ Verified headlessly (lock detection stubbed both ways, an end-to-end
 run against a fake screen confirming frames stop/resume exactly on the
 setting flip) and via Playwright against the real built frontend.
 
+**Feature: the now-playing widget is a movable element, not just a
+fixed middle-column display.** New `"media"` element type (`+ Add
+now-playing` in the canvas toolbar) -- the same album art + track/
+artist + progress bar as `_draw_spotify_middle()`, but with its own
+x/y/width/height/opacity like any other canvas object, independent of
+the "Middle content" setting (add one regardless of whether that's set
+to Spotify/Weather/None). New `dashboard_theme._media_box()`/
+`_draw_media_element()`; fully dynamic (redrawn every frame, like a
+graph's plotted line) since playback position advances continuously,
+so nothing about it bakes into the static background. No backend
+validation needed since `elements` already round-trips arbitrary
+dicts. Also: the browser's unstyled default file-picker button (used
+for the background image, an image element, and the now-playing
+placeholder) is now themed to match the app, and every element's
+property panel gained "Center horizontally"/"Center vertically"
+buttons for exact 50% placement without dragging to the snap guide.
+Verified by rendering a standalone `media` element (with/without live
+media, opacity < 1) and via Playwright against the real built frontend
++ live backend.
+
 ### Phase 7 — Packaging and cutover
 
 - PyInstaller spec bundles the built frontend as data files

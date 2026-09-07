@@ -348,6 +348,36 @@ dashboard designer) this is laying groundwork for.
   frames stop the instant the setting is flipped off while locked and
   resume immediately on unlock) and via a Playwright session against
   the real built frontend + live backend, with no console errors.
+- **The now-playing widget can be dragged anywhere, not just the fixed
+  middle column** -- a new `"media"` element type (`+ Add now-playing`
+  in the canvas toolbar) draws the same album art + track/artist +
+  progress bar `_draw_spotify_middle()` always has, but positioned and
+  sized like any other canvas object (x/y/width/height/opacity), so it
+  can sit off-center, get resized, or overlap other elements instead of
+  being locked to dead center. It's independent of the "Middle content"
+  setting above -- add one whether that's set to Spotify, Weather, or
+  None. New `dashboard_theme._media_box()`/`_draw_media_element()`
+  render it fresh every frame (like a graph's plotted line, since
+  playback position advances continuously) rather than baking it into
+  the static background the way text/image elements are. No backend
+  validation needed -- `elements` already round-trips arbitrary element
+  dicts through config, so a `"media"` entry needed nothing beyond the
+  new renderer branch in `render_frame()`.
+- **Two small canvas usability fixes.** The browser's unstyled default
+  "Choose File" control (used for the background image, an image
+  element, and the now-playing placeholder) is now themed to match the
+  rest of the app (`input[type="file"]::file-selector-button`, with a
+  separate `::-moz-file-selector-button` rule since combining them in
+  one selector list would silently invalidate both in browsers that
+  don't recognize one of the two). And every selected element's
+  property panel gained "Center horizontally"/"Center vertically"
+  buttons (set x or y to exactly 0.5) -- faster and more precise than
+  dragging until the existing snap-to-center guide catches. Verified by
+  rendering a `"media"` element standalone (with and without live
+  media, opacity < 1) and via a Playwright session against the real
+  built frontend + live backend: adding a now-playing element, styled
+  file inputs in both the Image and "Nothing playing" sections, and
+  the center buttons independently resetting X and Y on a text element.
 
 ## [1.0.0] — 2026-08-29
 
