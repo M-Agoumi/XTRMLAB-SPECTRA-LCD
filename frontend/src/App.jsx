@@ -20,6 +20,10 @@ export default function App() {
   const [config, setConfig] = useState(null);
   const [system, setSystem] = useState(null);
   const [portDraft, setPortDraft] = useState("");
+  const [portsList, setPortsList] = useState([]);
+  const [autoDetectValue, setAutoDetectValue] = useState(null);
+  const [portsStatus, setPortsStatus] = useState(null);
+  const [portsError, setPortsError] = useState(null);
   const [brightnessDraft, setBrightnessDraft] = useState(90);
   const [theme, setTheme] = useState("clock");
   const [logs, setLogs] = useState([]);
@@ -84,6 +88,39 @@ export default function App() {
   useEffect(() => {
     api.getSystem().then(setSystem, (e) => setSystemError(e.message));
   }, []);
+
+  // -- panel port: the one setting everything else depends on --------
+  // Scans right away on load (so there's already something useful in
+  // the dropdown before anyone touches the "Detect screens" button),
+  // and again whenever that button is clicked (e.g. after plugging the
+  // panel in). If nothing's been picked yet and the scan finds exactly
+  // one candidate, it's the obvious choice -- select and save it
+  // automatically rather than making that a mandatory extra click.
+  const detectPorts = useCallback(() => {
+    setPortsError(null);
+    return api.listPorts().then(
+      ({ ports, auto_detect }) => {
+        setPortsList(ports);
+        setAutoDetectValue(auto_detect);
+        if (ports.length === 0) {
+          setPortsStatus("No Hongtai-family screen found -- check the USB connection, then click Detect screens again.");
+        } else if (ports.length === 1) {
+          setPortsStatus(`Found 1 screen on ${ports[0].device}.`);
+        } else {
+          setPortsStatus(`Found ${ports.length} screens -- pick the right one below.`);
+        }
+        return { ports, auto_detect };
+      },
+      (e) => {
+        setPortsError(e.message);
+        return { ports: [], auto_detect: null };
+      }
+    );
+  }, []);
+
+  useEffect(() => {
+    detectPorts();
+  }, [detectPorts]);
 
   // -- live log stream -----------------------------------------------
   useEffect(() => {
@@ -164,9 +201,15 @@ export default function App() {
   // switch.
   const handleApply = () => runAction(() => api.apply());
 
-  const handleSaveConfig = () =>
+  const handleDetectClick = () => runAction(() => detectPorts());
+
+  // Applies (and saves) the moment it's picked -- no separate Save step,
+  // since nothing else in this app can usefully be touched before a
+  // port is chosen anyway (see `portSelected` below).
+  const handlePortChange = (value) =>
     runAction(async () => {
-      const saved = await api.updateConfig({ port: portDraft || null });
+      setPortDraft(value);
+      const saved = await api.updateConfig({ port: value || null });
       setConfig(saved);
     });
 
@@ -237,6 +280,15 @@ export default function App() {
     });
 
   const running = !!state?.worker_alive;
+  // Everything past this point needs to know which physical port to
+  // talk to -- there's no sensible "Start" or theme setting without
+  // one, so it's the first thing on the page, and nothing else here is
+  // usable until it's set. `config` (not `portDraft`) is the source of
+  // truth for this gate: portDraft changes the instant the dropdown is
+  // touched, but handlePortChange saves it immediately too (no separate
+  // Save step -- see its own comment), so the two are never out of sync
+  // for more than one request.
+  const portSelected = !!config?.port;
 
   return (
     <div className="app">
@@ -251,6 +303,42 @@ export default function App() {
             : "no screen connected"}
         </span>
       </header>
+
+      <section className="panel">
+        <h2>Panel port</h2>
+        <p className="hint">
+          Pick which serial port your screen is connected on -- everything else on this
+          page needs this set first.
+        </p>
+        <div className="row">
+          <label className="grow">
+            Port
+            <select value={portDraft} onChange={(e) => handlePortChange(e.target.value)} disabled={busy}>
+              <option value="" disabled>
+                {portsList.length || autoDetectValue ? "Select a port…" : "Click Detect screens ->"}
+              </option>
+              {autoDetectValue && (
+                <option value={autoDetectValue}>Auto-detect (only works with exactly one screen plugged in)</option>
+              )}
+              {portsList.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.device} -- {p.description || "USB serial device"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button onClick={handleDetectClick} disabled={busy}>
+            Detect screens
+          </button>
+        </div>
+        {portsStatus && <p className="hint">{portsStatus}</p>}
+        {portsError && <p className="error">Couldn't scan for screens: {portsError}</p>}
+        {!portSelected && (
+          <p className="error">
+            No port selected -- the rest of this app stays disabled until you pick one above.
+          </p>
+        )}
+      </section>
 
       <section className="panel">
         <h2>Preview</h2>
@@ -309,42 +397,48 @@ export default function App() {
 
       <section className="panel controls">
         <h2>Controls</h2>
-        <div className="row">
-          <label>
-            Theme
-            <select
-              value={theme}
-              onChange={(e) => setTheme(e.target.value)}
-              disabled={busy}
-            >
-              {api.THEMES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            onClick={handleStart}
-            disabled={busy}
-            title={running ? "Switch live to the selected theme -- no reconnect" : undefined}
-          >
-            {running ? "Switch" : "Start"}
-          </button>
-          <button onClick={handleStop} disabled={busy || !running}>
-            Stop
-          </button>
-          <button onClick={handleApply} disabled={busy || !running} title="Restart the running theme with the latest saved settings">
-            Apply (restart)
-          </button>
-        </div>
-        {state?.running_theme && (
-          <p className="hint">Running: {state.running_theme}</p>
+        {!portSelected ? (
+          <p className="hint">Select a panel port above to enable this.</p>
+        ) : (
+          <>
+            <div className="row">
+              <label>
+                Theme
+                <select
+                  value={theme}
+                  onChange={(e) => setTheme(e.target.value)}
+                  disabled={busy}
+                >
+                  {api.THEMES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                onClick={handleStart}
+                disabled={busy}
+                title={running ? "Switch live to the selected theme -- no reconnect" : undefined}
+              >
+                {running ? "Switch" : "Start"}
+              </button>
+              <button onClick={handleStop} disabled={busy || !running}>
+                Stop
+              </button>
+              <button onClick={handleApply} disabled={busy || !running} title="Restart the running theme with the latest saved settings">
+                Apply (restart)
+              </button>
+            </div>
+            {state?.running_theme && (
+              <p className="hint">Running: {state.running_theme}</p>
+            )}
+          </>
         )}
         {actionError && <p className="error">{actionError}</p>}
       </section>
 
-      {theme === "video" && (
+      {portSelected && theme === "video" && (
         <section className="panel">
           <h2>Video settings</h2>
           <div className="row">
@@ -403,7 +497,7 @@ export default function App() {
         </section>
       )}
 
-      {theme === "webpage" && (
+      {portSelected && theme === "webpage" && (
         <section className="panel">
           <h2>Webpage settings</h2>
           <div className="row">
@@ -448,14 +542,14 @@ export default function App() {
         </section>
       )}
 
-      {theme === "clock" && (
+      {portSelected && theme === "clock" && (
         <section className="panel">
           <h2>Clock settings</h2>
           <p className="hint">A live clock with CPU/RAM bars -- no settings beyond port and brightness below.</p>
         </section>
       )}
 
-      {theme === "dashboard" && (
+      {portSelected && theme === "dashboard" && (
         <DashboardCanvas frameUrl={frameUrl} connected={!!state?.connected} />
       )}
 
@@ -463,17 +557,6 @@ export default function App() {
 
       <section className="panel">
         <h2>Config</h2>
-        <div className="row">
-          <label className="grow">
-            Port (blank = auto-detect)
-            <input
-              type="text"
-              value={portDraft}
-              onChange={(e) => setPortDraft(e.target.value)}
-              placeholder="auto-detect"
-            />
-          </label>
-        </div>
         <div className="row">
           <label className="grow">
             Brightness: {brightnessDraft}
@@ -486,10 +569,7 @@ export default function App() {
             />
           </label>
         </div>
-        <p className="hint">
-          Brightness applies immediately, running or not. Port needs
-          Save, and takes effect on the next Start/Apply.
-        </p>
+        <p className="hint">Applies immediately, running or not. (Panel port moved to its own section above.)</p>
       </section>
 
       <section className="panel">

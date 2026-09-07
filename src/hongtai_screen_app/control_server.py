@@ -90,6 +90,8 @@ def _make_handler(controller: AppController):
                     self._send_json(200, controller.get_config())
                 elif path == "/api/system":
                     self._send_json(200, controller.system_info())
+                elif path == "/api/ports":
+                    self._send_json(200, controller.list_ports())
                 elif path == "/api/dashboard/meta":
                     self._send_json(200, controller.dashboard_meta())
                 elif path == "/api/logs/stream":
