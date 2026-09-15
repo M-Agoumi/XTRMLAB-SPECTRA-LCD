@@ -1634,6 +1634,25 @@ dashboard designer) this is laying groundwork for.
   untouched copy); an entry a person actually edited under a built-in's
   name is left alone, since that's a real customization, not a stale
   copy.
+- **4 more built-in presets that showcase the bundled photo
+  backgrounds** -- Northern Lights (aurora), Deep Space (nebula),
+  Outrun Drive (synthwave), City Nights (bokeh) -- added alongside the
+  original 6, which all used a procedural background, so a fresh
+  install's picker also demonstrates the photo backgrounds without
+  anyone having to build a layout for one from scratch. Each is
+  deliberately sparser than the original 6 (a photo background is
+  already visually busy on its own); Northern Lights and City Nights
+  also use a stat-bound text element instead of only gauges/bars, as a
+  worked example of that. 10 built-ins total now.
+- **A "Duplicate" button on every preset card**, next to Delete --
+  works identically on a person's own saved preset or one of the app's
+  built-ins, since the picker already reads both through the same
+  merged view (`config_store.resolve_dashboard_presets()`). Saves an
+  exact copy of that preset's elements and background under a new name
+  (`"<name> (copy)"`, or `"(copy 2)"`, `"(copy 3)"`, ... if that name's
+  already taken) -- an ordinary save, nothing built-in-specific about
+  it. The obvious way to build a variant of an existing preset (built-
+  in or not) without editing the original out from under yourself.
 
 ## [1.0.0] — 2026-08-29
 

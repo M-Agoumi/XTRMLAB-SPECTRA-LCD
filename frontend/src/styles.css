@@ -593,6 +593,13 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
+.preset-card-actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.preset-card-duplicate,
 .preset-card-delete {
   flex: none;
   font-size: 0.72rem;
