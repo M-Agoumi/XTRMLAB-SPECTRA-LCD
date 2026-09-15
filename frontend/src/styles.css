@@ -586,6 +586,8 @@ button:disabled {
 }
 
 .preset-card-name {
+  flex: 1;
+  min-width: 0;
   font-size: 0.8rem;
   color: #e6e8eb;
   white-space: nowrap;
@@ -593,17 +595,50 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
+/* Duplicate/Delete used to sit here as two always-visible, full-label
+   buttons -- wide enough on a long preset name to squeeze
+   preset-card-name down to "N...", "B...", etc. Collapsing both behind
+   a single "..." toggle (below) keeps this column narrow and fixed-
+   width, so the name gets essentially all the footer's space instead. */
 .preset-card-actions {
+  position: relative;
   display: flex;
   flex: none;
   gap: 4px;
 }
 
+.preset-card-menu-toggle {
+  flex: none;
+  width: 26px;
+  padding: 2px 0;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: #c7cbd1;
+}
+
+.preset-card-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: #1a1d23;
+  border: 1px solid #33383f;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
 .preset-card-duplicate,
 .preset-card-delete {
   flex: none;
+  width: 100%;
   font-size: 0.72rem;
-  padding: 4px 8px;
+  padding: 4px 10px;
+  text-align: left;
+  white-space: nowrap;
 }
 
 .preset-card-delete.confirm {
