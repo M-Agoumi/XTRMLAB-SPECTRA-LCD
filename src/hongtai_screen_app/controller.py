@@ -51,7 +51,7 @@ class AppController:
         self.cfg = config_store.load_config()
         migrated = config_store.migrate_dashboard_elements(self.cfg)
         migrated = config_store.migrate_dashboard_weather_element(self.cfg) or migrated
-        migrated = config_store.seed_builtin_dashboard_presets(self.cfg) or migrated
+        migrated = config_store.migrate_strip_redundant_builtin_presets(self.cfg) or migrated
         migrated = config_store.migrate_dashboard_preset_shape(self.cfg) or migrated
         if migrated:
             config_store.save_config(self.cfg)
@@ -316,11 +316,16 @@ class AppController:
         with self._lock:
             cfg = dict(self.cfg)
         d = cfg.get("dashboard", {}) or {}
+        # The built-ins (dashboard_theme.BUILTIN_DASHBOARD_PRESETS)
+        # merged with whatever's actually saved in this config -- see
+        # config_store.resolve_dashboard_presets()'s own docstring for
+        # why they're not stored in app_config.json at all.
+        presets = config_store.resolve_dashboard_presets(cfg)
         return {
             "elements": theme_kwargs.resolve_dashboard_elements(cfg),
             "defaults": dashboard_theme.DEFAULT_ELEMENTS,
-            "presets": d.get("presets", {}),
-            "presetThumbnails": self._dashboard_preset_thumbnails(d.get("presets", {})),
+            "presets": presets,
+            "presetThumbnails": self._dashboard_preset_thumbnails(presets),
             "stats": {
                 key: {"label": meta["label"], "title": meta["title"]}
                 for key, meta in dashboard_theme.STAT_DEFS.items()
@@ -530,7 +535,18 @@ class AppController:
         every preset saved before this stored) means "no background of
         its own" -- _dashboard_preset_thumbnails() and the web UI's own
         loadPreset() both fall back to the currently configured global
-        background in that case, same as before this existed."""
+        background in that case, same as before this existed.
+
+        Always writes into `dashboard.presets`, whether `name` is
+        brand new, an existing saved preset, or one of the app's own
+        built-ins (dashboard_theme.BUILTIN_DASHBOARD_PRESETS) -- saving
+        under a built-in's exact name is how it gets customized: from
+        this point on config_store.resolve_dashboard_presets() prefers
+        this saved copy over the code-defined one of the same name. If
+        that name had previously been deleted (dismissed_builtin_
+        presets), it's un-dismissed here too -- explicitly saving a
+        preset by that name is as clear a signal as a person can give
+        that they want something there again."""
         name = (name or "").strip()
         if not name:
             raise ValueError("preset name can't be empty")
@@ -543,18 +559,40 @@ class AppController:
             presets = dict(dashboard_cfg.get("presets") or {})
             presets[name] = {"elements": elements, "background": background}
             dashboard_cfg["presets"] = presets
+            dismissed = list(dashboard_cfg.get("dismissed_builtin_presets") or [])
+            if name in dismissed:
+                dismissed.remove(name)
+                dashboard_cfg["dismissed_builtin_presets"] = dismissed
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
-            return {"presets": presets, "thumbnails": self._dashboard_preset_thumbnails(presets)}
+            merged = config_store.resolve_dashboard_presets(self.cfg)
+            return {"presets": merged, "thumbnails": self._dashboard_preset_thumbnails(merged)}
 
     def delete_dashboard_preset(self, name):
+        """Removes `name` from whatever's actually saved in this
+        config (a person's own preset, or a saved customization of one
+        of the app's built-ins). If `name` also happens to be one of
+        the app's built-ins (dashboard_theme.BUILTIN_DASHBOARD_
+        PRESETS), it's additionally recorded in `dashboard.
+        dismissed_builtin_presets` -- otherwise, since a built-in isn't
+        stored in `presets` to begin with (see config_store.
+        resolve_dashboard_presets()), deleting a saved customization of
+        one would just reveal the code-defined original again on the
+        next merge, instead of the preset actually disappearing the
+        way "delete" should."""
         with self._lock:
             dashboard_cfg = dict(self.cfg.get("dashboard") or {})
             presets = dict(dashboard_cfg.get("presets") or {})
             presets.pop(name, None)
             dashboard_cfg["presets"] = presets
+            if name in dashboard_theme.BUILTIN_DASHBOARD_PRESETS:
+                dismissed = list(dashboard_cfg.get("dismissed_builtin_presets") or [])
+                if name not in dismissed:
+                    dismissed.append(name)
+                dashboard_cfg["dismissed_builtin_presets"] = dismissed
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
+            presets = config_store.resolve_dashboard_presets(self.cfg)
             return {"presets": presets, "thumbnails": self._dashboard_preset_thumbnails(presets)}
 
     def _dashboard_preset_thumbnails(self, presets, default_background=None):

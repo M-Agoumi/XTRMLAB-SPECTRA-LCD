@@ -139,46 +139,104 @@ def migrate_dashboard_preset_shape(cfg):
     return True
 
 
-def seed_builtin_dashboard_presets(cfg):
-    """Populates a fresh install's `dashboard.presets` with the 6
-    presets the app ships from day one (dashboard_theme.
-    BUILTIN_DASHBOARD_PRESETS -- see its own comment for what each one
-    is) -- so a brand-new install's preset picker isn't empty on first
-    run. Only when `presets` is ENTIRELY ABSENT, not merely empty: once
-    someone has saved or deleted even once, `dashboard.presets` exists
-    as a dict (possibly `{}`, if they deleted everything) -- that dict
-    existing at all, in any shape, means "this config has already
-    decided what its presets are", and reseeding over that would
-    silently undo someone's deliberate choice to delete a built-in
-    preset (or all of them) every time they launch the app. A config
-    that has genuinely never touched presets is the only one this
-    should ever apply to, which is also exactly the case a brand-new
-    install is in.
+def resolve_dashboard_presets(cfg):
+    """The preset picker's actual list: the app's own built-in presets
+    (`dashboard_theme.BUILTIN_DASHBOARD_PRESETS` -- code, not saved
+    data) merged with whatever this config has saved under `dashboard.
+    presets` (a person's own presets, plus any built-in they've
+    resaved under its own name to customize it -- see
+    save_dashboard_preset()'s docstring).
 
-    Deep-copies each preset (via a JSON round-trip -- simplest way to
-    get a fully independent copy of nested dicts/lists/tuples without
-    importing `copy`) so mutating a seeded preset later (rename, edit,
-    delete) never reaches back into the shared BUILTIN_DASHBOARD_
-    PRESETS constant itself.
+    This used to work the other way around: a fresh config got the 6
+    built-ins *copied* into `dashboard.presets` once (the old
+    seed_builtin_dashboard_presets(), now gone) and from then on they
+    were just ordinary saved data, indistinguishable from something a
+    person typed in themselves. That meant a built-in was permanently
+    frozen at whatever it looked like the moment it got copied in --
+    an app update that improved one of the 6 (or added a 7th) would
+    never reach an install that had already launched once, because
+    app_config.json is the person's own data, not the app's, and
+    nothing should be quietly rewriting it on their behalf. Resolving
+    the merge fresh on every read instead means a built-in always
+    reflects whatever this running app's own code defines it as --
+    app_config.json only ever holds what a person actually chose to
+    save.
+
+    A name that exists in both wins from the saved side -- the person
+    has customized that built-in (or reused its name for their own),
+    and their version is the one they'll see and can keep editing.
+    `dashboard.dismissed_builtin_presets` (a plain list of names, set
+    by delete_dashboard_preset() -- see its own comment) removes a
+    built-in that was deleted without a saved override, so a delete
+    stays a real, permanent choice with nothing to actually delete out
+    of app_config.json (there was never a copy in there to remove)."""
+    d = cfg.get("dashboard") or {}
+    dismissed = set(d.get("dismissed_builtin_presets") or [])
+
+    from .themes import dashboard_theme  # lazy: keep load_config() light for callers that don't need it
+
+    merged = {name: value for name, value in dashboard_theme.BUILTIN_DASHBOARD_PRESETS.items()
+              if name not in dismissed}
+    merged.update(d.get("presets") or {})
+    return merged
+
+
+def migrate_strip_redundant_builtin_presets(cfg):
+    """One-time cleanup for a config from before resolve_dashboard_
+    presets() existed: back when a fresh install's `dashboard.presets`
+    got the 6 built-ins *copied* into it (the old
+    seed_builtin_dashboard_presets(), now gone -- see resolve_
+    dashboard_presets()'s docstring for why), those copies are now
+    redundant -- the merge supplies the same 6 from code on every read
+    -- and worse, leaving them in `presets` would permanently freeze
+    them at today's version instead of tracking future app updates,
+    the exact problem the merge approach exists to avoid.
+
+    Removes a `presets` entry only when BOTH its name matches a current
+    `BUILTIN_DASHBOARD_PRESETS` key AND its content is still identical
+    to that built-in (compared as JSON, ignoring key order) -- i.e.
+    only an untouched copy. A same-named entry that's been edited
+    (resaved after a rename, a moved gauge, a different background) is
+    a real customization, not a stale copy, and is deliberately left in
+    place -- it's exactly the "saved side wins" override resolve_
+    dashboard_presets() is designed to keep.
 
     Mutates `cfg` in place and returns True if it changed anything --
-    same caller contract as the other migrate_*/seed_* functions in
-    this module. Flagged via `dashboard._seeded_builtin_presets_v1`,
-    separately from the "already has presets" check above, so this is
-    still a no-op on every load after the first even for an install
-    that seeded successfully and then deleted every preset down to
-    `{}` (which "presets absent" alone wouldn't distinguish from
-    "never seeded")."""
-    d = cfg.setdefault("dashboard", {})
-    if d.get("_seeded_builtin_presets_v1"):
+    same caller contract as the other migrate_* functions in this
+    module. Flagged via `dashboard._stripped_redundant_builtin_
+    presets_v1` so it runs exactly once; a config with no `presets` at
+    all (nothing to strip) still gets flagged so this stays O(1) on
+    every later load."""
+    d = cfg.get("dashboard")
+    if not isinstance(d, dict):
         return False
-    d["_seeded_builtin_presets_v1"] = True
-    if "presets" in d:
+    if d.get("_stripped_redundant_builtin_presets_v1"):
+        return False
+    d["_stripped_redundant_builtin_presets_v1"] = True
+
+    presets = d.get("presets")
+    if not isinstance(presets, dict) or not presets:
         return True
 
     from .themes import dashboard_theme  # lazy: keep load_config() light for callers that don't need it
 
-    d["presets"] = json.loads(json.dumps(dashboard_theme.BUILTIN_DASHBOARD_PRESETS))
+    changed = False
+    for name in list(presets.keys()):
+        builtin = dashboard_theme.BUILTIN_DASHBOARD_PRESETS.get(name)
+        if builtin is None:
+            continue
+        # Compare as JSON (round-tripped on both sides) rather than
+        # `==` directly -- a saved preset's background dict may have
+        # gone through the migrate_dashboard_preset_shape() bare-list
+        # upgrade or a JSON round trip itself somewhere along the way,
+        # which can leave e.g. tuples-vs-lists mismatches that are
+        # equal in the shape that actually matters (their JSON form)
+        # but not under Python's `==`.
+        if json.dumps(presets[name], sort_keys=True) == json.dumps(builtin, sort_keys=True):
+            del presets[name]
+            changed = True
+    if changed:
+        d["presets"] = presets
     return True
 
 

@@ -1610,6 +1610,30 @@ dashboard designer) this is laying groundwork for.
   the Tkinter GUI, same as it already did for a custom image -- a photo
   isn't tinted. Bundled into the PyInstaller build the same way
   `icon.ico` is (`packaging/hongtai_screen.spec`'s `datas`).
+- **Built-in dashboard presets are no longer copied into
+  `app_config.json`.** They used to be: a fresh install's `dashboard.
+  presets` got the 6 built-ins seeded into it once
+  (`seed_builtin_dashboard_presets()`), and from that point on they
+  were just ordinary saved data -- permanently frozen at whatever they
+  looked like the moment they were copied in, since app_config.json is
+  a person's own data and nothing should quietly rewrite it. That
+  meant an app update that improved a built-in, or added a new one,
+  would never reach an install that had already launched once.
+  `config_store.resolve_dashboard_presets()` now merges `dashboard_
+  theme.BUILTIN_DASHBOARD_PRESETS` (code, evaluated fresh on every
+  read) with whatever's actually saved under `dashboard.presets` --
+  the saved side wins on a name collision, which is how saving over a
+  built-in's own name customizes it. Deleting a pure built-in (one
+  with no saved override) records its name in a new `dashboard.
+  dismissed_builtin_presets` list instead, since there was never a
+  copy in `presets` to actually remove -- deleting stays a real,
+  permanent choice either way. A one-time migration,
+  `migrate_strip_redundant_builtin_presets()`, cleans up an existing
+  install's old seeded copies -- removing a `presets` entry only when
+  its name AND content still exactly match a current built-in (an
+  untouched copy); an entry a person actually edited under a built-in's
+  name is left alone, since that's a real customization, not a stale
+  copy.
 
 ## [1.0.0] — 2026-08-29
 
