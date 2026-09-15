@@ -1,8 +1,9 @@
 """
-weather.py -- free, no-API-key current weather lookup, so the
-dashboard's middle column (see themes/dashboard_theme.py's
-`middle_content` setting) has something to show for anyone who doesn't
-want Spotify's now-playing display there -- or anything at all.
+weather.py -- free, no-API-key current weather lookup, for the
+dashboard's movable/resizable `weather` element (see
+themes/dashboard_theme.py's default_weather_element()/
+_draw_weather_element()) -- opt-in, added to the canvas like any other
+element rather than always on.
 
 Uses Open-Meteo (https://open-meteo.com): free, no signup, no API key,
 for both geocoding a plain place name into coordinates and for the

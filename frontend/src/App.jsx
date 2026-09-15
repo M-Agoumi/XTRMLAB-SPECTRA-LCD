@@ -305,176 +305,114 @@ export default function App() {
         </span>
       </header>
 
-      {/* Two columns on a wide window -- app-level controls (port,
-          system, start/stop, brightness, log) on the left, since those
-          are read once and left alone; the live preview and whatever
-          the current theme needs (including the dashboard design
-          canvas, by far the widest thing on this page) on the right,
-          since that's what's actually being looked at and worked on
-          while this page is open. styles.css collapses this back to
-          one column (left column first) below a width where two side
-          by side would just squeeze the canvas, same breakpoint the
-          rest of this app already treats as "narrow". */}
-      <div className="app-columns">
-        <div className="app-col app-col-left">
-          <Collapsible id="panel-port" title="Panel port" defaultOpen={true}>
-            <p className="hint">
-              Pick which serial port your screen is connected on -- everything else on this
-              page needs this set first.
-            </p>
-            <div className="row">
-              <label className="grow">
-                Port
-                <select value={portDraft} onChange={(e) => handlePortChange(e.target.value)} disabled={busy}>
-                  <option value="" disabled>
-                    {portsList.length || autoDetectValue ? "Select a port…" : "Click Detect screens ->"}
-                  </option>
-                  {autoDetectValue && (
-                    <option value={autoDetectValue}>Auto-detect (only works with exactly one screen plugged in)</option>
-                  )}
-                  {portsList.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.device} -- {p.description || "USB serial device"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button onClick={handleDetectClick} disabled={busy}>
-                Detect screens
-              </button>
-            </div>
-            {portsStatus && <p className="hint">{portsStatus}</p>}
-            {portsError && <p className="error">Couldn't scan for screens: {portsError}</p>}
-            {!portSelected && (
-              <p className="error">
-                No port selected -- the rest of this app stays disabled until you pick one above.
-              </p>
-            )}
-          </Collapsible>
+      {/* `actionError` is shared across every button that goes through
+          runAction() -- Start/Stop/Apply, the Windows-startup and
+          keep-active-when-locked toggles, desktop shortcut creation,
+          every dashboard action -- not just the ones in the Controls
+          section below. It used to be rendered *inside* that one
+          Collapsible, which meant an error from, say, the System
+          section's "Launch at Windows startup" checkbox (its own
+          section, closed by default) landed in a completely different,
+          easy-to-miss part of the page instead of anywhere near the
+          control that actually failed -- reported as "the checkbox
+          doesn't work and no error shows anywhere," when an error was
+          in fact being set, just not somewhere the person was looking.
+          Rendered here instead, right under the header, it's visible
+          regardless of which section below happens to be open. */}
+      {actionError && <p className="error app-error">{actionError}</p>}
 
-          <Collapsible id="controls" title="Controls" defaultOpen={true} className="panel controls">
-            {!portSelected ? (
-              <p className="hint">Select a panel port above to enable this.</p>
-            ) : (
-              <>
-                <div className="row">
-                  <label>
-                    Theme
-                    <select
-                      value={theme}
-                      onChange={(e) => setTheme(e.target.value)}
-                      disabled={busy}
-                    >
-                      {api.THEMES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    onClick={handleStart}
-                    disabled={busy}
-                    title={running ? "Switch live to the selected theme -- no reconnect" : undefined}
-                  >
-                    {running ? "Switch" : "Start"}
-                  </button>
-                  <button onClick={handleStop} disabled={busy || !running}>
-                    Stop
-                  </button>
-                  <button onClick={handleApply} disabled={busy || !running} title="Restart the running theme with the latest saved settings">
-                    Apply (restart)
-                  </button>
-                </div>
-                {state?.running_theme && (
-                  <p className="hint">Running: {state.running_theme}</p>
-                )}
-              </>
-            )}
-            {actionError && <p className="error">{actionError}</p>}
-          </Collapsible>
-
-          <Collapsible id="config" title="Config" defaultOpen={true}>
-            <div className="row">
-              <label className="grow">
-                Brightness: {brightnessDraft}
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={brightnessDraft}
-                  onChange={(e) => handleBrightnessChange(e.target.value)}
-                />
-              </label>
-            </div>
-            <p className="hint">Applies immediately, running or not. (Panel port moved to its own section above.)</p>
-          </Collapsible>
-
-          <Collapsible id="system" title="System" defaultOpen={false}>
-            {system?.startup_supported === false ? (
-              <p className="hint">
-                Launch-at-startup and desktop shortcuts are Windows-only.
-              </p>
-            ) : (
-              <>
-                <div className="row">
-                  <label className="row-inline">
-                    <input
-                      type="checkbox"
-                      checked={!!system?.startup_enabled}
-                      disabled={busy || !system}
-                      onChange={(e) => handleToggleStartup(e.target.checked)}
-                    />
-                    Launch at Windows startup
-                  </label>
-                  <button onClick={handleCreateShortcut} disabled={busy}>
-                    Create Desktop Shortcut
-                  </button>
-                </div>
-                {shortcutMsg && <p className="hint">{shortcutMsg}</p>}
-              </>
-            )}
-            <div className="row">
-              <label className="row-inline">
-                <input
-                  type="checkbox"
-                  checked={!!system?.keep_active_when_locked}
-                  disabled={busy || !system || system?.keep_active_supported === false}
-                  onChange={(e) => handleToggleKeepActive(e.target.checked)}
-                />
-                Keep the panel updating while Windows is locked
-              </label>
-              {system?.keep_active_supported === false && (
-                <span className="hint">(Windows only)</span>
+      {/* Full-width rows, top to bottom, per the layout the user asked
+          for directly: controls/panel-select on top, the selected
+          theme's own config next to the live preview right below that
+          (the one place two things genuinely need to sit side by
+          side), then brightness, system, and the log each getting
+          their own full-width row rather than being crammed into a
+          narrow sidebar column. No more left/right page columns --
+          that layout kept the app-level settings and the live preview/
+          config visually split apart into two independent-height
+          columns, which is what produced the empty gap under the
+          shorter column previously. */}
+      <Collapsible id="controls" title="Controls -- panel &amp; theme" defaultOpen={true}>
+        <p className="hint">
+          Pick which serial port your screen is connected on -- everything else on this
+          page needs this set first.
+        </p>
+        <div className="row">
+          <label className="grow">
+            Port
+            <select value={portDraft} onChange={(e) => handlePortChange(e.target.value)} disabled={busy}>
+              <option value="" disabled>
+                {portsList.length || autoDetectValue ? "Select a port…" : "Click Detect screens ->"}
+              </option>
+              {autoDetectValue && (
+                <option value={autoDetectValue}>Auto-detect (only works with exactly one screen plugged in)</option>
               )}
-            </div>
-            {systemError && <p className="error">{systemError}</p>}
-          </Collapsible>
-
-          <Collapsible id="log" title="Log" defaultOpen={false}>
-            <div className="log-box" ref={logBoxRef}>
-              {logs.length === 0 ? (
-                <div className="log-placeholder">(no log lines yet)</div>
-              ) : (
-                logs.map((line, i) => <div key={i}>{line}</div>)
-              )}
-            </div>
-          </Collapsible>
+              {portsList.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.device} -- {p.description || "USB serial device"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button onClick={handleDetectClick} disabled={busy}>
+            Detect screens
+          </button>
         </div>
+        {portsStatus && <p className="hint">{portsStatus}</p>}
+        {portsError && <p className="error">Couldn't scan for screens: {portsError}</p>}
+        {!portSelected && (
+          <p className="error">
+            No port selected -- the rest of this app stays disabled until you pick one above.
+          </p>
+        )}
 
-        <div className="app-col app-col-right">
-          <Collapsible id="preview" title="Preview" defaultOpen={true}>
-            <div className="preview-box">
-              {frameUrl ? (
-                <img className="preview-img" src={frameUrl} alt="Live panel preview" />
-              ) : (
-                <div className="preview-placeholder">
-                  {running ? "waiting for first frame..." : "start a theme to see a preview"}
-                </div>
-              )}
-            </div>
-          </Collapsible>
+        {portSelected && (
+          <div className="row">
+            <label>
+              Theme
+              <select
+                value={theme}
+                onChange={(e) => setTheme(e.target.value)}
+                disabled={busy}
+              >
+                {api.THEMES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              onClick={handleStart}
+              disabled={busy}
+              title={running ? "Switch live to the selected theme -- no reconnect" : undefined}
+            >
+              {running ? "Switch" : "Start"}
+            </button>
+            <button onClick={handleStop} disabled={busy || !running}>
+              Stop
+            </button>
+            <button onClick={handleApply} disabled={busy || !running} title="Restart the running theme with the latest saved settings">
+              Apply (restart)
+            </button>
+          </div>
+        )}
+        {state?.running_theme && <p className="hint">Running: {state.running_theme}</p>}
+      </Collapsible>
 
+      {/* Selected panel's own config next to the live preview -- side
+          by side, not stacked, since these two are what's actually
+          being looked at and worked on together while a theme runs.
+          Dashboard is the one exception: DashboardCanvas already draws
+          the live frame inside its own canvas box (see its "It's
+          overlaid on the panel's live frame too" hint below), so a
+          second, separate Preview box next to it would just be the
+          same image polled and shown twice -- it's skipped there and
+          DashboardCanvas gets the full row's width instead, where it
+          does its own side-by-side split of canvas vs. element list/
+          properties (see DashboardCanvas.jsx). */}
+      <div className="config-and-preview">
+        <div className="config-pane">
           {portSelected && theme === "video" && (
             <section className="panel">
               <h2>Video settings</h2>
@@ -587,12 +525,96 @@ export default function App() {
           )}
 
           {portSelected && theme === "dashboard" && (
-            <DashboardCanvas frameUrl={frameUrl} connected={!!state?.connected} />
+            <DashboardCanvas frameUrl={frameUrl} connected={!!state?.connected}
+                              dashboardRunning={!!state?.worker_alive && state?.running_theme === "Dashboard"} />
           )}
-
-          {settingsSaved && <p className="hint settings-saved">{settingsSaved}</p>}
         </div>
+
+        {theme !== "dashboard" && (
+          <div className="preview-pane">
+            <Collapsible id="preview" title="Preview" defaultOpen={true}>
+              <div className="preview-box">
+                {frameUrl ? (
+                  <img className="preview-img" src={frameUrl} alt="Live panel preview" />
+                ) : (
+                  <div className="preview-placeholder">
+                    {running ? "waiting for first frame..." : "start a theme to see a preview"}
+                  </div>
+                )}
+              </div>
+            </Collapsible>
+          </div>
+        )}
       </div>
+
+      {settingsSaved && <p className="hint settings-saved">{settingsSaved}</p>}
+
+      <Collapsible id="brightness" title="Brightness" defaultOpen={true}>
+        <div className="row">
+          <label className="grow">
+            Brightness: {brightnessDraft}
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={brightnessDraft}
+              onChange={(e) => handleBrightnessChange(e.target.value)}
+            />
+          </label>
+        </div>
+        <p className="hint">Applies immediately, running or not.</p>
+      </Collapsible>
+
+      <Collapsible id="system" title="System" defaultOpen={false}>
+        {system?.startup_supported === false ? (
+          <p className="hint">
+            Launch-at-startup and desktop shortcuts are Windows-only.
+          </p>
+        ) : (
+          <>
+            <div className="row">
+              <label className="row-inline">
+                <input
+                  type="checkbox"
+                  checked={!!system?.startup_enabled}
+                  disabled={busy || !system}
+                  onChange={(e) => handleToggleStartup(e.target.checked)}
+                />
+                Launch at Windows startup
+              </label>
+              <button onClick={handleCreateShortcut} disabled={busy}>
+                Create Desktop Shortcut
+              </button>
+            </div>
+            {shortcutMsg && <p className="hint">{shortcutMsg}</p>}
+          </>
+        )}
+        <div className="row">
+          <label className="row-inline">
+            <input
+              type="checkbox"
+              checked={!!system?.keep_active_when_locked}
+              disabled={busy || !system || system?.keep_active_supported === false}
+              onChange={(e) => handleToggleKeepActive(e.target.checked)}
+            />
+            Keep the panel updating while Windows is locked
+          </label>
+          {system?.keep_active_supported === false && (
+            <span className="hint">(Windows only)</span>
+          )}
+        </div>
+        {systemError && <p className="error">{systemError}</p>}
+      </Collapsible>
+
+      <Collapsible id="log" title="Log" defaultOpen={false}>
+        <div className="log-box" ref={logBoxRef}>
+          {logs.length === 0 ? (
+            <div className="log-placeholder">(no log lines yet)</div>
+          ) : (
+            logs.map((line, i) => <div key={i}>{line}</div>)
+          )}
+        </div>
+      </Collapsible>
     </div>
   );
 }

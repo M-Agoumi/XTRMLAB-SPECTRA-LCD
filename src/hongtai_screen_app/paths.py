@@ -69,6 +69,21 @@ ICON_PATH = _resource_path("icon.ico")
 # "*.log" rule.
 STARTUP_LOG_PATH = os.path.join(_app_base_dir(), "startup_debug.log")
 
+# A plain empty file next to app_config.json whose *mtime* is the whole
+# point -- see single_instance.py's _bring_existing_window_to_front()
+# and app.py's App._poll_show_trigger(). Touched by a second launch that
+# finds the app already running, polled by the first (real) instance's
+# existing 100ms log-queue timer; when its mtime moves forward, that
+# instance shows/raises its own window. This is the RELIABLE way to
+# bring the running instance to front -- FindWindowW + SetForegroundWindow
+# is attempted first as a same-instant bonus (feels snappier when it
+# works) but Windows' foreground-window-stealing restrictions can
+# silently no-op it from another process with no way to detect that it
+# failed; this file-touch path always works within one poll tick
+# (<=100ms) because it's the app itself, on its own Tk main thread,
+# deciding to raise its own window -- nothing for Windows to block.
+SHOW_TRIGGER_PATH = os.path.join(_app_base_dir(), "show_request.trigger")
+
 
 def _write_startup_log(msg):
     """Best-effort append to STARTUP_LOG_PATH. Opened and closed on every

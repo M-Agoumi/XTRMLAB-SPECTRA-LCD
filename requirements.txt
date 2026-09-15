@@ -1,5 +1,11 @@
-# hongtai_screen -- everything needed to run the desktop app (app.py)
-# with all four themes available. Windows only.
+# hongtai_screen -- everything needed to run the desktop app with all
+# four themes available. Windows only.
+#
+# The shipped desktop app is now scripts/run_v2_app.py (the backend +
+# webview window showing the React frontend) -- that's what the
+# desktop icon and "Launch at Windows startup" point at. app.py's
+# Tkinter GUI still works (`python app.py`) for manual/headless use,
+# it's just not what gets launched automatically any more.
 #
 # Only want one theme instead of the full desktop app? You don't need
 # all of this -- see that theme's own section in README.md for just
@@ -35,9 +41,10 @@ playwright>=1.40
 pystray>=0.19        # optional -- without it, closing the window quits instead
                      # of dismissing to tray, and --autostart just minimizes
 
-# --- v2.0 UI process (ROADMAP.md Phase 2c, not the shipped app yet) ---
-# pywebview>=5.0     # optional -- only needed to try scripts/run_v2_app.py /
-                     # scripts/run_ui.py. Also needs WebView2 (ships with
+# --- Desktop app window: scripts/run_v2_app.py / scripts/run_ui.py ----
+pywebview>=5.0        # required -- this is the actual app window now (the
+                     # desktop icon/"Launch at Windows startup" both point
+                     # at run_v2_app.py). Also needs WebView2 (ships with
                      # Windows 11; usually present on Windows 10 via Edge).
 
 # --- Building a standalone .exe (developers only, not needed to run) --
