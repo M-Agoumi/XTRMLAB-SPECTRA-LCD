@@ -98,6 +98,90 @@ def migrate_dashboard_elements(cfg):
     return True
 
 
+def migrate_dashboard_preset_shape(cfg):
+    """One-time upgrade for saved `dashboard.presets` entries from
+    before a preset could carry its own background: each value used to
+    be a bare `elements` list, now it's `{"elements": [...],
+    "background": {...} or None}` (see save_dashboard_preset()'s
+    docstring) so loading a preset can restore the exact look it was
+    saved with, not just its layout against whatever background
+    happens to be configured globally right now. A bare-list entry is
+    wrapped as `{"elements": <the list>, "background": None}` --
+    `None` means "no background of its own", which is exactly what a
+    pre-upgrade preset actually was, so this changes nothing about how
+    it looks, only how it's stored.
+
+    Mutates `cfg` in place and returns True if it changed anything --
+    same caller contract as the other migrate_* functions in this
+    module. Flagged via `dashboard._migrated_preset_shape_v1` so it
+    runs exactly once."""
+    d = cfg.get("dashboard")
+    if not isinstance(d, dict):
+        return False
+    if d.get("_migrated_preset_shape_v1"):
+        return False
+
+    presets = d.get("presets")
+    if isinstance(presets, dict):
+        upgraded = {}
+        for name, value in presets.items():
+            if isinstance(value, list):
+                upgraded[name] = {"elements": value, "background": None}
+            else:
+                upgraded[name] = value
+        d["presets"] = upgraded
+
+    # Always flags done (even if nothing needed upgrading, e.g. a fresh
+    # config with no presets at all yet) -- same "flag it regardless"
+    # pattern migrate_dashboard_elements() uses, so this check stays
+    # O(1) on every future load instead of re-inspecting `presets`.
+    d["_migrated_preset_shape_v1"] = True
+    return True
+
+
+def seed_builtin_dashboard_presets(cfg):
+    """Populates a fresh install's `dashboard.presets` with the 6
+    presets the app ships from day one (dashboard_theme.
+    BUILTIN_DASHBOARD_PRESETS -- see its own comment for what each one
+    is) -- so a brand-new install's preset picker isn't empty on first
+    run. Only when `presets` is ENTIRELY ABSENT, not merely empty: once
+    someone has saved or deleted even once, `dashboard.presets` exists
+    as a dict (possibly `{}`, if they deleted everything) -- that dict
+    existing at all, in any shape, means "this config has already
+    decided what its presets are", and reseeding over that would
+    silently undo someone's deliberate choice to delete a built-in
+    preset (or all of them) every time they launch the app. A config
+    that has genuinely never touched presets is the only one this
+    should ever apply to, which is also exactly the case a brand-new
+    install is in.
+
+    Deep-copies each preset (via a JSON round-trip -- simplest way to
+    get a fully independent copy of nested dicts/lists/tuples without
+    importing `copy`) so mutating a seeded preset later (rename, edit,
+    delete) never reaches back into the shared BUILTIN_DASHBOARD_
+    PRESETS constant itself.
+
+    Mutates `cfg` in place and returns True if it changed anything --
+    same caller contract as the other migrate_*/seed_* functions in
+    this module. Flagged via `dashboard._seeded_builtin_presets_v1`,
+    separately from the "already has presets" check above, so this is
+    still a no-op on every load after the first even for an install
+    that seeded successfully and then deleted every preset down to
+    `{}` (which "presets absent" alone wouldn't distinguish from
+    "never seeded")."""
+    d = cfg.setdefault("dashboard", {})
+    if d.get("_seeded_builtin_presets_v1"):
+        return False
+    d["_seeded_builtin_presets_v1"] = True
+    if "presets" in d:
+        return True
+
+    from .themes import dashboard_theme  # lazy: keep load_config() light for callers that don't need it
+
+    d["presets"] = json.loads(json.dumps(dashboard_theme.BUILTIN_DASHBOARD_PRESETS))
+    return True
+
+
 def migrate_dashboard_weather_element(cfg):
     """One-time upgrade for a saved config that used the old global
     `middle_content` "weather" choice (dashboard_theme.py's now-removed

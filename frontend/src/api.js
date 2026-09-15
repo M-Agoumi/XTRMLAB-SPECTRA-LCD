@@ -165,11 +165,11 @@ export function saveDashboardNowPlaying(patch) {
   }).then(asJson);
 }
 
-export function saveDashboardPreset(name, elements) {
+export function saveDashboardPreset(name, elements, background) {
   return fetch("/api/dashboard/presets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, elements }),
+    body: JSON.stringify({ name, elements, background }),
   }).then(asJson);
 }
 
