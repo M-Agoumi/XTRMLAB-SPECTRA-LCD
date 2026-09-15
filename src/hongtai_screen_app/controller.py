@@ -51,6 +51,8 @@ class AppController:
         self.cfg = config_store.load_config()
         migrated = config_store.migrate_dashboard_elements(self.cfg)
         migrated = config_store.migrate_dashboard_weather_element(self.cfg) or migrated
+        migrated = config_store.seed_builtin_dashboard_presets(self.cfg) or migrated
+        migrated = config_store.migrate_dashboard_preset_shape(self.cfg) or migrated
         if migrated:
             config_store.save_config(self.cfg)
         self._lock = threading.RLock()
@@ -511,16 +513,29 @@ class AppController:
     # apply_weather_from_elements() above, same as the now-playing
     # display's own equivalent conversion earlier.
 
-    def save_dashboard_preset(self, name, elements):
+    def save_dashboard_preset(self, name, elements, background=None):
+        """`background`, if given, is that preset's OWN snapshot of the
+        panel background at the moment it was saved -- the web UI's
+        "Save current layout as preset" button sends its current
+        background draft, so a preset restores the exact look it was
+        saved with (background included) rather than just its element
+        layout against whatever background happens to be configured
+        globally when it's later loaded. `None` (the default, and what
+        every preset saved before this stored) means "no background of
+        its own" -- _dashboard_preset_thumbnails() and the web UI's own
+        loadPreset() both fall back to the currently configured global
+        background in that case, same as before this existed."""
         name = (name or "").strip()
         if not name:
             raise ValueError("preset name can't be empty")
         if not isinstance(elements, list):
             raise ValueError("elements must be a list")
+        if background is not None and not isinstance(background, dict):
+            raise ValueError("background must be an object")
         with self._lock:
             dashboard_cfg = dict(self.cfg.get("dashboard") or {})
             presets = dict(dashboard_cfg.get("presets") or {})
-            presets[name] = elements
+            presets[name] = {"elements": elements, "background": background}
             dashboard_cfg["presets"] = presets
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
@@ -536,18 +551,29 @@ class AppController:
             config_store.save_config(self.cfg)
             return {"presets": presets, "thumbnails": self._dashboard_preset_thumbnails(presets)}
 
-    def _dashboard_preset_thumbnails(self, presets, background=None):
+    def _dashboard_preset_thumbnails(self, presets, default_background=None):
         """Renders every saved preset's small preview picture (a
         `data:image/png;base64,...` URI, ready for an <img src=...>) --
         see dashboard_theme.render_preset_thumbnail()'s own docstring
         for why this reuses the real render pipeline instead of a
-        lightweight mock. `background` defaults to the currently
-        configured panel background: a preset only ever stores
-        `elements` (see save_dashboard_preset() just above), never its
-        own background, since the background is one global panel
-        setting shared by every preset -- so "what loading this preset
-        would actually look like" always means against whatever
-        background is configured right now.
+        lightweight mock. Each preset renders against its OWN saved
+        background (see save_dashboard_preset()'s `background` param)
+        if it has one, so e.g. a built-in preset's starfield or grid
+        background actually shows up in its thumbnail rather than
+        whatever background the panel happens to be configured with
+        right now; a preset with no background of its own (`None` --
+        every preset saved before this existed, and any preset saved
+        without changing the background) falls back to
+        `default_background`, which itself defaults to the currently
+        configured global background.
+
+        Accepts both preset shapes for whichever one `presets` actually
+        holds: the current `{"elements": [...], "background": {...} or
+        None}` dict, and the older bare-`elements`-list shape (in case
+        anything still hands this one before config_store.py's
+        migrate_dashboard_preset_shape() has run against it) -- a bare
+        list is treated as `{"elements": <the list>, "background":
+        None}`, identical to how that migration itself upgrades one.
 
         Called with the lock already held by save/delete above (cheap
         enough -- a handful of presets, each a small Pillow render --
@@ -559,11 +585,16 @@ class AppController:
         down the whole picker -- every other preset's thumbnail still
         renders."""
         dashboard_cfg = self.cfg.get("dashboard") or {}
-        if background is None:
-            background = dict(dashboard_theme.DEFAULT_BACKGROUND, **(dashboard_cfg.get("background") or {}))
+        if default_background is None:
+            default_background = dict(dashboard_theme.DEFAULT_BACKGROUND, **(dashboard_cfg.get("background") or {}))
         thumbnails = {}
-        for name, elements in presets.items():
+        for name, value in presets.items():
             try:
+                if isinstance(value, list):
+                    elements, own_background = value, None
+                else:
+                    elements, own_background = value.get("elements"), value.get("background")
+                background = own_background if own_background else default_background
                 img = dashboard_theme.render_preset_thumbnail(elements, background)
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")

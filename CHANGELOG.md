@@ -1511,6 +1511,70 @@ dashboard designer) this is laying groundwork for.
   click arms it ("Confirm?") without deleting, and the second click
   deletes only that card, leaving the other preset's card untouched --
   no console errors at any point.
+- **6 dashboard presets shipped from day one, and presets can now save
+  their own background.** A brand-new install's preset picker used to
+  be empty; `dashboard_theme.py` gains `BUILTIN_DASHBOARD_PRESETS`,
+  seeded into `dashboard.presets` on a fresh config's very first load
+  by `config_store.seed_builtin_dashboard_presets()` -- from that point
+  on they're ordinary presets (renameable, editable, deletable), and
+  deleting one is never silently undone on a later launch, since
+  seeding only ever applies when `presets` is entirely absent, not
+  merely emptied out. The six: **Neon Horizon** (futuristic -- a
+  starfield HUD, cyan/magenta gradient gauges, a live network graph,
+  a gradient VRAM bar), **Bubblegum** (cute -- soft pink/lavender/mint
+  pastel gauges and rounded knob-bars on a purple gradient, a minimal
+  analog clock), **Panic Mode** (funny -- deadpan captions like "BRAIN
+  USAGE", "SNACK STORAGE" and "WILL TO LIVE" relabeling perfectly
+  ordinary CPU/RAM/network/battery gauges on a red grid), **Mission
+  Control** (informative -- 8 gauges, a CPU history graph, a GPU power
+  bar and a date-showing clock, as much at once as reasonably fits),
+  **Midnight Minimal** (a big analog clock and almost nothing else),
+  and **Arcade RGB** (a rainbow gradient shared across a bar-style
+  graph, a gradient bar and two gradient gauges, neon clock, starfield
+  background).
+
+  Getting there needed a real bug fixed first:
+  `render_preset_thumbnail()` was rendering straight onto a half-size
+  (480x240) canvas while `Fonts()` uses fixed *pixel* sizes calibrated
+  for the panel's real 960x480 resolution -- so every title/label came
+  out roughly twice as large relative to its own gauge as a real
+  render, clipping text like "CPU LOAD" down to "PU LOAD" at the
+  edges. Fixed by rendering at the reference resolution first and
+  resizing the *finished image* down to the requested thumbnail size,
+  which is also how every one of these 6 presets' layouts got tuned:
+  by actually rendering each one with this function and looking at the
+  result -- the same function the picker itself uses -- rather than
+  placing elements by guessed coordinates, which is what caught (and
+  let this fix) the title clipping plus a couple of caption/title text
+  collisions in early drafts of Panic Mode and Midnight Minimal.
+
+  Presets can now also carry their own background: `save_dashboard_
+  preset()` takes an optional `background` snapshot (the design
+  canvas's "Save as preset" button sends its current background
+  draft), stored per-preset as `{"elements": [...], "background":
+  {...} or None}` -- `None` (every preset saved before this, and any
+  preset saved without changing the background) means "no background
+  of its own," and thumbnail rendering/loading both fall back to
+  whatever's globally configured in that case, unchanged from before.
+  `config_store.migrate_dashboard_preset_shape()` upgrades any
+  existing installs' old bare-`elements`-list presets to this same
+  shape (with `background: None`) the first time they're loaded, so
+  every preset -- built-in or hand-saved, old or new -- looks and
+  loads the same way. Loading a preset now stages its background into
+  the background draft alongside its elements (the same "loaded, not
+  yet applied" deal `commit()` already gives elements -- Save layout/
+  Save background are still what actually pushes either to the
+  physical panel), so a click-to-load card restores the exact look a
+  preset was saved with, not just its gauge positions.
+
+  Verified end to end against a mocked backend serving the real 6
+  built-in presets (actual rendered thumbnails, not placeholders):
+  all 6 cards render as visibly distinct pictures, loading a preset
+  with its own background (Bubblegum) correctly updates both the
+  element count and the background draft's mode (confirmed by opening
+  the Background section afterward and reading the select's value),
+  and the delete-confirm flow still behaves correctly against a full
+  6-preset set -- no console errors.
 
 ## [1.0.0] — 2026-08-29
 

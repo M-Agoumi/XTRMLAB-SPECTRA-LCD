@@ -154,7 +154,8 @@ def _make_handler(controller: AppController):
                     self._send_json(200, controller.save_dashboard_now_playing(body.get("patch")))
                 elif path == "/api/dashboard/presets":
                     body = self._read_json_body()
-                    result = controller.save_dashboard_preset(body.get("name"), body.get("elements"))
+                    result = controller.save_dashboard_preset(
+                        body.get("name"), body.get("elements"), body.get("background"))
                     self._send_json(200, result)
                 elif path == "/api/dashboard/presets/delete":
                     body = self._read_json_body()

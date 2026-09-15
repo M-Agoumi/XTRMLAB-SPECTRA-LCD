@@ -67,7 +67,8 @@ from .themes import demo_clock
 # non-Tkinter UI too. This file is now just the Tkinter layer on top.
 from .paths import ICON_PATH, SHOW_TRIGGER_PATH, _write_startup_log
 from .config_store import (AUTO_DETECT, THEME_TAB_ORDER, load_config, save_config,
-                            migrate_dashboard_elements, migrate_dashboard_weather_element)
+                            migrate_dashboard_elements, migrate_dashboard_weather_element,
+                            seed_builtin_dashboard_presets, migrate_dashboard_preset_shape)
 from .startup_registration import is_startup_enabled, enable_startup, disable_startup
 from .desktop_shortcut import create_desktop_shortcut
 from .single_instance import _ensure_single_instance
@@ -119,6 +120,16 @@ class App(tk.Tk):
         self.cfg = load_config()
         migrated = migrate_dashboard_elements(self.cfg)
         migrated = migrate_dashboard_weather_element(self.cfg) or migrated
+        # Presets are a web-canvas-only feature (this Tkinter GUI has no
+        # preset UI of its own), but these still run here too -- a
+        # fresh install launched via app.py first (e.g. `python app.py`
+        # for manual/headless use) should have the same built-in
+        # presets ready and waiting the first time anyone opens the web
+        # UI, not just on installs that happened to open the web UI
+        # first. See config_store.py's own docstrings for why each is
+        # safe to run unconditionally on every launch.
+        migrated = seed_builtin_dashboard_presets(self.cfg) or migrated
+        migrated = migrate_dashboard_preset_shape(self.cfg) or migrated
         if migrated:
             save_config(self.cfg)
         self.log_queue = queue.Queue()

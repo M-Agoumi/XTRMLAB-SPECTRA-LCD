@@ -2063,6 +2063,30 @@ through a headless browser -- two real, visibly different thumbnails
 rendered, click-to-load and the two-step delete both behaved
 correctly, no console errors.
 
+**6 built-in dashboard presets, and presets can save their own
+background.** `dashboard_theme.BUILTIN_DASHBOARD_PRESETS` -- Neon
+Horizon (futuristic), Bubblegum (cute), Panic Mode (funny), Mission
+Control (informative), Midnight Minimal, and Arcade RGB -- seeded into
+`dashboard.presets` on a fresh config's first load only
+(`config_store.seed_builtin_dashboard_presets()`; never re-seeded once
+that key exists in any shape, so deleting one is a real, respected
+choice). Fixed a real bug found while tuning them:
+`render_preset_thumbnail()` rendered straight onto a half-size canvas
+while `Fonts()` uses fixed pixel sizes calibrated for the panel's real
+960x480 resolution, so titles clipped ("CPU LOAD" -> "PU LOAD") --
+fixed by rendering at the reference resolution and resizing the
+finished image down instead. Presets can now carry their own
+background (`{"elements": [...], "background": {...} or None}`,
+`save_dashboard_preset()`'s new optional `background` param);
+`config_store.migrate_dashboard_preset_shape()` upgrades old
+bare-list presets to this shape on load. Loading a preset stages its
+background into the draft alongside its elements, same "not applied
+until Save" deal as elements already had. Verified against a mocked
+backend serving the real 6 built-ins: all render as distinct pictures,
+loading one with its own background updates both the element count
+and the background draft, delete-confirm still works against the full
+set, no console errors.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

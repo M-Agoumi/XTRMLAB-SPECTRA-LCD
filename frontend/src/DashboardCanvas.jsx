@@ -949,7 +949,12 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   const saveAsPreset = () => {
     const name = presetName.trim();
     if (!name) return;
-    api.saveDashboardPreset(name, elements).then(
+    // Captures the current background draft alongside the layout, so
+    // loading this preset back later restores the exact look it was
+    // saved with -- not just the element positions against whatever
+    // background happens to be configured at load time. See
+    // AppController.save_dashboard_preset()'s own docstring.
+    api.saveDashboardPreset(name, elements, bgDraft).then(
       (r) => {
         setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
         setPresetName("");
@@ -960,10 +965,23 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   };
 
   const loadPreset = (name) => {
-    if (!name || !meta?.presets?.[name]) return;
-    commit(meta.presets[name]);
+    const preset = meta?.presets?.[name];
+    if (!preset) return;
+    commit(preset.elements);
     setSelectedId(null);
-    setStatus(`Loaded preset "${name}".`);
+    // A preset with its own saved background (see saveAsPreset() above)
+    // stages it into the background draft too -- same "loaded, not yet
+    // persisted" deal commit() already gives elements: "Save layout"/
+    // "Save background" are still what actually pushes either one to
+    // the physical panel. A preset with no background of its own
+    // (every preset saved before this existed) leaves the current
+    // background draft alone rather than clearing it to something.
+    if (preset.background) setBgDraft(preset.background);
+    setStatus(
+      preset.background
+        ? `Loaded preset "${name}" (layout + background) -- Save layout / Save background to apply.`
+        : `Loaded preset "${name}" -- Save layout to apply.`
+    );
   };
 
   const deletePreset = (name) => {
