@@ -2107,6 +2107,33 @@ element's live-value placeholder, and all 4 bundled styles correctly
 hide the "Color scheme" picker (a photo isn't tinted) while a
 procedural style keeps showing it -- no console errors.
 
+Immediately caught a real problem with the "seed the 6 built-ins into
+app_config.json once" design from earlier: this dev config already had
+`dashboard.presets` populated with plain copies of the 6 built-ins
+(from a prior seed), so restarting the app after code changes never
+showed anything new -- the picker was reading those frozen copies, not
+the current code. Reworked to a merge instead: `dashboard_theme.
+BUILTIN_DASHBOARD_PRESETS` is no longer copied into app_config.json at
+all; `config_store.resolve_dashboard_presets()` merges it with
+whatever's actually saved fresh on every read (saved side wins on a
+name collision -- how saving over a built-in's name customizes it), so
+an app update to a built-in (or a new one) reaches every install
+immediately, no migration needed for *future* changes. Deleting a pure
+built-in records its name in a new `dashboard.dismissed_builtin_
+presets` list instead of removing something that was never actually
+stored. `migrate_strip_redundant_builtin_presets()` is the one-time
+cleanup for existing installs (like this dev config) that already had
+the old seeded copies -- removes a `presets` entry only when its name
+*and* content still exactly match a current built-in (an untouched
+copy); anything a person actually edited under a built-in's name is
+left alone as a real customization. Verified directly: seeding the old
+shape (2 real presets + all 6 built-ins copied in verbatim, plus the
+old seed flag) and running the new migration strips exactly the 6
+copies back out, leaving the 2 real presets in app_config.json while
+the merge still shows all 8; a built-in resaved with an edited field
+survives the strip (content no longer matches, so it's kept as a real
+override) and the merge correctly shows the edited version.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit
