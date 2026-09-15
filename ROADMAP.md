@@ -2134,6 +2134,20 @@ the merge still shows all 8; a built-in resaved with an edited field
 survives the strip (content no longer matches, so it's kept as a real
 override) and the merge correctly shows the edited version.
 
+Added 4 more built-ins right after -- Northern Lights (aurora), Deep
+Space (nebula), Outrun Drive (synthwave), City Nights (bokeh) -- one
+per bundled photo background, since none of the original 6 (all
+procedural backgrounds) had ever actually used them; each rendered and
+visually checked through render_preset_thumbnail() the same way the
+original 6 were. 10 built-ins total. Also added a Duplicate button to
+every preset card (next to Delete) -- works on a built-in or a saved
+preset identically, since the picker already reads both through
+resolve_dashboard_presets()'s merged view; it's just another
+save_dashboard_preset() call under an auto-generated "(copy)"/"(copy
+N)" name. Verified: all 10 built-ins render as distinct picture cards,
+duplicating one produces a correctly-named copy with no naming
+collision on a second duplicate, no console errors.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

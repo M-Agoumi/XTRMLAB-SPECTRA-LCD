@@ -1136,21 +1136,24 @@ def slots_to_elements(slots=None):
 DEFAULT_ELEMENTS = slots_to_elements()
 
 
-# The 6 built-in presets shipped from day one (ROADMAP.md Phase 6
-# addendum) -- seeded into a fresh install's dashboard.presets by
-# config_store.py's migrate_dashboard_builtin_presets() the first time
-# it ever loads a config with no `presets` key at all, so a new
-# install's preset picker isn't empty on first run. From that point on
-# they're ordinary saved presets: renameable, editable, deletable, and
-# never re-seeded once that key exists (even as {}) -- deleting all of
-# them is a real, respected choice, not something this silently undoes
-# on the next launch.
+# The app's own built-in presets (ROADMAP.md Phase 6 addendum) -- pure
+# code, never copied into anyone's app_config.json. config_store.
+# resolve_dashboard_presets() merges this dict with whatever's actually
+# saved in a given config on every read, so the picker always reflects
+# whatever this running app's code currently defines, and an update
+# that improves one (or adds a new one, the way the last 4 below were
+# added after the first 6 shipped) reaches every install immediately.
+# Saving over a built-in's own name customizes it (the saved copy wins
+# the merge); deleting a pure built-in records its name in
+# `dashboard.dismissed_builtin_presets` instead, since there's no copy
+# in `presets` to actually remove -- see resolve_dashboard_presets()'s
+# own docstring for the full mechanism.
 #
 # Each is `{"elements": [...], "background": {...}}` -- the shape
-# save_dashboard_preset() now stores for every preset (old installs'
-# bare-list presets are migrated to this same shape by config_store.py
-# too -- see migrate_dashboard_preset_shape()), so a built-in preset
-# looks and loads exactly like a hand-saved one, background included.
+# save_dashboard_preset() stores for every preset (old installs' bare-
+# list presets are migrated to this same shape by config_store.py too
+# -- see migrate_dashboard_preset_shape()), so a built-in preset looks
+# and loads exactly like a hand-saved one, background included.
 #
 # Colors were picked and the whole layout of each preset iterated by
 # actually rendering it through render_preset_thumbnail() and looking
@@ -1178,6 +1181,26 @@ DEFAULT_ELEMENTS = slots_to_elements()
 #   Arcade RGB        -- a rainbow gradient shared across a bar-style
 #                        graph, a gradient bar and two gradient gauges,
 #                        neon analog clock, starfield background.
+#
+# The 4 below were added later, each built to showcase one of the
+# bundled "photo" backgrounds (BUNDLED_BACKGROUND_IMAGES) rather than
+# a procedural one, and deliberately sparser than the 6 above -- a
+# photo background is already visually busy, so piling on gauges the
+# way Mission Control does would just fight it for attention. Two of
+# them (Northern Lights, City Nights) use a stat-bound text element
+# (`"stat"` + `"template"`, see _resolve_text_content()) instead of
+# only gauges/bars, doubling as an example layout for that too.
+#
+#   Northern Lights   -- the aurora background, cyan/purple gradient
+#                        gauges, a live "RAM NN%" text reading.
+#   Deep Space        -- the nebula background, magenta/blue gradient
+#                        gauges, a gradient disk-usage bar.
+#   Outrun Drive      -- the synthwave background, kept sparse (two
+#                        small gauges low in the corners, a live "NET"
+#                        reading) so the sun/grid picture stays the
+#                        star of the show.
+#   City Nights       -- the bokeh background, just a big minimal
+#                        analog clock and two live text readings.
 BUILTIN_DASHBOARD_PRESETS = {
     "Neon Horizon": {
         "background": {
@@ -1942,6 +1965,314 @@ BUILTIN_DASHBOARD_PRESETS = {
                 "width": 0.22,
                 "height": 0.22,
                 "z": 100,
+            },
+        ],
+    },
+    # The 4 below each showcase one of the bundled "photo" backgrounds
+    # (BUNDLED_BACKGROUND_IMAGES) -- added after the original 6, which
+    # all use a procedural background (starfield/grid/solid), so a
+    # fresh install's picker also demonstrates the photo backgrounds
+    # without anyone having to build a layout for one from scratch.
+    # Deliberately sparser than the original 6: a photo background is
+    # already visually busy on its own, so piling on gauges the way
+    # Mission Control does would just fight it for attention. Two of
+    # these (Northern Lights, City Nights) also use a stat-bound text
+    # element (`"stat"` + `"template"`, see _resolve_text_content())
+    # instead of only gauges/bars for a live reading, doubling as an
+    # example layout for that.
+    "Northern Lights": {
+        "background": {
+            "mode": "aurora",
+            "scheme": "purple",
+            "image_path": None,
+        },
+        "elements": [
+            {
+                "id": "title",
+                "type": "text",
+                "text": "NORTHERN LIGHTS",
+                "x": 0.5,
+                "y": 0.08,
+                "font_size": 0.045,
+                "color": (170, 240, 220),
+                "align": "center",
+                "bold": True,
+                "opacity": 1.0,
+                "z": 0,
+            },
+            {
+                "id": "g_cpu",
+                "type": "gauge",
+                "stat": "cpu_load",
+                "x": 0.17,
+                "y": 0.42,
+                "radius": 0.14,
+                "rotation": 0.0,
+                "color": (90, 230, 200),
+                "color2": (140, 120, 255),
+                "opacity": 1.0,
+                "z": 1,
+            },
+            {
+                "id": "g_gpu",
+                "type": "gauge",
+                "stat": "gpu_load",
+                "x": 0.83,
+                "y": 0.42,
+                "radius": 0.14,
+                "rotation": 0.0,
+                "color": (120, 200, 255),
+                "color2": (170, 110, 255),
+                "opacity": 1.0,
+                "z": 2,
+            },
+            {
+                "id": "t_ram",
+                "type": "text",
+                "stat": "ram",
+                "template": "RAM {value}",
+                "x": 0.5,
+                "y": 0.63,
+                "font_size": 0.04,
+                "color": (210, 235, 255),
+                "align": "center",
+                "bold": False,
+                "opacity": 0.95,
+                "z": 3,
+            },
+            {
+                "id": "clk",
+                "type": "clock",
+                "x": 0.5,
+                "y": 0.86,
+                "font_size": 0.05,
+                "color": (220, 240, 235),
+                "opacity": 1.0,
+                "show_seconds": False,
+                "face": "digital",
+                "hour_format": "24h",
+                "show_date": False,
+                "analog_style": "minimal",
+                "radius": 0.1,
+                "image_path": None,
+                "width": 0.22,
+                "height": 0.22,
+                "z": 100,
+            },
+        ],
+    },
+    "Deep Space": {
+        "background": {
+            "mode": "nebula",
+            "scheme": "purple",
+            "image_path": None,
+        },
+        "elements": [
+            {
+                "id": "title",
+                "type": "text",
+                "text": "DEEP SPACE",
+                "x": 0.5,
+                "y": 0.08,
+                "font_size": 0.05,
+                "color": (235, 200, 255),
+                "align": "center",
+                "bold": True,
+                "opacity": 1.0,
+                "z": 0,
+            },
+            {
+                "id": "g_gpu",
+                "type": "gauge",
+                "stat": "gpu_temp",
+                "x": 0.17,
+                "y": 0.42,
+                "radius": 0.14,
+                "rotation": 0.0,
+                "color": (255, 120, 200),
+                "color2": (140, 110, 255),
+                "opacity": 1.0,
+                "z": 1,
+            },
+            {
+                "id": "g_cpu",
+                "type": "gauge",
+                "stat": "cpu_load",
+                "x": 0.83,
+                "y": 0.42,
+                "radius": 0.14,
+                "rotation": 0.0,
+                "color": (120, 160, 255),
+                "color2": (200, 110, 255),
+                "opacity": 1.0,
+                "z": 2,
+            },
+            {
+                "id": "b_disk",
+                "type": "bar",
+                "stat": "disk_usage",
+                "x": 0.5,
+                "y": 0.66,
+                "width": 0.32,
+                "height": 0.05,
+                "color": (190, 130, 255),
+                "orientation": "horizontal",
+                "show_knob": True,
+                "gradient": True,
+                "gradient_direction": "horizontal",
+                "opacity": 1.0,
+                "z": 3,
+                "gradient_colors": [(120, 160, 255), (190, 130, 255), (255, 120, 200)],
+            },
+            {
+                "id": "clk",
+                "type": "clock",
+                "x": 0.5,
+                "y": 0.87,
+                "font_size": 0.05,
+                "color": (230, 215, 250),
+                "opacity": 1.0,
+                "show_seconds": True,
+                "face": "digital",
+                "hour_format": "24h",
+                "show_date": True,
+                "analog_style": "minimal",
+                "radius": 0.1,
+                "image_path": None,
+                "width": 0.22,
+                "height": 0.22,
+                "z": 100,
+            },
+        ],
+    },
+    "Outrun Drive": {
+        "background": {
+            "mode": "synthwave",
+            "scheme": "crimson",
+            "image_path": None,
+        },
+        "elements": [
+            {
+                "id": "title",
+                "type": "text",
+                "text": "OUTRUN DRIVE",
+                "x": 0.5,
+                "y": 0.07,
+                "font_size": 0.045,
+                "color": (255, 230, 160),
+                "align": "center",
+                "bold": True,
+                "opacity": 1.0,
+                "z": 0,
+            },
+            {
+                "id": "g_cpu",
+                "type": "gauge",
+                "stat": "cpu_load",
+                "x": 0.14,
+                "y": 0.83,
+                "radius": 0.11,
+                "rotation": 0.0,
+                "color": (255, 90, 170),
+                "color2": (255, 210, 110),
+                "opacity": 1.0,
+                "z": 1,
+            },
+            {
+                "id": "g_gpu",
+                "type": "gauge",
+                "stat": "gpu_load",
+                "x": 0.86,
+                "y": 0.83,
+                "radius": 0.11,
+                "rotation": 0.0,
+                "color": (255, 90, 170),
+                "color2": (255, 210, 110),
+                "opacity": 1.0,
+                "z": 2,
+            },
+            {
+                "id": "t_net",
+                "type": "text",
+                "stat": "network",
+                "template": "NET {value}",
+                "x": 0.5,
+                "y": 0.83,
+                "font_size": 0.035,
+                "color": (255, 235, 210),
+                "align": "center",
+                "bold": False,
+                "opacity": 0.95,
+                "z": 3,
+            },
+        ],
+    },
+    "City Nights": {
+        "background": {
+            "mode": "bokeh",
+            "scheme": "blue",
+            "image_path": None,
+        },
+        "elements": [
+            {
+                "id": "clk",
+                "type": "clock",
+                "x": 0.5,
+                "y": 0.42,
+                "font_size": 0.05,
+                "color": (235, 235, 245),
+                "opacity": 1.0,
+                "show_seconds": False,
+                "face": "analog",
+                "hour_format": "24h",
+                "show_date": False,
+                "analog_style": "minimal",
+                "radius": 0.19,
+                "image_path": None,
+                "width": 0.22,
+                "height": 0.22,
+                "z": 0,
+            },
+            {
+                "id": "t_msg",
+                "type": "text",
+                "text": "City Nights",
+                "x": 0.5,
+                "y": 0.72,
+                "font_size": 0.04,
+                "color": (210, 220, 235),
+                "align": "center",
+                "bold": False,
+                "opacity": 0.9,
+                "z": 1,
+            },
+            {
+                "id": "t_cpu",
+                "type": "text",
+                "stat": "cpu_load",
+                "template": "CPU {value}",
+                "x": 0.28,
+                "y": 0.88,
+                "font_size": 0.032,
+                "color": (190, 205, 225),
+                "align": "center",
+                "bold": False,
+                "opacity": 0.9,
+                "z": 2,
+            },
+            {
+                "id": "t_gpu",
+                "type": "text",
+                "stat": "gpu_temp",
+                "template": "GPU {value}",
+                "x": 0.72,
+                "y": 0.88,
+                "font_size": 0.032,
+                "color": (190, 205, 225),
+                "align": "center",
+                "bold": False,
+                "opacity": 0.9,
+                "z": 3,
             },
         ],
     },

@@ -1007,6 +1007,34 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     );
   };
 
+  const duplicatePreset = (name) => {
+    // Works on any card -- one of the app's own built-ins (dashboard_
+    // theme.BUILTIN_DASHBOARD_PRESETS) exactly as well as something a
+    // person saved themselves, since meta.presets is already the
+    // merged view (config_store.resolve_dashboard_presets()) and this
+    // just reads whatever's sitting there under `name`. Saving the
+    // copy under a new name is a completely ordinary save -- there's
+    // nothing built-in-specific about it -- so it's just
+    // api.saveDashboardPreset() again, the same call "Save current
+    // layout as preset" below already makes.
+    const preset = meta?.presets?.[name];
+    if (!preset) return;
+    const existing = new Set(Object.keys(meta.presets || {}));
+    let copyName = `${name} (copy)`;
+    let n = 2;
+    while (existing.has(copyName)) {
+      copyName = `${name} (copy ${n})`;
+      n += 1;
+    }
+    api.saveDashboardPreset(copyName, preset.elements, preset.background).then(
+      (r) => {
+        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
+        setStatus(`Duplicated "${name}" as "${copyName}".`);
+      },
+      (e) => setError(e.message)
+    );
+  };
+
   const deletePreset = (name) => {
     if (!name) return;
     // First click on a card's Delete button just arms it (see
@@ -2431,13 +2459,22 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                   </button>
                   <div className="preset-card-footer">
                     <span className="preset-card-name" title={name}>{name}</span>
-                    <button
-                      className={`preset-card-delete${armed ? " confirm" : ""}`}
-                      onClick={() => deletePreset(name)}
-                      title={armed ? "Click again to confirm" : `Delete "${name}"`}
-                    >
-                      {armed ? "Confirm?" : "Delete"}
-                    </button>
+                    <div className="preset-card-actions">
+                      <button
+                        className="preset-card-duplicate"
+                        onClick={() => duplicatePreset(name)}
+                        title={`Duplicate "${name}"`}
+                      >
+                        Duplicate
+                      </button>
+                      <button
+                        className={`preset-card-delete${armed ? " confirm" : ""}`}
+                        onClick={() => deletePreset(name)}
+                        title={armed ? "Click again to confirm" : `Delete "${name}"`}
+                      >
+                        {armed ? "Confirm?" : "Delete"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
