@@ -1443,6 +1443,30 @@ dashboard designer) this is laying groundwork for.
   present and is otherwise identical to `"utf-8"`; also added a log
   line on that fallback path so a future parse failure (if any) names
   the actual exception instead of just showing `-1`.
+- **Fixed the tray icon's "Show window" doing nothing when the window
+  was already open but behind another window.** `backend_app.py`'s
+  `_on_show()` (Phase 2c, the current entry point now that the
+  desktop shortcut and Startup entry both point at `run_v2_app.py`)
+  only ever checked whether the UI process was *alive*, and if so did
+  nothing at all -- reasonable the first time this was written (only
+  one thing could call it), but in practice indistinguishable from a
+  broken tray icon: the window is genuinely open, just not on top,
+  and clicking "Show window" visibly did nothing about that. Fixed by
+  adding `_focus_ui_window()`, which brings the existing window to
+  the front (and restores it if minimized) via the same
+  `FindWindowW`/`SetForegroundWindow` mechanism `single_instance.py`
+  already uses for the old Tkinter app's second-launch case, matched
+  against the webview window's title (now passed explicitly as
+  `run_ui.py --title`, via a new shared `UI_WINDOW_TITLE` constant,
+  instead of relying on that script's own default staying in sync).
+  Logs whether it actually found and focused the window, same
+  step-by-step-logging habit as the startup-registration work above,
+  so a report of "still doesn't come up" is diagnosable from the Log
+  panel rather than a guess -- `SetForegroundWindow` is Windows'
+  own best-effort API (a background process can be denied the right
+  to steal focus outright, with no reliable way to detect that from
+  here), so this is the same caveat `single_instance.py` already
+  documents, not a new limitation.
 
 ## [1.0.0] — 2026-08-29
 
