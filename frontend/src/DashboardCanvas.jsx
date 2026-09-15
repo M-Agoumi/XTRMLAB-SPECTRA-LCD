@@ -506,6 +506,12 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   // confirmation step at all would be one misclick away from losing a
   // saved layout with no undo).
   const [presetPendingDelete, setPresetPendingDelete] = useState(null);
+  // Which preset card's "..." action menu (Duplicate / Delete) is open,
+  // if any -- collapsing those two actions behind a menu instead of two
+  // always-visible full-width buttons is what leaves room for the full
+  // preset name (see the preset-card-actions JSX below; long names were
+  // getting clipped to "N...", "B...", etc. next to "Duplicate"/"Delete").
+  const [presetMenuOpen, setPresetMenuOpen] = useState(null);
   const [guides, setGuides] = useState({ x: null, y: null });
   const [bgDraft, setBgDraft] = useState(null);
   const [bgStatus, setBgStatus] = useState(null);
@@ -564,6 +570,19 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     const t = setTimeout(() => setPresetPendingDelete(null), 3000);
     return () => clearTimeout(t);
   }, [presetPendingDelete]);
+
+  // Close an open preset action menu on any click outside it (the menu
+  // and its "..." toggle both carry data-preset-menu, so a click that
+  // lands on either is left alone).
+  useEffect(() => {
+    if (!presetMenuOpen) return;
+    const onDocClick = (e) => {
+      if (e.target.closest("[data-preset-menu]")) return;
+      setPresetMenuOpen(null);
+    };
+    document.addEventListener("pointerdown", onDocClick);
+    return () => document.removeEventListener("pointerdown", onDocClick);
+  }, [presetMenuOpen]);
 
   const commit = useCallback((next) => {
     setElements((prev) => {
@@ -1026,6 +1045,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
       copyName = `${name} (copy ${n})`;
       n += 1;
     }
+    setPresetMenuOpen(null);
     api.saveDashboardPreset(copyName, preset.elements, preset.background).then(
       (r) => {
         setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
@@ -1039,12 +1059,15 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     if (!name) return;
     // First click on a card's Delete button just arms it (see
     // presetPendingDelete's own comment) -- this is the second click,
-    // the one that actually deletes.
+    // the one that actually deletes. The menu stays open across the
+    // confirm click so "Confirm?" has somewhere to render; it only
+    // closes once the delete actually goes through.
     if (presetPendingDelete !== name) {
       setPresetPendingDelete(name);
       return;
     }
     setPresetPendingDelete(null);
+    setPresetMenuOpen(null);
     api.deleteDashboardPreset(name).then(
       (r) => {
         setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
@@ -1210,6 +1233,26 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               // and reads sensibly either way.
               const previewText = el.stat ? textElementPreview(el, meta) : (el.text || "(empty text)");
               const halfW = Math.max(24, (previewText.length * fontSize) / 3.2);
+              // Every text element -- custom or stat-bound -- is already
+              // baked into the live frame once connected (build_static_
+              // background()/render_frame() on the backend), so drawing
+              // this SVG copy on top of it unconditionally double-renders
+              // the same text twice at the same spot. For a stat-bound
+              // element that's a garbled overlap between the SVG's fixed
+              // "--" placeholder (see textElementPreview()) and the real
+              // live value underneath -- exactly the "NENET.GM/s" bug
+              // reported against "Outrun Drive"'s "NET {value}" text. For
+              // plain custom text the content matches, but slightly
+              // different font rendering between the SVG and the backend
+              // PNG still shows as a visible ghosting/blur, not a clean
+              // overlap -- so both cases defer to the live frame here,
+              // same as the showMockup / showClockMockup gates below for
+              // box/image/media/weather and the clock (unlike those,
+              // there's no "always show" exception for one sub-type here,
+              // since text has nothing like graph's need for history data
+              // the editor doesn't have).
+              const overLiveFrame = connected && !!frameUrl;
+              const showMockup = isSelected || !overLiveFrame || forceAllMockups;
               return (
                 <g key={el.id}>
                   {gradDefs && <defs>{gradDefs}</defs>}
@@ -1218,11 +1261,22 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                           y={y - fontSize * 0.8} width={halfW * 2} height={fontSize * 1.6}
                           fill="none" stroke="#ffd85e" strokeDasharray="4 3" />
                   )}
-                  <text x={x} y={y} textAnchor={anchor} dominantBaseline="middle"
-                        fontSize={fontSize} fill={color} opacity={el.opacity ?? 1}
-                        onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move", userSelect: "none" }}>
-                    {previewText}
-                  </text>
+                  {showMockup ? (
+                    <text x={x} y={y} textAnchor={anchor} dominantBaseline="middle"
+                          fontSize={fontSize} fill={color} opacity={el.opacity ?? 1}
+                          onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move", userSelect: "none" }}>
+                      {previewText}
+                    </text>
+                  ) : (
+                    // Live frame already shows this stat's real value here --
+                    // keep an invisible hit-target so the element can still
+                    // be picked up and dragged (selecting it flips
+                    // showMockup back on, same as the box/image branch above).
+                    <rect x={x - (anchor === "start" ? 4 : anchor === "end" ? halfW * 2 - 4 : halfW)}
+                          y={y - fontSize * 0.8} width={halfW * 2} height={fontSize * 1.6}
+                          fill="transparent"
+                          onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                  )}
                   {isSelected && (
                     <rect x={x + halfW - 7} y={y + fontSize * 0.8 - 7} width={14} height={14}
                           fill="#ffd85e" stroke="#fff" strokeWidth={1}
@@ -2459,21 +2513,37 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                   </button>
                   <div className="preset-card-footer">
                     <span className="preset-card-name" title={name}>{name}</span>
-                    <div className="preset-card-actions">
+                    <div className="preset-card-actions" data-preset-menu>
                       <button
-                        className="preset-card-duplicate"
-                        onClick={() => duplicatePreset(name)}
-                        title={`Duplicate "${name}"`}
+                        className="preset-card-menu-toggle"
+                        data-preset-menu
+                        onClick={() => setPresetMenuOpen((open) => (open === name ? null : name))}
+                        title="Preset actions"
+                        aria-label={`Actions for "${name}"`}
+                        aria-expanded={presetMenuOpen === name}
                       >
-                        Duplicate
+                        ⋯
                       </button>
-                      <button
-                        className={`preset-card-delete${armed ? " confirm" : ""}`}
-                        onClick={() => deletePreset(name)}
-                        title={armed ? "Click again to confirm" : `Delete "${name}"`}
-                      >
-                        {armed ? "Confirm?" : "Delete"}
-                      </button>
+                      {presetMenuOpen === name && (
+                        <div className="preset-card-menu" data-preset-menu>
+                          <button
+                            className="preset-card-duplicate"
+                            data-preset-menu
+                            onClick={() => duplicatePreset(name)}
+                            title={`Duplicate "${name}"`}
+                          >
+                            Duplicate
+                          </button>
+                          <button
+                            className={`preset-card-delete${armed ? " confirm" : ""}`}
+                            data-preset-menu
+                            onClick={() => deletePreset(name)}
+                            title={armed ? "Click again to confirm" : `Delete "${name}"`}
+                          >
+                            {armed ? "Confirm?" : "Delete"}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

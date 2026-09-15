@@ -2148,6 +2148,43 @@ N)" name. Verified: all 10 built-ins render as distinct picture cards,
 duplicating one produces a correctly-named copy with no naming
 collision on a second duplicate, no console errors.
 
+Two bugs reported back against that same round, from a screenshot of
+the running app with "Outrun Drive" loaded: its network reading showed
+as garbled overlapping text ("NENET.GM/s" instead of "NET 12.4M/s"),
+and the new Duplicate/Delete buttons were squeezing preset names down
+to "N...", "B...", etc. Root cause on the first one: every text
+element -- custom or stat-bound -- is already baked into the panel's
+real live frame once connected, but the SVG design-canvas overlay was
+drawing its own copy of that same text unconditionally, with no gate
+at all (every other element type -- box/image/media/weather, the
+clock -- already had a `showMockup`/`showClockMockup` gate deferring
+to the live frame once connected, added back when those were built;
+text just never got one). For a stat-bound element that's a genuinely
+different string overlapping (its fixed "--" placeholder vs. the real
+value) -- the garbled smear reported; for plain custom text it's the
+same string rendered twice with slightly different font metrics (SVG
+vs. the backend's PNG) -- a visible ghost/blur in an actual screenshot,
+even though "identical content overlapping invisibly" had been the
+assumption when the stat-bound Source toggle was built. Gave text
+the same gate as everything else: `isSelected || !overLiveFrame ||
+forceAllMockups`, with an invisible hit-rect standing in for the
+hidden `<text>` so a not-currently-selected stat-bound element can
+still be clicked and dragged. Nothing about the actual data stream was
+ever broken -- this was purely the editor's own overlay; verified by
+rendering Outrun Drive's real backend frame (`render_preset_
+thumbnail()`'s own pipeline, fed plausible stats including a network
+figure) into a mock `/frame.jpg` and confirming headless-browser: zero
+SVG `<text>` nodes render over it unselected (both the title and the
+network reading come through clean, matching the live frame exactly),
+and the stat-bound element's mockup reappears correctly the moment
+it's selected for editing. Second bug: collapsed Duplicate + Delete
+behind a single "..." button per card (opens a small menu, closes on
+an outside click or once an action completes) instead of two
+always-visible full-label buttons, freeing the footer's width back to
+the name. Verified: duplicate-then-delete both still work end to end
+through the new menu, the menu opens/closes correctly, and preset
+names not aggressively long render in full.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

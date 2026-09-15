@@ -1653,6 +1653,33 @@ dashboard designer) this is laying groundwork for.
   already taken) -- an ordinary save, nothing built-in-specific about
   it. The obvious way to build a variant of an existing preset (built-
   in or not) without editing the original out from under yourself.
+- **Fixed: a stat-bound (or any) text element's design-canvas mockup
+  double-rendering over the panel's real live frame**, showing up as
+  garbled overlapping text -- reported against "Outrun Drive"'s
+  network reading, seen as "NENET.GM/s" instead of a clean "NET
+  12.4M/s". Every text element (custom or stat-bound) is already baked
+  into the live frame once the panel's connected -- `build_static_
+  background()`/`render_frame()` on the backend draw it there -- so
+  the SVG editor drawing its own copy of that same text on top,
+  unconditionally, put two renderings of the same string at the same
+  spot: identical but slightly different font rendering for custom
+  text (a visible ghost/blur), and a genuinely different string for
+  stat-bound text (its fixed "--" placeholder vs. the real live
+  value), which is what produced the garbled smear. Every other
+  element type (box/image/media/weather, the clock) already had a
+  `showMockup`/`showClockMockup` gate for exactly this -- hide the SVG
+  copy once the real live frame is already showing it, and only draw
+  the SVG version when it's actually needed (selected for editing, not
+  yet connected, or a layout-wide "dirty, nothing selected" edit) --
+  text elements just never got the same gate when they were built.
+  Nothing about the underlying stream was broken; this was purely the
+  design canvas's own overlay.
+- **Fixed: the preset card's Duplicate/Delete buttons crowding out the
+  preset's own name**, truncating it to "N...", "B...", etc. on
+  anything but a very short name. Both actions are now behind a single
+  "..." button in the card footer (opens a small menu with Duplicate
+  and Delete, closes on an outside click or once an action completes),
+  so the name gets the footer's width back.
 
 ## [1.0.0] — 2026-08-29
 
