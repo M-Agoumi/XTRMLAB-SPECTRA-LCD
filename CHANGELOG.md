@@ -1575,6 +1575,41 @@ dashboard designer) this is laying groundwork for.
   the Background section afterward and reading the select's value),
   and the delete-confirm flow still behaves correctly against a full
   6-preset set -- no console errors.
+- **Text elements can now show a live stat instead of just a fixed
+  string.** A text element's property panel gains a "Source" picker
+  ("Custom text" vs "Live stat"); switched to the latter, it takes a
+  `stat` (any `STAT_DEFS` key, same picker a gauge/graph/bar already
+  has) and a `template` (default `"{value}"`, e.g. `"CPU {value}"` or
+  `"{label}: {value}"`), and renders that stat's current formatted
+  reading every frame instead of one baked-in string -- so a person
+  designing their own layout can drop "GPU 58°" or "Battery: 80%"
+  anywhere on the canvas as a plain label, without a gauge/bar's own
+  ring or fill. `dashboard_theme._resolve_text_content()` does the
+  formatting (falling back to the bare value on a bad/unknown template
+  placeholder, and to "--" for a missing reading, same as a
+  disconnected gauge); a bound element is the one case a text element
+  is now redrawn every frame (`render_frame()`) rather than baked into
+  the static background once, same dynamic/static split every other
+  element type already has. A free-standing (unbound) text element is
+  unaffected either way -- still baked in once, same as before.
+- **Four built-in "photo" backgrounds** -- Aurora Glow, Deep Nebula,
+  Synthwave Sunset, Bokeh Night -- alongside the existing flat-gradient/
+  line-art background modes (grid/starfield/radial/solid), for people
+  who want something that reads as an actual picture without having to
+  go find and upload one themselves. Each is a real pre-rendered image
+  (`assets/backgrounds/*.jpg`, built by the new one-off `scripts/
+  generate_backgrounds.py` -- layered soft-edged color blobs, blur, and
+  a starfield, all plain PIL/numpy math, no external image model
+  involved) rather than another procedural draw, picked from the same
+  "Style" dropdown as every other background and rendered through the
+  exact same cover-fit-and-darken path a user's own uploaded "Custom
+  image" already used (`dashboard_theme.BUNDLED_BACKGROUND_IMAGES` maps
+  each to its shipped file, resolved via `paths.resource_path()`, same
+  place `icon.ico` is found). The "Color scheme" picker hides itself
+  for these four (and for "Custom image") in both the web canvas and
+  the Tkinter GUI, same as it already did for a custom image -- a photo
+  isn't tinted. Bundled into the PyInstaller build the same way
+  `icon.ico` is (`packaging/hongtai_screen.spec`'s `datas`).
 
 ## [1.0.0] — 2026-08-29
 

@@ -56,6 +56,14 @@ def _resource_path(*parts):
     return os.path.join(base, "assets", *parts)
 
 
+# Public alias -- dashboard_theme.py's bundled background images
+# (assets/backgrounds/<name>.jpg, see BUNDLED_BACKGROUND_IMAGES) need
+# this same "where do read-only bundled resources live" resolution but
+# for a filename picked at render time, not a fixed constant like
+# ICON_PATH below, so they import the function itself rather than a
+# precomputed path.
+resource_path = _resource_path
+
 CONFIG_PATH = os.path.join(_app_base_dir(), "app_config.json")
 ICON_PATH = _resource_path("icon.ico")
 

@@ -78,11 +78,34 @@ function basename(path) {
 // inline on the canvas itself (gauge's stat title, graph/image/media's
 // placeholder text) so the list and the canvas always agree on what to
 // call something.
+// A text element bound to a stat (el.stat set to a STAT_DEFS key --
+// see api.js/control_server.py's dashboard meta and dashboard_theme.
+// py's _resolve_text_content(), which this mirrors) shows that stat's
+// *live* reading instead of a fixed string -- the editor has no live
+// reading of its own to show (that's the real backend frame, rendered
+// behind this SVG when connected -- see canvas-frame's own comment),
+// so this fills in "--" the same way a disconnected gauge would,
+// wrapped in the element's own template ("{value}" by default, or
+// something like "CPU {value}" / "{label}: {value}").
+function textElementPreview(el, meta) {
+  const statMeta = el.stat ? meta.stats[el.stat] : null;
+  if (!statMeta) return (el.text || "").trim();
+  const template = el.template || "{value}";
+  try {
+    return template.replace(/\{value\}/g, "--").replace(/\{label\}/g, statMeta.title || el.stat);
+  } catch {
+    return "--";
+  }
+}
+
 function elementLabel(el, meta) {
   if (el.type === "gauge") return meta.stats[el.stat]?.title || el.stat;
   if (el.type === "graph") return meta.stats[el.stat]?.title || el.stat;
   if (el.type === "bar") return meta.stats[el.stat]?.title || el.stat;
-  if (el.type === "text") return el.text?.trim() ? `"${el.text}"` : "(empty text)";
+  if (el.type === "text") {
+    if (el.stat) return `${meta.stats[el.stat]?.title || el.stat} (live)`;
+    return el.text?.trim() ? `"${el.text}"` : "(empty text)";
+  }
   if (el.type === "image") return el.image_path ? basename(el.image_path) : "(no image picked)";
   if (el.type === "media") return "Now playing";
   if (el.type === "clock") return "Clock";
@@ -1153,7 +1176,12 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               const solidColor = el.color ? `rgb(${el.color[0]}, ${el.color[1]}, ${el.color[2]})` : "#fff";
               const { fill: color, defs: gradDefs } = gradientFill(el, "textgrad", solidColor);
               const anchor = { left: "start", center: "middle", right: "end" }[el.align || "center"] || "middle";
-              const halfW = Math.max(24, ((el.text || "").length * fontSize) / 3.2);
+              // A stat-bound element's real content is a live reading
+              // this editor doesn't have (see textElementPreview()'s
+              // own comment) -- "--" stands in so the box/handle sizes
+              // and reads sensibly either way.
+              const previewText = el.stat ? textElementPreview(el, meta) : (el.text || "(empty text)");
+              const halfW = Math.max(24, (previewText.length * fontSize) / 3.2);
               return (
                 <g key={el.id}>
                   {gradDefs && <defs>{gradDefs}</defs>}
@@ -1165,7 +1193,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                   <text x={x} y={y} textAnchor={anchor} dominantBaseline="middle"
                         fontSize={fontSize} fill={color} opacity={el.opacity ?? 1}
                         onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move", userSelect: "none" }}>
-                    {el.text || "(empty text)"}
+                    {previewText}
                   </text>
                   {isSelected && (
                     <rect x={x + halfW - 7} y={y + fontSize * 0.8 - 7} width={14} height={14}
@@ -1621,10 +1649,21 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
           {selected.type === "text" && (
             <>
               <div className="row">
-                <label className="grow">
-                  Text
-                  <input type="text" value={selected.text || ""}
-                         onChange={(e) => updateSelected({ text: e.target.value })} />
+                <label>
+                  Source
+                  <select
+                    value={selected.stat ? "stat" : "custom"}
+                    onChange={(e) =>
+                      updateSelected(
+                        e.target.value === "stat"
+                          ? { stat: selected.stat || Object.keys(meta.stats)[0], template: selected.template || "{value}" }
+                          : { stat: null }
+                      )
+                    }
+                  >
+                    <option value="custom">Custom text</option>
+                    <option value="stat">Live stat</option>
+                  </select>
                 </label>
                 <label>
                   Align
@@ -1635,6 +1674,39 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                   </select>
                 </label>
               </div>
+              {selected.stat ? (
+                <div className="row">
+                  <label>
+                    Stat
+                    <select value={selected.stat} onChange={(e) => updateSelected({ stat: e.target.value })}>
+                      {Object.entries(meta.stats).map(([key, s]) => (
+                        <option key={key} value={key}>{s.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grow">
+                    Template
+                    <input type="text" value={selected.template ?? "{value}"}
+                           placeholder="{value}"
+                           onChange={(e) => updateSelected({ template: e.target.value })} />
+                  </label>
+                </div>
+              ) : (
+                <div className="row">
+                  <label className="grow">
+                    Text
+                    <input type="text" value={selected.text || ""}
+                           onChange={(e) => updateSelected({ text: e.target.value })} />
+                  </label>
+                </div>
+              )}
+              {selected.stat && (
+                <p className="hint">
+                  Shows this stat's live reading, refreshed every frame -- e.g. "{"{value}"}" alone
+                  shows just "42%"; "CPU {"{value}"}" or "{"{label}"}: {"{value}"}" adds your own
+                  words around it.
+                </p>
+              )}
               <div className="row">
                 <label>
                   Font size %
@@ -2281,7 +2353,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                 ))}
               </select>
             </label>
-            {bgDraft.mode !== "image" && (
+            {!(meta.backgroundImageModes || ["image"]).includes(bgDraft.mode) && (
               <label>
                 Color scheme
                 <select
@@ -2318,6 +2390,8 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
           <p className="hint">
             {bgDraft.mode === "image"
               ? "Pick an image on this PC -- it's copied into this app's own folder, so moving or deleting the original afterward won't break it. Falls back to the default background if none is set."
+              : (meta.backgroundImageModes || []).includes(bgDraft.mode)
+              ? "One of the app's own built-in pictures, darkened a bit so gauges/text stay readable over it."
               : "The color scheme tints the gradient and, for Grid/Starfield/Radial, the whole background."}
           </p>
           <div className="row">

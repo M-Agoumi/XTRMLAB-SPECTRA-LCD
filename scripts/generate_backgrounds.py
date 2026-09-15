@@ -1,0 +1,225 @@
+"""Generates the 4 bundled 'photo' dashboard backgrounds shipped with
+the app (assets/backgrounds/*.jpg -- dashboard_theme.py's
+BUNDLED_BACKGROUND_IMAGES). A one-off authoring tool, not run by the
+app itself: the output JPEGs are what actually gets committed, and
+loaded at runtime via dashboard_theme._build_background_image()
+resolving them through paths.resource_path("backgrounds", ...). Only
+re-run this (from the repo root: `python scripts/generate_backgrounds.
+py`) to redesign one of the four looks; nothing else in the app calls
+it.
+
+Each is rendered at 1920x960 (matches the panel's 2:1 aspect so
+ImageOps.fit's cover-crop never has to cut much off either axis) with
+layered blur/noise/radial-gradient techniques -- no external image
+model involved, everything here is plain PIL/numpy math -- aiming for
+something that reads as an actual generated picture rather than this
+theme's existing flat-gradient/line-art background modes (grid/
+starfield/radial/solid).
+"""
+import math
+import os
+import random
+
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter
+
+W, H = 1920, 960
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "backgrounds")
+
+
+def save(img, name):
+    os.makedirs(OUT, exist_ok=True)
+    path = os.path.join(OUT, name)
+    img.convert("RGB").save(path, quality=90)
+    print("wrote", path, img.size)
+
+
+def vertical_gradient(w, h, top, bottom):
+    top = np.array(top, dtype=np.float32)
+    bottom = np.array(bottom, dtype=np.float32)
+    t = np.linspace(0, 1, h, dtype=np.float32).reshape(h, 1, 1)
+    row = top * (1 - t) + bottom * t
+    arr = np.repeat(row, w, axis=1)
+    return Image.fromarray(arr.astype(np.uint8), "RGB")
+
+
+def add_stars(img, count, rng, max_r=1.6, colors=((255, 255, 255),)):
+    draw = ImageDraw.Draw(img, "RGBA")
+    w, h = img.size
+    for _ in range(count):
+        x, y = rng.uniform(0, w), rng.uniform(0, h)
+        r = rng.uniform(0.3, max_r)
+        a = rng.randint(80, 230)
+        c = rng.choice(colors)
+        draw.ellipse([x - r, y - r, x + r, y + r], fill=(*c, a))
+    return img
+
+
+def soft_blob(w, h, cx, cy, radius, color, strength=255):
+    """One RGBA layer: a radial-falloff blob of `color`, soft-edged via
+    a squared falloff (softer than linear, avoids a visible hard ring
+    at the blur radius) -- the basic unit every nebula/bokeh/aurora
+    background below composites many of, at different positions/sizes/
+    colors, to build up something that doesn't look like a single flat
+    gradient."""
+    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ys, xs = np.mgrid[0:h, 0:w]
+    d = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2) / radius
+    falloff = np.clip(1.0 - d, 0, 1) ** 2
+    alpha = (falloff * strength).astype(np.uint8)
+    rgb = np.zeros((h, w, 3), dtype=np.uint8)
+    rgb[:, :] = color
+    arr = np.dstack([rgb, alpha])
+    return Image.fromarray(arr, "RGBA")
+
+
+# All four below build up their look by compositing several `soft_blob`/
+# band RGBA layers with Image.alpha_composite -- deliberately NOT
+# ImageChops.screen, which was tried first: it screens the alpha
+# channel too, as if it were just another color channel, which
+# corrupts each layer's opacity instead of combining it properly and
+# rendered as a washed-out gray fog instead of visible color.
+
+# ---------------------------------------------------------------------
+# 1. Aurora Glow -- deep night sky, a starfield, and 4 soft flowing
+# aurora ribbons (sine-perturbed horizontal bands, blurred heavily so
+# they read as glowing curtains of light rather than stripes).
+# ---------------------------------------------------------------------
+def make_aurora(seed=1):
+    rng = random.Random(seed)
+    img = vertical_gradient(W, H, (6, 10, 22), (2, 3, 8))
+    img = add_stars(img, 260, rng, max_r=1.3)
+
+    ribbon_colors = [(60, 230, 170), (70, 200, 255), (150, 110, 255), (60, 255, 210)]
+    aurora_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    for i, base_color in enumerate(ribbon_colors):
+        band = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(band)
+        base_y = H * (0.18 + i * 0.11) + rng.uniform(-20, 20)
+        amp = rng.uniform(50, 110)
+        freq = rng.uniform(1.4, 2.4)
+        phase = rng.uniform(0, math.tau)
+        thickness = rng.uniform(70, 140)
+        for x in range(0, W, 4):
+            y = base_y + amp * math.sin(x / W * math.tau * freq + phase)
+            a = int(46 + 18 * math.sin(x / W * math.tau * 0.7 + i))
+            draw.line([(x, y - thickness / 2), (x, y + thickness / 2)],
+                      fill=(*base_color, max(10, a)), width=4)
+        band = band.filter(ImageFilter.GaussianBlur(34))
+        aurora_layer = Image.alpha_composite(aurora_layer, band)
+    img = Image.alpha_composite(img.convert("RGBA"), aurora_layer).convert("RGB")
+
+    # A faint horizon glow at the bottom so it doesn't just stop dead.
+    glow = soft_blob(W, H, W * 0.5, H * 1.05, H * 0.9, (40, 60, 90), strength=90)
+    img = Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB")
+    return img
+
+
+# ---------------------------------------------------------------------
+# 2. Deep Nebula -- several large soft color blobs over black, plus a
+# dense star field and a few brighter "core" points.
+# ---------------------------------------------------------------------
+def make_nebula(seed=2):
+    rng = random.Random(seed)
+    img = vertical_gradient(W, H, (10, 4, 16), (3, 2, 8)).convert("RGBA")
+
+    palette = [(180, 60, 200), (70, 90, 230), (230, 70, 140), (90, 200, 220), (140, 60, 220)]
+    cloud = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    for _ in range(9):
+        color = rng.choice(palette)
+        cx = rng.uniform(W * 0.1, W * 0.9)
+        cy = rng.uniform(H * 0.1, H * 0.9)
+        radius = rng.uniform(H * 0.35, H * 0.75)
+        blob = soft_blob(W, H, cx, cy, radius, color, strength=rng.randint(110, 200))
+        cloud = Image.alpha_composite(cloud, blob)
+    cloud = cloud.filter(ImageFilter.GaussianBlur(22))
+    img = Image.alpha_composite(img, cloud)
+
+    img = img.convert("RGB")
+    img = add_stars(img, 380, rng, max_r=1.4)
+    # A few brighter "core" stars for sparkle.
+    add_stars(img, 18, rng, max_r=2.6, colors=((255, 255, 255), (255, 240, 210)))
+    return img
+
+
+# ---------------------------------------------------------------------
+# 3. Synthwave Sunset -- retro outrun look: purple-to-orange sky, a
+# glowing sun low on the horizon, a perspective grid "floor".
+# ---------------------------------------------------------------------
+def make_synthwave(seed=3):
+    sky_top, sky_bottom = (40, 10, 70), (255, 130, 60)
+    img = vertical_gradient(W, H, sky_top, sky_bottom).convert("RGBA")
+
+    horizon = int(H * 0.62)
+    sun_cx, sun_cy, sun_r = W * 0.5, horizon - H * 0.02, H * 0.30
+
+    disc = vertical_gradient(int(sun_r * 2), int(sun_r * 2), (255, 235, 150), (255, 60, 110)).convert("RGBA")
+    mask = Image.new("L", disc.size, 0)
+    ImageDraw.Draw(mask).ellipse([0, 0, disc.size[0] - 1, disc.size[1] - 1], fill=255)
+    mdraw = ImageDraw.Draw(mask)
+    # Cut a few horizontal gaps into the lower third of the disc for
+    # the classic retro "scanline sun" look.
+    gap_h = max(2, int(sun_r * 0.05))
+    y = int(sun_r * 1.05)
+    step = int(sun_r * 0.16)
+    while y < sun_r * 2:
+        mdraw.rectangle([0, y, disc.size[0], y + gap_h], fill=0)
+        y += step
+    sun_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sun_layer.paste(disc, (int(sun_cx - sun_r), int(sun_cy - sun_r)), mask)
+
+    # Sun glow behind/around it, then the sun itself on top.
+    glow = soft_blob(W, H, sun_cx, sun_cy, sun_r * 2.1, (255, 150, 120), strength=70)
+    img = Image.alpha_composite(img, glow)
+    img = Image.alpha_composite(img, sun_layer)
+
+    # Ground: dark plane below the horizon with a receding grid.
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([0, horizon, W, H], fill=(12, 4, 22, 255))
+    vp = (W * 0.5, horizon - H * 0.04)
+    n_lines = 14
+    for i in range(-n_lines, n_lines + 1):
+        x0 = W * 0.5 + i * (W * 0.9 / n_lines)
+        draw.line([vp, (x0, H)], fill=(255, 90, 180, 130), width=2)
+    n_h = 9
+    for j in range(1, n_h + 1):
+        t = (j / n_h) ** 1.6
+        y = horizon + t * (H - horizon)
+        alpha = int(160 * (1 - t) + 40)
+        draw.line([(0, y), (W, y)], fill=(255, 90, 180, alpha), width=2)
+
+    # A light haze band right at the horizon softens the sun/grid seam.
+    haze = soft_blob(W, H, sun_cx, horizon, H * 0.5, (255, 180, 140), strength=60)
+    img = Image.alpha_composite(img, haze)
+    return img.convert("RGB")
+
+
+# ---------------------------------------------------------------------
+# 4. Bokeh Night -- dark gradient with soft, variously-sized glowing
+# blurred circles scattered across it, like an out-of-focus city-lights
+# photo.
+# ---------------------------------------------------------------------
+def make_bokeh(seed=4):
+    rng = random.Random(seed)
+    img = vertical_gradient(W, H, (8, 12, 22), (3, 4, 9)).convert("RGBA")
+
+    palette = [(255, 200, 120), (120, 200, 255), (255, 120, 170), (150, 255, 210), (255, 255, 255)]
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    for _ in range(46):
+        color = rng.choice(palette)
+        cx = rng.uniform(0, W)
+        cy = rng.uniform(0, H)
+        radius = rng.uniform(18, 90)
+        strength = rng.randint(60, 170)
+        blob = soft_blob(W, H, cx, cy, radius, color, strength=strength)
+        layer = Image.alpha_composite(layer, blob)
+    layer = layer.filter(ImageFilter.GaussianBlur(6))
+    img = Image.alpha_composite(img, layer)
+    return img.convert("RGB")
+
+
+if __name__ == "__main__":
+    save(make_aurora(), "aurora.jpg")
+    save(make_nebula(), "nebula.jpg")
+    save(make_synthwave(), "synthwave.jpg")
+    save(make_bokeh(), "bokeh.jpg")

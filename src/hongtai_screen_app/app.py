@@ -451,8 +451,10 @@ class App(tk.Tk):
             row=row, column=3, sticky="w", padx=(6, 0))
         row += 1
 
-        ttk.Label(f, text="Color scheme applies to every Style except \"Custom image\". The\n"
-                          "image itself is only used when Style is \"Custom image\" -- it's\n"
+        ttk.Label(f, text="Color scheme is ignored for \"Custom image\" and the built-in\n"
+                          "picture styles (Aurora Glow, Deep Nebula, Synthwave Sunset, Bokeh\n"
+                          "Night) -- those are photos, not tinted. \"Custom image\" itself is\n"
+                          "only used when Style is \"Custom image\"; either way, a photo is\n"
                           "cropped to fit and darkened a bit so the gauges stay readable.",
                   foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(4, 0))
         row += 1

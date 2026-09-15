@@ -327,6 +327,12 @@ class AppController:
             },
             "background": dict(dashboard_theme.DEFAULT_BACKGROUND, **(d.get("background") or {})),
             "backgroundPresets": dict(dashboard_theme.BACKGROUND_PRESETS),
+            # Modes that are a photo, not a tinted procedural draw --
+            # "image" (a user's own upload) plus every bundled one
+            # (BUNDLED_BACKGROUND_IMAGES) -- so the frontend knows when
+            # to hide the "Color scheme" picker (a photo isn't tinted)
+            # without having to duplicate that key list itself.
+            "backgroundImageModes": ["image", *dashboard_theme.BUNDLED_BACKGROUND_IMAGES.keys()],
             "backgroundSchemes": {
                 key: {"label": scheme["label"]}
                 for key, scheme in dashboard_theme.BACKGROUND_COLOR_SCHEMES.items()
