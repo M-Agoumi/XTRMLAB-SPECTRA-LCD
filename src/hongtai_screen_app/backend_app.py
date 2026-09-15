@@ -38,6 +38,13 @@ from .control_server import DEFAULT_PORT, ControlServer, _make_handler
 from .controller import AppController
 from .paths import ICON_PATH, SHOW_TRIGGER_PATH, _app_base_dir, _write_startup_log
 
+# Passed explicitly as run_ui.py's --title (rather than relying on its
+# own --title default staying "Hongtai Screen" forever) so this same
+# string can double as the FindWindowW target in _focus_ui_window()
+# below -- see that function's docstring for why a click on the tray
+# icon while the window is already open needs this at all.
+UI_WINDOW_TITLE = "Hongtai Screen"
+
 
 class BackendApp:
     """Owns one AppController, one ControlServer, one TrayIcon, and at
@@ -180,24 +187,73 @@ class BackendApp:
         return os.path.join(_app_base_dir(), "scripts", "run_ui.py")
 
     def _on_show(self):
-        """Spawns the UI process if none is currently alive. Phase 2c
-        deliberately does NOT try to refocus an already-open window --
-        with only one entry point (this tray icon) able to trigger a
-        Show, "do nothing, it's already open" is enough; a later phase
-        can add real refocusing if that turns out to matter in
-        practice."""
+        """Spawns the UI process if none is currently alive; if one
+        already is, brings its window to the front instead of doing
+        nothing.
+
+        Phase 2c's first version deliberately skipped refocusing here
+        ("it's already open" was judged enough) -- a real report from
+        actually using the tray icon day to day disagreed: clicking
+        "Show window" while the window was already open but sitting
+        behind another one visibly did nothing, which reads as the
+        tray icon being broken rather than as "it was already open,
+        nothing to do" (the two look identical to someone who can't
+        see the window either way). Fixed via _focus_ui_window() --
+        same FindWindowW + SetForegroundWindow mechanism
+        single_instance.py already uses for the old Tkinter app's
+        second-launch case, pointed at the webview window's title
+        instead."""
         with self._ui_lock:
             if self._ui_process is not None and self._ui_process.poll() is None:
+                self._focus_ui_window()
                 return
             script = self._run_ui_script_path()
             url = f"http://127.0.0.1:{self.port}/"
-            cmd = [sys.executable, script, "--url", url]
+            cmd = [sys.executable, script, "--url", url, "--title", UI_WINDOW_TITLE]
             if os.path.isfile(ICON_PATH):
                 cmd += ["--icon", ICON_PATH]
             try:
                 self._ui_process = subprocess.Popen(cmd)
             except Exception as e:  # noqa: BLE001 -- surfaced in the log either way
                 self.controller._log(f"(couldn't open the UI window: {e})")
+
+    def _focus_ui_window(self):
+        """Best-effort: brings the already-open UI window to the front
+        and restores it if minimized. Windows-only (ctypes.windll);
+        a no-op everywhere else, same as every other Windows-specific
+        feature in this file.
+
+        FindWindowW matches on the exact window title (UI_WINDOW_TITLE,
+        passed to run_ui.py's --title above) regardless of whether the
+        window is minimized, behind another window, or simply not the
+        foreground app -- exactly the case that was reported ("under
+        another window", so still open and not minimized, just not on
+        top). SetForegroundWindow is still best-effort: Windows
+        restricts which processes may steal foreground focus from
+        whatever the user is currently looking at, and a call from a
+        background process like this one can be silently ignored (the
+        window raises in the taskbar but doesn't actually come to
+        the front) with no reliable way to detect that from here --
+        same caveat single_instance.py's own use of this documents.
+        Logged either way so a report of "still doesn't come up" is
+        diagnosable from the app's own Log panel instead of a guess."""
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hwnd = user32.FindWindowW(None, UI_WINDOW_TITLE)
+            if not hwnd:
+                self.controller._log(
+                    "(show: UI window process is alive but its window "
+                    "couldn't be found by title -- not focusing)")
+                return
+            SW_RESTORE = 9
+            user32.ShowWindow(hwnd, SW_RESTORE)
+            user32.SetForegroundWindow(hwnd)
+            self.controller._log("(show: brought the already-open window to the front)")
+        except Exception as e:  # noqa: BLE001 -- best-effort, never fatal
+            self.controller._log(f"(show: couldn't focus the already-open window: {e})")
 
     def _on_stop_screen(self):
         self.controller.stop()
