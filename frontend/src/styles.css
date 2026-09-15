@@ -512,3 +512,95 @@ button:disabled {
   color: #5c6370;
   font-size: 0.72rem;
 }
+
+/* Dashboard preset picker (DashboardCanvas.jsx) -- a grid of actual
+   rendered thumbnails instead of a <select> of plain names, so picking
+   a preset means recognizing its picture rather than remembering what
+   a name like "Streaming layout" actually looks like. */
+.preset-picker {
+  margin-bottom: 14px;
+}
+
+.preset-picker-label {
+  display: block;
+  font-size: 0.8rem;
+  color: #9aa1ab;
+  margin-bottom: 8px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  background: #101216;
+  border: 1px solid #33383f;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.preset-card-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: #05060a;
+  cursor: pointer;
+}
+
+.preset-card-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preset-card-thumb:hover {
+  outline: 2px solid #5b8cff;
+  outline-offset: -2px;
+}
+
+.preset-card-thumb-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: #5c6370;
+  font-size: 0.75rem;
+}
+
+.preset-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.preset-card-name {
+  font-size: 0.8rem;
+  color: #e6e8eb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preset-card-delete {
+  flex: none;
+  font-size: 0.72rem;
+  padding: 4px 8px;
+}
+
+.preset-card-delete.confirm {
+  background: #4a1a1a;
+  border-color: #ff8080;
+  color: #ffb3b3;
+}

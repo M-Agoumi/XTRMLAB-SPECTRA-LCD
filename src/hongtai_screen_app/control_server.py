@@ -154,12 +154,12 @@ def _make_handler(controller: AppController):
                     self._send_json(200, controller.save_dashboard_now_playing(body.get("patch")))
                 elif path == "/api/dashboard/presets":
                     body = self._read_json_body()
-                    presets = controller.save_dashboard_preset(body.get("name"), body.get("elements"))
-                    self._send_json(200, {"presets": presets})
+                    result = controller.save_dashboard_preset(body.get("name"), body.get("elements"))
+                    self._send_json(200, result)
                 elif path == "/api/dashboard/presets/delete":
                     body = self._read_json_body()
-                    presets = controller.delete_dashboard_preset(body.get("name"))
-                    self._send_json(200, {"presets": presets})
+                    result = controller.delete_dashboard_preset(body.get("name"))
+                    self._send_json(200, result)
                 else:
                     self._send_error_json(404, f"no such endpoint: {path}")
             except (ValueError, RuntimeError) as e:

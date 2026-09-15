@@ -2044,6 +2044,25 @@ time -- previously identical regardless of `z`. Re-ran a full default-
 layout render end to end to confirm the sort didn't break anything
 else.
 
+**Preset picker: pictures instead of a name dropdown.** The saved-
+presets `<select>` told a person nothing about what a preset actually
+looked like until after loading it. `dashboard_theme.
+render_preset_thumbnail()` renders a small preview through the exact
+real render pipeline (fixed demo stats instead of live hardware
+readings, `media=None` reusing the existing "nothing playing"
+placeholder, a short synthetic wave for any graph element), so a
+thumbnail can never drift from what the preset would actually show.
+`AppController._dashboard_preset_thumbnails()` renders one per saved
+preset (against the currently configured background -- presets only
+ever store `elements`) as a base64 PNG data URI, returned from both
+`dashboard_meta()` and the save/delete preset endpoints. The web UI's
+picker is now a grid of cards: click a thumbnail to load it
+immediately, a per-card Delete button arms on the first click and only
+deletes on the second. Verified against a mocked backend driven
+through a headless browser -- two real, visibly different thumbnails
+rendered, click-to-load and the two-step delete both behaved
+correctly, no console errors.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

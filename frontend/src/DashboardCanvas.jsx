@@ -477,7 +477,12 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
   const [presetName, setPresetName] = useState("");
-  const [presetToLoad, setPresetToLoad] = useState("");
+  // Which preset card's Delete button is armed, waiting for a second
+  // click to confirm -- see the presets grid's render for why (a card
+  // click loads it immediately, so a plain Delete button with no
+  // confirmation step at all would be one misclick away from losing a
+  // saved layout with no undo).
+  const [presetPendingDelete, setPresetPendingDelete] = useState(null);
   const [guides, setGuides] = useState({ x: null, y: null });
   const [bgDraft, setBgDraft] = useState(null);
   const [bgStatus, setBgStatus] = useState(null);
@@ -525,6 +530,17 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   useEffect(() => {
     load();
   }, [load]);
+
+  // A preset card's Delete button arms on the first click and only
+  // actually deletes on a second (see deletePreset()); auto-disarming
+  // it after a few seconds means walking away from an armed card
+  // doesn't leave a silent "one misclick from deleting this" trap for
+  // whenever it's clicked next, for an unrelated reason, later.
+  useEffect(() => {
+    if (!presetPendingDelete) return;
+    const t = setTimeout(() => setPresetPendingDelete(null), 3000);
+    return () => clearTimeout(t);
+  }, [presetPendingDelete]);
 
   const commit = useCallback((next) => {
     setElements((prev) => {
@@ -935,7 +951,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     if (!name) return;
     api.saveDashboardPreset(name, elements).then(
       (r) => {
-        setMeta((m) => ({ ...m, presets: r.presets }));
+        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
         setPresetName("");
         setStatus(`Saved preset "${name}".`);
       },
@@ -943,19 +959,27 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     );
   };
 
-  const loadPreset = () => {
-    if (!presetToLoad || !meta?.presets?.[presetToLoad]) return;
-    commit(meta.presets[presetToLoad]);
+  const loadPreset = (name) => {
+    if (!name || !meta?.presets?.[name]) return;
+    commit(meta.presets[name]);
     setSelectedId(null);
-    setStatus(`Loaded preset "${presetToLoad}".`);
+    setStatus(`Loaded preset "${name}".`);
   };
 
-  const deletePreset = () => {
-    if (!presetToLoad) return;
-    api.deleteDashboardPreset(presetToLoad).then(
+  const deletePreset = (name) => {
+    if (!name) return;
+    // First click on a card's Delete button just arms it (see
+    // presetPendingDelete's own comment) -- this is the second click,
+    // the one that actually deletes.
+    if (presetPendingDelete !== name) {
+      setPresetPendingDelete(name);
+      return;
+    }
+    setPresetPendingDelete(null);
+    api.deleteDashboardPreset(name).then(
       (r) => {
-        setMeta((m) => ({ ...m, presets: r.presets }));
-        setPresetToLoad("");
+        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
+        setStatus(`Deleted preset "${name}".`);
       },
       (e) => setError(e.message)
     );
@@ -2286,18 +2310,48 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
         </Collapsible>
       )}
 
-      <div className="row">
-        <label className="grow">
-          Presets
-          <select value={presetToLoad} onChange={(e) => setPresetToLoad(e.target.value)}>
-            <option value="">Choose a saved preset…</option>
-            {Object.keys(meta.presets || {}).map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-        </label>
-        <button onClick={loadPreset} disabled={!presetToLoad}>Load</button>
-        <button onClick={deletePreset} disabled={!presetToLoad}>Delete</button>
+      <div className="preset-picker">
+        <span className="preset-picker-label">Presets</span>
+        {Object.keys(meta.presets || {}).length === 0 ? (
+          <p className="hint">No saved presets yet -- save the current layout below to create one.</p>
+        ) : (
+          <div className="preset-grid">
+            {Object.keys(meta.presets || {}).map((name) => {
+              const thumb = meta.presetThumbnails?.[name];
+              const armed = presetPendingDelete === name;
+              return (
+                <div key={name} className="preset-card">
+                  <button
+                    className="preset-card-thumb"
+                    onClick={() => loadPreset(name)}
+                    title={`Load "${name}"`}
+                  >
+                    {thumb ? (
+                      <img src={thumb} alt={`Preview of the "${name}" preset`} />
+                    ) : (
+                      // A saved-but-unrendered preset (e.g. its thumbnail
+                      // failed to render -- see AppController.
+                      // _dashboard_preset_thumbnails()) still gets a
+                      // clickable card, just without a picture, rather
+                      // than disappearing from the picker entirely.
+                      <span className="preset-card-thumb-fallback">No preview</span>
+                    )}
+                  </button>
+                  <div className="preset-card-footer">
+                    <span className="preset-card-name" title={name}>{name}</span>
+                    <button
+                      className={`preset-card-delete${armed ? " confirm" : ""}`}
+                      onClick={() => deletePreset(name)}
+                      title={armed ? "Click again to confirm" : `Delete "${name}"`}
+                    >
+                      {armed ? "Confirm?" : "Delete"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
       <div className="row">
         <label className="grow">

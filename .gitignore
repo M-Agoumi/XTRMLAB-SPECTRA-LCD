@@ -7,7 +7,7 @@ venv/
 env/
 build/
 build_venv/
-dist/
+/dist/
 
 # --- Run output -------------------------------------------------------
 # The .bat wrappers overwrite these on every run; they are session
@@ -59,7 +59,6 @@ app.asar.unpacked/
 # hood. Rebuild it with `cd frontend && npm install && npm run build`
 # whenever frontend/src changes, and commit the result.
 frontend/node_modules/
-frontend/dist/
 
 # A runtime-only signal file (see paths.py's SHOW_TRIGGER_PATH) -- its
 # mtime is touched by a second launch to tell the already-running
