@@ -45,6 +45,12 @@ a = Analysis(
     binaries=[],
     datas=[
         ("assets/icon.ico", "assets"),
+        # The 4 bundled dashboard background pictures (dashboard_theme.
+        # py's BUNDLED_BACKGROUND_IMAGES) -- same "assets" dest dir as
+        # the icon above, so paths.py's _resource_path() finds them at
+        # sys._MEIPASS/assets/backgrounds/*.jpg the same way it finds
+        # icon.ico.
+        ("assets/backgrounds/*.jpg", "assets/backgrounds"),
     ],
     hiddenimports=hidden_imports,
     hookspath=[],
