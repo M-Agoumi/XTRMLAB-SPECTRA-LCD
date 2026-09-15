@@ -2,6 +2,12 @@
 desktop_shortcut.py -- the "Create Desktop Shortcut" feature. Split out
 of app.py (Phase 1 of ROADMAP.md's v2.0 rewrite) -- pure Windows/
 filesystem plumbing, no Tkinter involved.
+
+Points at scripts/run_v2_app.py (backend_app.py's CLI shim), not
+app.py, since the React frontend + webview window is the actual
+shipped UI now (an early, partial Phase 7 cutover -- see
+backend_app.py's docstring). `python app.py` still works for
+manual/headless use, it's just not what the icon launches any more.
 """
 import os
 import subprocess
@@ -73,19 +79,33 @@ def create_desktop_shortcut():
 
     Frozen build (the standalone .exe from BUILD.md): the shortcut
     points straight at the exe -- it's already windowless and already
-    carries its own icon (baked in at build time via hongtai_screen.spec),
-    nothing else to wire up.
+    carries its own icon (baked in at build time via hongtai_screen.spec).
+    NOTE: that spec still packages app.py (the Tkinter GUI), not
+    scripts/run_v2_app.py + the webview UI -- a frozen build of the new
+    stack is real future packaging work (ROADMAP.md Phase 7's PyInstaller
+    spec/WebView2-bundling concern), not something this early cutover
+    covers. This branch only matters once that packaging exists.
 
-    Running from source (`python app.py`): points at the same hidden
-    "Launch Hongtai Screen.vbs" launcher write_run_vbs() above writes
-    (written fresh here if missing), using icon.ico for the icon since a
-    .vbs file can't carry a custom one itself -- see
+    Running from source (`pip install -r requirements.txt`, no build
+    step): points at the same hidden "Launch Hongtai Screen.vbs"
+    launcher write_run_vbs() above writes (written fresh here if
+    missing), targeting scripts/run_v2_app.py -- the backend + webview
+    UI, the actual shipped app now -- using icon.ico for the icon since
+    a .vbs file can't carry a custom one itself -- see
     scripts/make_launcher.py's own docstring for why a second .lnk file
     is needed for that.
 
     Raises on failure (missing Desktop folder, non-Windows, cscript
     error) -- callers show that message rather than silently no-op'ing.
-    """
+
+    Resolves the source-run target via `_app_base_dir()` (the real
+    on-disk repo root), not via `sys.modules["__main__"].__file__` the
+    way this used to -- this function is reachable from the exact same
+    control_server.py endpoint regardless of which script is currently
+    running the control server backing whichever UI clicked the
+    button, so trusting `__main__` could bake in the wrong one (see
+    startup_registration.py's enable_startup() docstring for the full
+    story of how that went wrong before this fix)."""
     if sys.platform != "win32":
         raise RuntimeError("Desktop shortcuts are only supported on Windows.")
 
@@ -101,7 +121,7 @@ def create_desktop_shortcut():
         icon_spec = f"{target},0"
     else:
         app_dir = _app_base_dir()
-        app_path = os.path.abspath(sys.modules["__main__"].__file__)
+        app_path = os.path.join(app_dir, "scripts", "run_v2_app.py")
         target = write_run_vbs(app_dir, app_path, "")
         working_dir = app_dir
         icon_spec = (f"{ICON_PATH},0" if os.path.isfile(ICON_PATH)

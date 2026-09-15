@@ -1,16 +1,17 @@
 """
-backend_app.py -- the always-running v2.0 backend process (ROADMAP.md
-Phase 2c): the control API (control_server.py, the same server
-scripts/run_backend.py runs standalone), a system tray icon, and
-spawning/killing the separate UI process (scripts/run_ui.py -- see its
-own docstring for why it has to be a separate process) when "Show" is
-clicked.
+backend_app.py -- the desktop entry point (ROADMAP.md Phase 2c/7,
+cut over early at the user's request): the control API
+(control_server.py, the same server scripts/run_backend.py runs
+standalone), a system tray icon, and spawning/killing the separate UI
+process (scripts/run_ui.py -- see its own docstring for why it has to
+be a separate process) when "Show" is clicked.
 
-This is the shape the v2.0 architecture describes -- app.py (the
-Tkinter GUI) is untouched and still the currently-shipped way to run
-this app. This is a parallel, not-yet-wired-up entry point for
-exercising the real two-process design end to end; nothing switches
-over to it until ROADMAP.md's Phase 7 (packaging/cutover).
+Desktop shortcuts and the "Launch at Windows startup" entry
+(desktop_shortcut.py, startup_registration.py) now point at
+scripts/run_v2_app.py (this module's CLI shim), not app.py -- the
+React frontend is the actual shipped UI; app.py's Tkinter GUI is kept
+around for manual/headless use (`python app.py`) but nothing launches
+it automatically any more.
 
     python scripts/run_v2_app.py                    # opens the window immediately
     python scripts/run_v2_app.py --autostart         # resumes last theme, tray only, no window
@@ -35,7 +36,7 @@ from . import single_instance
 from . import tray_icon
 from .control_server import DEFAULT_PORT, ControlServer, _make_handler
 from .controller import AppController
-from .paths import ICON_PATH, _app_base_dir, _write_startup_log
+from .paths import ICON_PATH, SHOW_TRIGGER_PATH, _app_base_dir, _write_startup_log
 
 
 class BackendApp:
@@ -57,6 +58,18 @@ class BackendApp:
         self._ui_process = None
         self._ui_lock = threading.Lock()
         self.quit_event = threading.Event()
+        self._show_watcher_thread = None
+        # Baseline reading, not None -- see start_show_watcher(). Reading
+        # whatever's already on disk (rather than starting from "never
+        # seen it") means a trigger left over from before this instance
+        # even started never causes a spurious self-show the moment
+        # this instance's own watcher starts -- only a touch that
+        # happens *after* this line runs counts as "someone just asked
+        # to be shown". Same reasoning as app.py's App.__init__.
+        try:
+            self._show_trigger_mtime = os.path.getmtime(SHOW_TRIGGER_PATH)
+        except OSError:
+            self._show_trigger_mtime = None
 
         # Same "what should come back up automatically" logic as
         # app.py's App.__init__ (see its docstring/comments around
@@ -119,6 +132,41 @@ class BackendApp:
             self._tray = None
             return False
         return True
+
+    # ------------------------------------------------------------------ #
+    # "show yourself" watcher -- for a second launch while already running
+    # ------------------------------------------------------------------ #
+    def start_show_watcher(self):
+        """Mirrors app.py's App._poll_show_trigger() -- see
+        single_instance.py's _bring_existing_window_to_front() for the
+        other half of this. Double-clicking the desktop icon (or the
+        .lnk) while this is already running -- now the single most
+        common way that happens, since the desktop icon and "Launch at
+        Windows startup" both point here -- touches SHOW_TRIGGER_PATH's
+        mtime; single_instance.py's own FindWindowW attempt is a no-op
+        for this process (it looks for a Tkinter window this process
+        never creates), so this watcher is what actually makes a second
+        launch do something useful: it notices the touched file within
+        one poll tick and calls _on_show(), the exact same thing the
+        tray icon's own "Show" menu item does.
+
+        A plain daemon thread with a sleep loop, not Tkinter's after()
+        (app.py's mechanism) -- this process has no Tk event loop to
+        ride. `self.quit_event.wait(...)` doubles as the sleep and as
+        an immediate wakeup on shutdown, so this thread doesn't linger
+        or delay process exit."""
+        def _watch():
+            while not self.quit_event.is_set():
+                try:
+                    mtime = os.path.getmtime(SHOW_TRIGGER_PATH)
+                except OSError:
+                    mtime = None
+                if mtime is not None and mtime != self._show_trigger_mtime:
+                    self._show_trigger_mtime = mtime
+                    self._on_show()
+                self.quit_event.wait(0.2)
+        self._show_watcher_thread = threading.Thread(target=_watch, daemon=True)
+        self._show_watcher_thread.start()
 
     # ------------------------------------------------------------------ #
     # UI process spawn/kill -- the actual Phase 2c mechanic
@@ -190,11 +238,27 @@ def main(argv=None):
 
     app = BackendApp(autostart=args.autostart, autostart_theme=args.theme, port=args.port)
     app.start_server()
-    print(f"Control API listening on http://127.0.0.1:{args.port}/ (localhost only)")
+    # Through the controller's own _log() (visible in the web UI's Log
+    # panel, and mirrored to STARTUP_LOG_PATH for --autostart -- see
+    # app.py's _log() for the exact same reasoning), not print(): this
+    # is launched via pythonw.exe with no console attached once it's
+    # what the desktop icon points at, where a bare print() either
+    # goes nowhere or can raise outright with no console streams to
+    # write to. A manual `python scripts/run_v2_app.py` from a terminal
+    # loses console echo of these two lines as a result, but gets
+    # everything else the same way (stdout when run manually anyway,
+    # the Log panel once the window's open).
+    startup_msg = f"Control API listening on http://127.0.0.1:{args.port}/ (localhost only)"
+    app.controller._log(startup_msg)
     have_tray = app.start_tray()
-    print("System tray icon: started" if have_tray else
-          "System tray icon: NOT started -- see the Log panel at "
-          f"http://127.0.0.1:{args.port}/ for why")
+    app.controller._log(
+        "System tray icon: started" if have_tray else
+        "System tray icon: NOT started -- see the Log panel above for why")
+    if args.autostart:
+        _write_startup_log(startup_msg)
+        _write_startup_log("System tray icon: started" if have_tray else
+                            "System tray icon: NOT started")
+    app.start_show_watcher()
 
     # A plain launch opens the window right away, same as app.py
     # showing its window on a normal (non-autostart) run. --autostart

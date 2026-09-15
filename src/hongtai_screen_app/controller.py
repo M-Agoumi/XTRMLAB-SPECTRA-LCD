@@ -48,7 +48,9 @@ class AppController:
 
     def __init__(self):
         self.cfg = config_store.load_config()
-        if config_store.migrate_dashboard_elements(self.cfg):
+        migrated = config_store.migrate_dashboard_elements(self.cfg)
+        migrated = config_store.migrate_dashboard_weather_element(self.cfg) or migrated
+        if migrated:
             config_store.save_config(self.cfg)
         self._lock = threading.RLock()
         power_state.set_keep_active_when_locked(self.cfg.get("keep_active_when_locked", True))
@@ -58,6 +60,12 @@ class AppController:
         self._log_history = deque(maxlen=self.LOG_HISTORY)
         self._log_subscribers = []     # list of queue.Queue, one per SSE client
         self._closed = False
+        # The running threading.Timer for an in-progress dashboard
+        # preview (see preview_dashboard_elements()), or None -- tracked
+        # so a second preview (or a real Save) can cancel a still-
+        # pending revert instead of leaving it to fire later and stomp
+        # on whatever's showing by then.
+        self._preview_revert_timer = None
 
         # One persistent connection for this controller's whole
         # lifetime (ROADMAP.md's live-theme-switching rewrite) --
@@ -176,13 +184,21 @@ class AppController:
     # logged/handled the same way, and so a future caller other than
     # the HTTP API (a future in-process UI, say) gets the same surface.
     # ------------------------------------------------------------------ #
-    def system_info(self):
+    def system_info(self, log=None):
+        """`log`: pass self._log to have the schtasks /query this runs
+        (via startup_registration.is_startup_enabled()) show up in the
+        app's own Log panel -- left quiet (the default) for the plain
+        polled GET /api/system calls the frontend makes on every page
+        load, since logging every one of those would just be noise;
+        set_startup() below passes it explicitly, since "did the
+        checkbox's action actually take" is exactly the question being
+        investigated right after toggling it."""
         with self._lock:
             keep_active = self.cfg.get("keep_active_when_locked", True)
         return {
             "platform": sys.platform,
             "startup_supported": sys.platform == "win32",
-            "startup_enabled": startup_registration.is_startup_enabled(),
+            "startup_enabled": startup_registration.is_startup_enabled(log=log or (lambda m: None)),
             "keep_active_when_locked": keep_active,
             "keep_active_supported": power_state.IS_WINDOWS,
         }
@@ -207,11 +223,25 @@ class AppController:
         return {"keep_active_when_locked": value}
 
     def set_startup(self, enabled):
+        """Every step of this -- the exact command registered, the
+        exact schtasks.exe invocation and its exit code/stdout/stderr,
+        and the re-check right after -- goes through self._log(), so
+        it's all sitting in the app's own Log panel afterward rather
+        than only a one-line exception message (or, if this succeeds
+        but the *effect* still doesn't seem to stick, nothing at all).
+        Added after a report that toggling the checkbox "didn't work"
+        with no visible error either way -- this makes it possible to
+        actually tell apart "schtasks refused" (permissions, policy),
+        "schtasks silently didn't do what was asked", and "it worked,
+        but something's rendering the result wrong", by reading exactly
+        what happened instead of guessing."""
         if enabled:
-            startup_registration.enable_startup()
+            startup_registration.enable_startup(log=self._log)
         else:
-            startup_registration.disable_startup()
-        return self.system_info()
+            startup_registration.disable_startup(log=self._log)
+        info = self.system_info(log=self._log)
+        self._log(f"(startup: now reports enabled={info['startup_enabled']})")
+        return info
 
     def create_desktop_shortcut(self):
         """Raises on failure (non-Windows, no Desktop folder, cscript
@@ -305,13 +335,12 @@ class AppController:
             "clockFaces": dict(dashboard_theme.CLOCK_FACES),
             "clockAnalogStyles": dict(dashboard_theme.ANALOG_CLOCK_STYLES),
             "clockHourFormats": dict(dashboard_theme.DIGITAL_CLOCK_HOUR_FORMATS),
-            "middleContent": {
-                "value": d.get("middle_content") or "none",
-                "options": dict(dashboard_theme.MIDDLE_CONTENT_OPTIONS),
-                "weather_location": d.get("weather_location") or "",
-                "weather_units": d.get("weather_units") or "celsius",
-                "weather_unit_options": dict(weather.UNIT_OPTIONS),
-            },
+            # Weather's own location/units now live on its element (see
+            # default_weather_element()) -- this is just the unit-name
+            # dropdown's options, the same kind of small lookup table
+            # clockFaces/clockAnalogStyles/clockHourFormats are for the
+            # clock element's property panel.
+            "weatherUnitOptions": dict(weather.UNIT_OPTIONS),
         }
 
     def save_dashboard_elements(self, elements):
@@ -332,12 +361,94 @@ class AppController:
         if not isinstance(elements, list):
             raise ValueError("elements must be a list")
         with self._lock:
+            # A real Save makes `elements` the new source of truth, so
+            # any still-pending preview revert (see
+            # preview_dashboard_elements()) would otherwise fire later
+            # and stomp this save back to whatever was saved *before*
+            # it, undoing it from underneath the user a few seconds
+            # after they saved.
+            if self._preview_revert_timer is not None:
+                self._preview_revert_timer.cancel()
+                self._preview_revert_timer = None
             dashboard_cfg = dict(self.cfg.get("dashboard") or {})
             dashboard_cfg["elements"] = elements
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
             dashboard_theme.set_pending_dashboard_layout(elements=elements)
+            # A `weather` element's location/units (see
+            # default_weather_element()) are the one per-element field
+            # that isn't purely cosmetic -- they drive weather.py's
+            # shared background poll, so this needs its own live-apply
+            # here too, same "no Stop/Start" deal as the layout/
+            # background themselves. dashboard_theme.run()'s pending-
+            # layout loop does the same thing for a layout edit made
+            # while a different config-writer (app.py) is what's
+            # actually driving the running theme.
+            dashboard_theme.apply_weather_from_elements(elements)
             return dict(self.cfg["dashboard"])
+
+    def preview_dashboard_elements(self, elements, duration=5.0):
+        """Shows `elements` live on the running dashboard theme for
+        `duration` seconds, then reverts to whatever's actually saved --
+        the design canvas's "Preview on screen" button, for trying an
+        edit on the real panel without committing to it the way Save
+        layout does. Reuses the exact same live-apply path
+        save_dashboard_elements() uses (set_pending_dashboard_layout(),
+        picked up by the render loop's next frame), just without ever
+        touching self.cfg or config_store -- so if nothing else happens,
+        the running theme quietly goes back to the last real Save on its
+        own, and a page reload (which reads self.cfg, never the pending
+        layout) was never showing anything different in the first
+        place.
+
+        A no-op-looking call when the dashboard theme isn't actually
+        running is intentional, not an error: set_pending_dashboard_layout()
+        already handles "nothing's listening for this right now" by just
+        queuing it, and there being no live panel to preview against
+        isn't something the caller needs to special-case here -- the
+        design canvas itself is what decides whether to offer this
+        button based on whether the dashboard's running.
+
+        A second preview call (or a real Save) before the timer fires
+        cancels/replaces the pending revert rather than letting both
+        timers eventually fire -- otherwise an earlier preview's revert
+        could land after a *later* preview or a real save and stomp
+        either one back to a stale "saved" snapshot taken before it."""
+        if not isinstance(elements, list):
+            raise ValueError("elements must be a list")
+        with self._lock:
+            if self._preview_revert_timer is not None:
+                self._preview_revert_timer.cancel()
+                self._preview_revert_timer = None
+            dashboard_theme.set_pending_dashboard_layout(elements=elements)
+            # Snapshotted now (not re-read from self.cfg inside the
+            # timer callback) so a Save that lands *during* the preview
+            # window still reverts to what was saved before THIS
+            # preview started, not whatever the save changed it to --
+            # save_dashboard_elements() already cancels this timer
+            # outright in that case, but keeping the snapshot self-
+            # contained means this method's behavior doesn't depend on
+            # that ordering to stay correct.
+            saved_elements = list(
+                (self.cfg.get("dashboard") or {}).get("elements") or dashboard_theme.DEFAULT_ELEMENTS
+            )
+            timer = threading.Timer(max(0.5, float(duration)), self._revert_dashboard_preview, args=(saved_elements,))
+            timer.daemon = True
+            self._preview_revert_timer = timer
+            timer.start()
+
+    def _revert_dashboard_preview(self, saved_elements):
+        """Timer callback for preview_dashboard_elements() above --
+        hands the running theme back whatever was actually saved before
+        the preview started. Clears self._preview_revert_timer first so
+        a save/preview racing this exact moment doesn't cancel a timer
+        object that's already done firing (Timer.cancel() on an already-
+        fired timer is harmless, but leaving the stale reference around
+        would make a later check think a revert is still pending when
+        it's not)."""
+        with self._lock:
+            self._preview_revert_timer = None
+            dashboard_theme.set_pending_dashboard_layout(elements=saved_elements)
 
     def save_dashboard_background(self, background):
         """Persists the panel background (preset mode, color scheme,
@@ -390,42 +501,13 @@ class AppController:
             dashboard_theme.set_not_playing_message(patch.get("not_playing_message"))
         return result
 
-    def save_dashboard_middle_content(self, patch):
-        """Persists which content fills the dashboard's middle column
-        -- the weather (weather.py -- free, no API key, just a place
-        name), or nothing at all (the default). The now-playing display
-        used to live here too (the original "spotify" option, fixed to
-        this column and always on); it's now just a movable/resizable
-        "media" element instead (see dashboard_theme.default_media_
-        element()), added/removed from the canvas independently of this
-        setting. Same merge-into-"dashboard" shape and same "applies
-        live immediately" deal as save_dashboard_now_playing() --
-        dashboard_theme.py re-reads the current selection every frame
-        and weather.py re-reads the current location/units on its own
-        background poll loop, so switching this while the Dashboard is
-        already running takes effect without a Stop/Start. Only
-        `middle_content`/`weather_location`/`weather_units` keys are
-        meaningful here; anything else in `patch` is stored but
-        ignored, same tolerance every other merge-safe dashboard
-        endpoint has."""
-        if not isinstance(patch, dict):
-            raise ValueError("patch must be an object")
-        if "middle_content" in patch and (patch.get("middle_content") or "none") not in dashboard_theme.MIDDLE_CONTENT_OPTIONS:
-            raise ValueError(f"unknown middle_content: {patch.get('middle_content')!r}")
-        with self._lock:
-            dashboard_cfg = dict(self.cfg.get("dashboard") or {})
-            dashboard_cfg.update(patch)
-            self.cfg["dashboard"] = dashboard_cfg
-            config_store.save_config(self.cfg)
-            result = dict(self.cfg["dashboard"])
-        if "middle_content" in patch:
-            dashboard_theme.set_middle_content(patch.get("middle_content") or "none")
-        if "weather_location" in patch:
-            weather.set_location(patch.get("weather_location"))
-        if "weather_units" in patch:
-            weather.set_units(patch.get("weather_units"))
-        weather.start_polling()
-        return result
+    # save_dashboard_middle_content() (the old global weather on/off,
+    # "spotify"/"weather"/"none" fixed to the middle column) is gone --
+    # weather is now a movable/resizable `weather` element like any
+    # other (see dashboard_theme.default_weather_element()), saved and
+    # live-applied through save_dashboard_elements()/
+    # apply_weather_from_elements() above, same as the now-playing
+    # display's own equivalent conversion earlier.
 
     def save_dashboard_preset(self, name, elements):
         name = (name or "").strip()

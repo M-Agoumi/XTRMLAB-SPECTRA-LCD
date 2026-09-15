@@ -134,6 +134,21 @@ export function saveDashboardElements(elements) {
   }).then(asJson);
 }
 
+export function previewDashboardElements(elements, duration = 5) {
+  // Same shape as saveDashboardElements(), but the backend never
+  // touches config_store for this one -- it just shows `elements` live
+  // on the running dashboard theme for `duration` seconds, then reverts
+  // to whatever's actually saved on its own (controller.py's
+  // preview_dashboard_elements()/_revert_dashboard_preview()). Lets the
+  // design canvas offer "see this on the real panel" without it being
+  // the same commitment as Save layout.
+  return fetch("/api/dashboard/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ elements, duration }),
+  }).then(asJson);
+}
+
 export function saveDashboardBackground(background) {
   return fetch("/api/dashboard/background", {
     method: "POST",
@@ -144,14 +159,6 @@ export function saveDashboardBackground(background) {
 
 export function saveDashboardNowPlaying(patch) {
   return fetch("/api/dashboard/now_playing", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ patch }),
-  }).then(asJson);
-}
-
-export function saveDashboardMiddleContent(patch) {
-  return fetch("/api/dashboard/middle_content", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ patch }),

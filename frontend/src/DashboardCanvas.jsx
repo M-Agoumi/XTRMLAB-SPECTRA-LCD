@@ -31,6 +31,23 @@ const ACCENT_GPU = "rgb(235, 45, 225)";
 const SNAP_THRESHOLD = 0.018; // fraction-of-canvas distance to snap at
 const MIN_RADIUS = 0.02;
 const MAX_RADIUS = 0.45;
+// A pointerdown+pointerup pair is a "click" in every user's mind, but a
+// mouse/trackpad/touch almost never reports *zero* pixels of movement
+// between the two -- there's always a stray pointermove or two carrying a
+// couple pixels of jitter. Every pointermove used to run straight through
+// to setElements()'s prev.map(...), which allocates a new array (and a new
+// object for the dragged element) even when the computed x/y come out
+// numerically identical to what was already there -- and `dirty` is a
+// strict `elements !== savedElementsRef.current` reference check, so that
+// alone was enough to flip it true, instantly showing "unsaved changes"
+// and enabling Save layout on a plain click. Below this pixel distance
+// (measured in real screen pixels from where the gesture started, before
+// any snapping/offset math), a pointermove is treated as still part of a
+// click and does nothing at all -- no setElements call, so `elements`
+// keeps its exact prior reference and `dirty` stays false. Once the
+// gesture crosses this distance even once, it's a real drag/resize for
+// the rest of the gesture (see the `moved` flag on dragRef.current).
+const MOVE_THRESHOLD_PX = 4;
 
 function rgbToHex([r, g, b]) {
   return "#" + [r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("");
@@ -64,10 +81,12 @@ function basename(path) {
 function elementLabel(el, meta) {
   if (el.type === "gauge") return meta.stats[el.stat]?.title || el.stat;
   if (el.type === "graph") return meta.stats[el.stat]?.title || el.stat;
+  if (el.type === "bar") return meta.stats[el.stat]?.title || el.stat;
   if (el.type === "text") return el.text?.trim() ? `"${el.text}"` : "(empty text)";
   if (el.type === "image") return el.image_path ? basename(el.image_path) : "(no image picked)";
   if (el.type === "media") return "Now playing";
   if (el.type === "clock") return "Clock";
+  if (el.type === "weather") return el.location?.trim() ? `Weather (${el.location})` : "Weather";
   return el.type;
 }
 
@@ -76,10 +95,12 @@ function elementLabel(el, meta) {
 const ELEMENT_BADGES = {
   gauge: "G",
   graph: "GR",
+  bar: "BAR",
   text: "T",
   image: "IMG",
   media: "NP",
   clock: "CLK",
+  weather: "WX",
 };
 
 // Always includes a short random suffix rather than just counting up
@@ -131,6 +152,31 @@ function makeElement(type, elements, meta) {
              style: "line", color: [0, 220, 255], width: 0.22, height: 0.14,
              history_seconds: 20, ...base };
   }
+  if (type === "bar") {
+    // A linear meter for one stat's current value -- the same idea as
+    // a gauge (a live reading against its own min/max) but drawn as a
+    // horizontal fill bar instead of a circular ring, for lining
+    // several stats up as a compact stack rather than spreading them
+    // out as circles, or just for the look. Wider-than-tall by default
+    // (unlike graph's roughly-square default box) since it's meant to
+    // read as a single bar, not a plot -- see dashboard_theme.py's
+    // _bar_box()/_draw_bar_dynamic() for how it actually renders.
+    // `orientation` picks which way the fill runs (left-to-right vs.
+    // bottom-to-top) -- see the Orientation control in the property
+    // panel below, which also flips width/height when it's toggled so
+    // a vertical bar defaults to tall-and-narrow instead of staying
+    // wide-and-short. `show_knob` defaults off -- direct user feedback
+    // was that the round handle from progress_bar_glow() (originally
+    // built for the now-playing progress bar, where it's the only
+    // indicator of position) just looks like a stray dot sitting on a
+    // bar element, whose own fill already shows the value. `gradient`/
+    // `gradient_colors`/`gradient_direction` start unset (flat
+    // `color` fill, same as before) -- see the property panel's
+    // Gradient fill controls below for what turning it on adds.
+    return { id: makeId(elements, "bar"), type: "bar", stat: statKeys[0],
+             color: [0, 220, 255], width: 0.26, height: 0.12, orientation: "horizontal",
+             show_knob: false, gradient: false, gradient_direction: "horizontal", ...base };
+  }
   if (type === "image") {
     // width/height here are just a placeholder box until a picture's
     // actually picked -- uploadImage() below replaces them with a box
@@ -159,7 +205,90 @@ function makeElement(type, elements, meta) {
              analog_style: "classic", radius: 0.12,
              image_path: "", width: 0.22, height: 0.22, fit: "contain", ...base };
   }
+  if (type === "weather") {
+    // Mirrors default_weather_element() in dashboard_theme.py -- a
+    // current-conditions readout (weather.py, free/no-API-key) as its
+    // own movable/resizable element, the same conversion "now playing"
+    // already got from a fixed always-on middle-column display into
+    // the `media` element above. Empty location by default, same as
+    // the backend's factory -- shows a "set a location" placeholder
+    // until one's filled in via the property panel. show_icon/
+    // show_temp/show_description/show_details/show_location let each
+    // piece be switched off independently, same as media's show_art/
+    // show_name/show_time -- so it can be shrunk to just an icon, just
+    // the temperature, etc. to sit alongside a now-playing element
+    // without the two eating the whole panel between them.
+    return { id: makeId(elements, "weather"), type: "weather", width: 0.28, height: 0.46,
+             location: "", units: "celsius", show_icon: true, show_temp: true,
+             show_description: true, show_details: true, show_location: true, ...base };
+  }
   return null;
+}
+
+// Auto-fit height estimates for media/weather -- called whenever a
+// show_* piece checkbox is toggled in the property panel, so the box's
+// own height (and with it, the selection border drawn on the canvas)
+// shrinks or grows along with whichever pieces are actually turned on,
+// instead of staying at whatever size it happened to be dragged to
+// before. Without this, turning a piece off left the border exactly
+// where it was -- the *content* re-centered inside it (see
+// dashboard_theme.py's _draw_media_element()/_draw_weather_element()
+// docstrings for that fix), but the box itself, which is what you're
+// actually looking at and lining up against other elements, didn't
+// visibly shrink to match.
+//
+// These mirror those two functions' own content-height pre-measurement
+// as closely as a browser-side estimate reasonably can -- but not
+// exactly: dashboard_theme.py's real pass knows whether weather data
+// has actually loaded (a "no data yet" element is much shorter -- just
+// a wrapped message) and whether something's really playing (title/
+// artist/duration might not exist), neither of which is knowable here
+// before the theme is even running. So this always assumes the
+// "fully populated" case -- every enabled piece has real content to
+// show -- which is the right box size to aim for either way: it's
+// what the element will actually look like once there's real data,
+// and a "no data" element temporarily having some empty space under
+// its short placeholder message is far less confusing than a box that
+// never changes size when you flip a checkbox at all. Height only,
+// not width -- these two elements stack their pieces vertically, so
+// width doesn't grow/shrink with which pieces are on the way height
+// does (an icon-only weather element still wants to be as wide as its
+// icon, not as wide as the location name it no longer shows); a
+// narrower box is still just a manual resize away.
+function estimateWeatherHeight(el, refWidth = REF_W, refHeight = REF_H) {
+  const boxW = Math.max(60, (el.width ?? 0.28) * refWidth);
+  // Same width-based half of _draw_weather_element()'s
+  // `icon_size = min(mid_w * 0.4, box_h * 0.32)` -- the height-based
+  // half is dropped since box_h is exactly what's being solved for
+  // here, not yet known.
+  const iconSize = boxW * 0.4;
+  let contentH = 0;
+  if (el.show_icon ?? true) contentH += iconSize + 10;
+  if (el.show_temp ?? true) contentH += 54;
+  if (el.show_description ?? true) contentH += 26;
+  if (el.show_details ?? true) contentH += 22;
+  if (el.show_location ?? true) contentH += 20;
+  // `+ 12` matches _weather_box()'s own margin on top of the exact
+  // same content_h formula -- see that function's docstring for why
+  // the box is now never allowed to end up shorter than this.
+  return clamp((contentH + 12) / refHeight, 0.04, 0.9);
+}
+
+function estimateMediaHeight(el, refWidth = REF_W, refHeight = REF_H) {
+  const boxW = Math.max(60, (el.width ?? 0.32) * refWidth);
+  const showArt = el.show_art ?? true;
+  const showName = el.show_name ?? true;
+  const showTime = el.show_time ?? true;
+  // _draw_media_element()'s `art_size = min(mid_w * 0.75, box_h *
+  // art_frac)` -- again dropping the box_h-based cap for the same
+  // circular-dependency reason as the weather icon above, so this
+  // assumes the art gets its full width-based size rather than
+  // whatever a fixed box height would have squeezed it down to.
+  const artSize = showArt ? Math.max(24, boxW * 0.75) : 0;
+  let contentH = showArt ? artSize + 12 : 0;
+  if (showName) contentH += 24 + 22; // track line + artist line
+  if (showTime) contentH += 26; // bar + gap to the time labels
+  return clamp(contentH / refHeight, 0.04, 0.9);
 }
 
 // Reads a just-picked File's own pixel dimensions in the browser (no
@@ -184,7 +313,164 @@ function readImageDimensions(file) {
   });
 }
 
-export default function DashboardCanvas({ frameUrl, connected }) {
+const PREVIEW_SECONDS = 5;
+
+// Shared "solid color, or a 2-4 stop gradient" property-panel control --
+// originally built just for the bar element (see CHANGELOG.md), then
+// pulled out into its own component so gauge/text/graph/clock's own
+// color pickers could get the exact same treatment instead of each
+// growing their own copy of this same checkbox+swatches logic. Reads
+// and writes `selected.gradient` (bool), `selected.gradient_colors`
+// (2-4 RGB triples), and `selected.gradient_direction` -- every backend
+// renderer that supports a gradient (see dashboard_theme.py's
+// _element_gradient_colors()) expects exactly this shape, so nothing
+// element-type-specific belongs in here beyond which direction options
+// make sense to offer (`directionOptions`) and what to seed a first-time
+// gradient with (`defaultColor` -- the same fallback the plain solid
+// Color picker next to this one already uses for that element type).
+function GradientFillControl({ selected, updateSelected, defaultColor = [0, 220, 255],
+                                 secondColor = "#ff2ee0", showSolidColorWhenOff = true,
+                                 directionOptions = [["horizontal", "Left → Right"], ["vertical", "Top → Bottom"]] }) {
+  return (
+    <>
+      <div className="row">
+        <label className="row-inline">
+          <input
+            type="checkbox"
+            checked={!!selected.gradient}
+            onChange={(e) => {
+              const on = e.target.checked;
+              if (!on) {
+                updateSelected({ gradient: false });
+                return;
+              }
+              // Turning gradient on for the first time seeds two stops
+              // from whatever solid color was already in effect (so the
+              // element doesn't visually jump the moment the checkbox
+              // is ticked) plus a second, borrowed color -- an existing
+              // gradient_colors list (from having turned this on
+              // before, then off) is left alone rather than reset.
+              const stops = (selected.gradient_colors && selected.gradient_colors.length >= 2)
+                ? selected.gradient_colors
+                : [selected.color || defaultColor, hexToRgb(secondColor)];
+              updateSelected({ gradient: true, gradient_colors: stops });
+            }}
+          />
+          Gradient fill
+        </label>
+        {!selected.gradient ? (
+          // Some callers (gauge) already have their own separate solid-
+          // color control with its own nullable "derive from position"
+          // semantics that don't map onto this component's plain
+          // `color` field -- showSolidColorWhenOff=false skips this
+          // picker there so the two don't show a redundant/conflicting
+          // second "Color" input right next to each other.
+          showSolidColorWhenOff && (
+            <label>
+              Color
+              <input type="color" value={rgbToHex(selected.color || defaultColor)}
+                     onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
+            </label>
+          )
+        ) : (
+          <label>
+            Direction
+            <select
+              value={selected.gradient_direction || directionOptions[0][0]}
+              onChange={(e) => updateSelected({ gradient_direction: e.target.value })}
+            >
+              {directionOptions.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      {selected.gradient && (
+        <div className="row" style={{ flexWrap: "wrap", gap: "0.5em" }}>
+          {(selected.gradient_colors || []).map((c, i) => (
+            <span key={i} className="row-inline">
+              <input
+                type="color"
+                value={rgbToHex(c)}
+                onChange={(e) => {
+                  const stops = [...selected.gradient_colors];
+                  stops[i] = hexToRgb(e.target.value);
+                  updateSelected({ gradient_colors: stops });
+                }}
+              />
+              {selected.gradient_colors.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => updateSelected({
+                    gradient_colors: selected.gradient_colors.filter((_, j) => j !== i),
+                  })}
+                >
+                  ✕
+                </button>
+              )}
+            </span>
+          ))}
+          {(selected.gradient_colors || []).length < 4 && (
+            <button
+              type="button"
+              onClick={() => updateSelected({
+                gradient_colors: [...(selected.gradient_colors || []), [255, 255, 255]],
+              })}
+            >
+              + Add color stop
+            </button>
+          )}
+          <span className="hint">
+            2-4 color stops, evenly spaced. Direction is independent of anything else this
+            element's own orientation/layout controls -- pick whichever axis looks best.
+          </span>
+        </div>
+      )}
+    </>
+  );
+}
+
+// The SVG-side counterpart to GradientFillControl above: given an
+// element and a fallback (non-gradient) fill, returns the actual SVG
+// `fill` value to use (either that fallback, or a `url(#id)` reference)
+// plus the `<linearGradient>` def to render for it (or null if this
+// element isn't using a gradient right now). Every element type that
+// got a GradientFillControl in its property panel uses this so the
+// on-canvas mockup shows the real gradient immediately instead of a
+// flat swatch, matching how every other property on this canvas already
+// previews live -- same reasoning bar's own mockup gradient was added
+// for. `idPrefix` just needs to be unique per element *type* (element
+// ids are already unique on their own, but two different types reusing
+// the same literal string as a prefix would still collide if this ever
+// runs on the same element for two purposes at once).
+//
+// Gauge's "diagonal" direction (its original, only-ever corner-to-corner
+// sweep, kept as an option in its own property panel -- see
+// _element_gauge_gradient() on the backend) doesn't have a clean SVG
+// equivalent as a plain 0/1 axis, so it's approximated here as the same
+// left-to-right gradient "horizontal" gets; the backend's cairo-based
+// gauge renderer (the actual source of truth for what ships to the
+// panel) still draws the real corner-to-corner sweep regardless of what
+// this preview approximates.
+function gradientFill(el, idPrefix, fallbackColor) {
+  const stops = el.gradient ? (el.gradient_colors || []) : null;
+  if (!stops || stops.length < 2) {
+    return { fill: fallbackColor, defs: null };
+  }
+  const id = `${idPrefix}_${el.id}`;
+  const vertical = el.gradient_direction === "vertical";
+  const defs = (
+    <linearGradient id={id} x1="0" y1="0" x2={vertical ? "0" : "1"} y2={vertical ? "1" : "0"}>
+      {stops.map((c, i) => (
+        <stop key={i} offset={`${(i / (stops.length - 1)) * 100}%`} stopColor={`rgb(${c[0]}, ${c[1]}, ${c[2]})`} />
+      ))}
+    </linearGradient>
+  );
+  return { fill: `url(#${id})`, defs };
+}
+
+export default function DashboardCanvas({ frameUrl, connected, dashboardRunning }) {
   const [meta, setMeta] = useState(null);
   const [elements, setElements] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -199,18 +485,22 @@ export default function DashboardCanvas({ frameUrl, connected }) {
   const [npDraft, setNpDraft] = useState(null);
   const [npStatus, setNpStatus] = useState(null);
   const [npError, setNpError] = useState(null);
-  const [mcDraft, setMcDraft] = useState(null);
-  const [mcStatus, setMcStatus] = useState(null);
-  const [mcError, setMcError] = useState(null);
   const [uploadingId, setUploadingId] = useState(null); // "background" | "nowPlaying" | an element id, or null
+  // Seconds remaining in an in-progress "Preview on screen" (see
+  // previewLayout() below), or null when none is running -- drives the
+  // button's own countdown label so it's obvious when the live panel is
+  // about to revert back to whatever's actually saved.
+  const [previewSecondsLeft, setPreviewSecondsLeft] = useState(null);
 
   const historyRef = useRef([]);
   const futureRef = useRef([]);
-  // What's currently saved on the backend, so the toolbar can show an
-  // honest "you have unsaved changes" state instead of leaving it to
-  // guesswork -- see the "Unsaved changes" hint below Save layout.
-  // Reference equality is enough: commit()/undo()/redo()/load() always
-  // hand back a *new* array, never mutate elements in place.
+  // What's currently saved on the backend, so `dirty` below can tell
+  // an honest "you have unsaved changes" state from guesswork -- it
+  // drives the Save layout button's enabled/disabled and attention
+  // styling directly (see the toolbar JSX), rather than a separate
+  // sentence of explanatory text next to it. Reference equality is
+  // enough: commit()/undo()/redo()/load() always hand back a *new*
+  // array, never mutate elements in place.
   const savedElementsRef = useRef(null);
   const dragRef = useRef(null); // {id, mode: 'move'|'resize', beforeElements}
   const svgRef = useRef(null);
@@ -224,7 +514,6 @@ export default function DashboardCanvas({ frameUrl, connected }) {
         savedElementsRef.current = m.elements;
         setBgDraft(m.background);
         setNpDraft(m.nowPlaying);
-        setMcDraft(m.middleContent);
         historyRef.current = [];
         futureRef.current = [];
         setSelectedId(null);
@@ -318,11 +607,25 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId, elements, commit]);
 
-  const pointerToFraction = (e) => {
-    const svg = svgRef.current;
-    const rect = svg.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
+  // `rect` is optional -- pass the one snapshotted at the start of a
+  // drag gesture (see onPointerDownGauge/onPointerDownHandle below)
+  // rather than re-querying getBoundingClientRect() on every single
+  // pointermove. That re-query used to be exactly what made a drag
+  // track slightly wrong: selecting/moving an element flips `dirty`
+  // true on its very first pointermove (see the `dirty` computation
+  // above), which reveals the "* You have unsaved changes" hint line
+  // above the canvas -- a real DOM reflow that shifts the canvas box
+  // (and therefore this rect) down by however tall that line is, mid-
+  // gesture. Every pointermove after the first was then computing its
+  // fraction against a rect whose top had silently moved out from
+  // under the still-held cursor, so the element drifted from the
+  // cursor by that same shift instead of tracking it exactly. A static
+  // page can still call this with no rect (initial mount, etc.); a
+  // drag never should.
+  const pointerToFraction = (e, rect) => {
+    const r = rect || svgRef.current.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const y = (e.clientY - r.top) / r.height;
     return { x: clamp(x, 0, 1), y: clamp(y, 0, 1) };
   };
 
@@ -330,7 +633,23 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     e.stopPropagation();
     e.target.setPointerCapture(e.pointerId);
     setSelectedId(el.id);
-    dragRef.current = { id: el.id, mode: "move", beforeElements: elements };
+    const rect = svgRef.current.getBoundingClientRect();
+    // Recorded here (not just at drag time) so a move preserves *where
+    // on the element* you actually grabbed it -- without this, the
+    // very first pointermove snapped the element's x/y straight to the
+    // cursor's own fraction, so clicking near a gauge's edge (rather
+    // than dead center) made it visibly jump until that edge was under
+    // the cursor instead of moving smoothly from wherever it already
+    // was. offsetX/offsetY is the fixed gap between the cursor and the
+    // element's center at the moment of the grab; onPointerMove below
+    // subtracts it back out of every subsequent cursor position, so
+    // the element tracks the cursor's *movement*, not its raw position.
+    const { x: px, y: py } = pointerToFraction(e, rect);
+    dragRef.current = {
+      id: el.id, mode: "move", beforeElements: elements,
+      offsetX: px - el.x, offsetY: py - el.y, rect,
+      startClientX: e.clientX, startClientY: e.clientY, moved: false,
+    };
   };
 
   // `axis` picks which dimension(s) a given handle drags -- "both" (the
@@ -342,19 +661,40 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     e.stopPropagation();
     e.target.setPointerCapture(e.pointerId);
     setSelectedId(el.id);
-    dragRef.current = { id: el.id, mode: "resize", axis, beforeElements: elements };
+    const rect = svgRef.current.getBoundingClientRect();
+    dragRef.current = {
+      id: el.id, mode: "resize", axis, beforeElements: elements, rect,
+      startClientX: e.clientX, startClientY: e.clientY, moved: false,
+    };
   };
 
   const onPointerMove = (e) => {
     const drag = dragRef.current;
     if (!drag) return;
-    const { x: px, y: py } = pointerToFraction(e);
+    if (!drag.moved) {
+      const dxScreen = e.clientX - drag.startClientX;
+      const dyScreen = e.clientY - drag.startClientY;
+      if (Math.sqrt(dxScreen * dxScreen + dyScreen * dyScreen) < MOVE_THRESHOLD_PX) {
+        // Still within a click's worth of jitter -- see MOVE_THRESHOLD_PX
+        // above. Do nothing: no setElements call means `elements` keeps
+        // its exact prior reference, so `dirty` (a `!==` check) stays
+        // false and Save layout doesn't light up for a plain click.
+        return;
+      }
+      drag.moved = true;
+    }
+    const { x: px, y: py } = pointerToFraction(e, drag.rect);
     setElements((prev) => {
       const el = prev.find((it) => it.id === drag.id);
       if (!el) return prev;
       if (drag.mode === "move") {
-        let nx = px;
-        let ny = py;
+        // pointerToFraction() already clamped px/py to [0, 1], but
+        // subtracting the grab offset can push the result outside that
+        // range (e.g. grabbing an element near its left edge and
+        // dragging to x=0 would otherwise put its *center*, not the
+        // grabbed edge, at a negative x) -- clamp again after.
+        let nx = clamp(px - (drag.offsetX ?? 0), 0, 1);
+        let ny = clamp(py - (drag.offsetY ?? 0), 0, 1);
         const others = prev.filter((it) => it.id !== drag.id);
         let snapX = null;
         let snapY = null;
@@ -388,7 +728,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
       // scales font_size off the vertical drag distance instead.
       const dxPx = px * REF_W - el.x * REF_W;
       const dyPx = py * REF_H - el.y * REF_H;
-      if (el.type === "graph" || el.type === "image" || el.type === "media") {
+      if (el.type === "graph" || el.type === "bar" || el.type === "image" || el.type === "media" || el.type === "weather") {
         // `axis` (set by which handle was grabbed -- see
         // onPointerDownHandle) picks whether this drag touches width,
         // height, or both -- e.g. dragging the right-edge handle
@@ -426,6 +766,11 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     if (!drag) return;
     dragRef.current = null;
     setGuides({ x: null, y: null });
+    // If the gesture never crossed MOVE_THRESHOLD_PX, onPointerMove never
+    // touched `elements` at all -- it's just a click/selection, not a
+    // move/resize, so there's nothing to undo and pushing beforeElements
+    // here would only clutter the undo stack with a no-op entry.
+    if (!drag.moved) return;
     setElements((current) => {
       historyRef.current = [...historyRef.current, drag.beforeElements];
       if (historyRef.current.length > 100) historyRef.current.shift();
@@ -482,6 +827,43 @@ export default function DashboardCanvas({ frameUrl, connected }) {
       },
       (e) => setError(e.message)
     );
+
+  // "Preview on screen": shows whatever's currently on this canvas --
+  // saved or not -- on the real panel for PREVIEW_SECONDS, then the
+  // backend reverts it back to whatever's actually saved on its own
+  // (controller.py's preview_dashboard_elements()/
+  // _revert_dashboard_preview()). Requested directly: Save layout is a
+  // real commitment (it's what a fresh Start/Apply, or anyone else
+  // looking at the panel later, will keep showing), and the only way to
+  // see an edit on the actual hardware before this was to save it,
+  // decide you don't like it, and Undo -- annoying for something as
+  // quick as "does this gradient direction actually look better than
+  // the other one on the real screen". The countdown here is purely a
+  // client-side display (setInterval ticking a local counter down) --
+  // the backend's own revert timer is what actually matters and runs
+  // independently of whether this tab stays open, so a closed tab or a
+  // page reload mid-preview doesn't leave the panel stuck showing an
+  // unsaved preview forever.
+  const previewLayout = () => {
+    if (previewSecondsLeft !== null) return; // one preview at a time from this tab
+    api.previewDashboardElements(elements, PREVIEW_SECONDS).then(
+      () => {
+        setPreviewSecondsLeft(PREVIEW_SECONDS);
+        const started = Date.now();
+        const tick = () => {
+          const remaining = PREVIEW_SECONDS - (Date.now() - started) / 1000;
+          if (remaining <= 0) {
+            setPreviewSecondsLeft(null);
+          } else {
+            setPreviewSecondsLeft(Math.ceil(remaining));
+            setTimeout(tick, 250);
+          }
+        };
+        setTimeout(tick, 250);
+      },
+      (e) => setError(e.message)
+    );
+  };
 
   // Shared by every "pick an image" field on this canvas (background,
   // now-playing placeholder, an image element) -- a browser file input
@@ -548,29 +930,6 @@ export default function DashboardCanvas({ frameUrl, connected }) {
     );
   };
 
-  const updateMcDraft = (patch) => {
-    setMcStatus(null);
-    setMcDraft((prev) => ({ ...prev, ...patch }));
-  };
-
-  const saveMiddleContent = () => {
-    if (!mcDraft) return;
-    setMcError(null);
-    api.saveDashboardMiddleContent({
-      middle_content: mcDraft.value,
-      weather_location: mcDraft.weather_location || "",
-      weather_units: mcDraft.weather_units,
-    }).then(
-      (dashboardCfg) => {
-        setMcDraft((prev) => ({ ...prev, value: dashboardCfg.middle_content || "none",
-                                 weather_location: dashboardCfg.weather_location || "",
-                                 weather_units: dashboardCfg.weather_units || "celsius" }));
-        setMcStatus("Saved -- applies live, even while the dashboard is already running.");
-      },
-      (e) => setMcError(e.message)
-    );
-  };
-
   const saveAsPreset = () => {
     const name = presetName.trim();
     if (!name) return;
@@ -614,71 +973,119 @@ export default function DashboardCanvas({ frameUrl, connected }) {
   const selected = elements.find((el) => el.id === selectedId) || null;
   const ordered = [...elements].sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
   const dirty = elements !== savedElementsRef.current;
+  // Forces every element's mockup to show, not just the selected one --
+  // needed for Reset to defaults (and Undo/Redo landing on a state with
+  // nothing selected), which touches every element at once and leaves
+  // none of them selected, so `isSelected` alone wouldn't make any of
+  // them show up-to-date. Gated on `!selectedId` so an ordinary drag or
+  // property-panel edit -- which always has the element being edited
+  // selected -- doesn't trip this: `isSelected` already covers that
+  // element on its own, and this used to also force every *other*,
+  // untouched element's mockup box/border to flash into view for the
+  // whole gesture (a plain drag on one gauge lit up the image/media
+  // elements' borders too), which read as those other elements getting
+  // highlighted for no reason.
+  const forceAllMockups = dirty && !selectedId;
 
   return (
     <section className="panel">
       <h2>Dashboard layout</h2>
       <p className="hint">
         Drag an element to move it, click to select. A selected element with independent
-        width/height (graph, image, now-playing) gets three resize handles: the one on its
-        right edge changes width only, the one on its bottom edge changes height only, and
-        the corner changes both. Everything below updates live in this box as you edit --
-        no need to save just to see it.
+        width/height (graph, bar, image, now-playing) gets three resize handles: the one on
+        its right edge changes width only, the one on its bottom edge changes height only,
+        and the corner changes both. Everything below updates live in this box as you edit --
+        no need to save just to see it, though Save layout is what actually pushes it to the
+        physical panel (instantly, if the dashboard's already running -- no need to
+        Stop/Start). Not sure about a change yet? "Preview on screen" shows exactly what's
+        on this canvas right now (saved or not) on the physical panel for a few seconds,
+        then reverts back to whatever's actually saved -- no commitment, and Undo isn't
+        needed either way.
         {connected ? " It's overlaid on the panel's live frame too." : " Start the Dashboard to also see it over the live frame."}
       </p>
 
+      {/* Two groups, not one flat row: "add a thing" (plus undo/redo/
+          reset, which act on the layout you're building, same
+          category) on the left, and "commit the layout" on the right --
+          space-between plus this being the toolbar's only two children
+          is what pushes Save layout to the far right edge. It used to
+          sit inline with the "+ Add X" buttons, reading as just another
+          one of them, even though it's a fundamentally different kind
+          of action (it's the one that actually reaches the physical
+          panel) -- separating it, and disabling it outright while
+          there's nothing to save (see `dirty` below) rather than
+          relying on a separate "* you have unsaved changes" sentence
+          to explain that, makes what it does and when it matters
+          obvious from the button alone. */}
       <div className="canvas-toolbar">
-        <button onClick={() => addElement("gauge")}>+ Add gauge</button>
-        <button onClick={() => addElement("text")}>+ Add text</button>
-        <button onClick={() => addElement("graph")}>+ Add graph</button>
-        <button onClick={() => addElement("image")}>+ Add image</button>
-        <button onClick={() => addElement("media")}>+ Add now-playing</button>
-        <button onClick={() => addElement("clock")}>+ Add clock</button>
-        <button onClick={undo} disabled={historyRef.current.length === 0}>Undo</button>
-        <button onClick={redo} disabled={futureRef.current.length === 0}>Redo</button>
-        <button onClick={resetToDefaults}>Reset to defaults</button>
-        <button onClick={saveLayout} className={dirty ? "btn-attention" : undefined}>
-          {dirty ? "Save layout*" : "Save layout"}
-        </button>
+        <div className="canvas-toolbar-group">
+          <button onClick={() => addElement("gauge")}>+ Add gauge</button>
+          <button onClick={() => addElement("text")}>+ Add text</button>
+          <button onClick={() => addElement("graph")}>+ Add graph</button>
+          <button onClick={() => addElement("bar")}>+ Add bar</button>
+          <button onClick={() => addElement("image")}>+ Add image</button>
+          <button onClick={() => addElement("media")}>+ Add now-playing</button>
+          <button onClick={() => addElement("clock")}>+ Add clock</button>
+          <button onClick={() => addElement("weather")}>+ Add weather</button>
+          <button onClick={undo} disabled={historyRef.current.length === 0}>Undo</button>
+          <button onClick={redo} disabled={futureRef.current.length === 0}>Redo</button>
+          <button onClick={resetToDefaults}>Reset to defaults</button>
+        </div>
+        <div className="canvas-toolbar-group">
+          <button
+            onClick={previewLayout}
+            disabled={!dashboardRunning || previewSecondsLeft !== null}
+            title={
+              !dashboardRunning
+                ? "Start the Dashboard theme to preview on the real panel"
+                : previewSecondsLeft !== null
+                ? "Already previewing"
+                : `Show the current (even unsaved) layout on the physical panel for ${PREVIEW_SECONDS}s, then revert`
+            }
+          >
+            {previewSecondsLeft !== null ? `Previewing... ${previewSecondsLeft}s` : "Preview on screen"}
+          </button>
+          <button onClick={saveLayout} disabled={!dirty} className={dirty ? "btn-attention" : undefined}
+                  title={dirty ? "Push these changes to the physical panel" : "No unsaved changes"}>
+            {dirty ? "Save layout*" : "Save layout"}
+          </button>
+        </div>
       </div>
-      {dirty && (
-        <p className="hint">
-          * You have unsaved changes -- this preview is live, but Save layout is what keeps
-          them and pushes them to the physical panel (instantly, if the dashboard's already
-          running -- no need to Stop/Start).
-        </p>
-      )}
 
-      {/* Element list -- clicking directly on the canvas is fine when
-          things are spread out, but small or fully-overlapped elements
-          (a mini gauge, a now-playing box sitting on top of a gauge)
-          are hard or impossible to grab precisely, and there's no way
-          to even tell two overlapping things apart. This lists every
-          element by name regardless of where it sits or what's on top
-          of it, and clicking a row selects it exactly like clicking it
-          on the canvas would. */}
-      <ul className="element-list">
-        {ordered.map((el) => (
-          <li key={el.id}>
-            <button
-              type="button"
-              className={el.id === selectedId ? "element-row selected" : "element-row"}
-              onClick={() => setSelectedId(el.id)}
-            >
-              <span className="element-badge">{ELEMENT_BADGES[el.type] || "?"}</span>
-              <span className="element-label">{elementLabel(el, meta)}</span>
-              <span className="element-id">{el.id}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      <div
-        className="canvas-box"
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerLeave={endDrag}
-      >
+      {/* The canvas itself (the live preview -- it's what the panel
+          actually looks like, dragged elements and all) and everything
+          about the currently-selected element sit side by side here,
+          not stacked -- this is the one screen where preview and
+          config genuinely need to be looked at at the same time (drag
+          something on the left, watch its numbers change on the
+          right), so stacking them the way the rest of this page used
+          to is exactly the scrolling problem this whole redesign is
+          about. Background/presets stay below, full width -- those are
+          occasional, not part of the moment-to-moment drag-and-tweak
+          loop this split is for. */}
+      <div className="canvas-layout">
+        <div className="canvas-main">
+          <div
+            className="canvas-box"
+            onPointerMove={onPointerMove}
+            onPointerUp={endDrag}
+            onPointerLeave={endDrag}
+          >
+        {/* This <img> is a snapshot of what the physical panel is
+            showing *right now* -- kept visible and continuously
+            refreshing regardless of `dirty`, so the canvas never drops
+            to a plain black background just because there's an
+            unsaved edit in progress. (An earlier version hid this
+            photo while dirty, to stop it from reading as a stale
+            preview after Reset to defaults -- but "stale photo behind
+            live mockups" is a much smaller problem than "background
+            goes black/disappears the moment you touch anything", so
+            that trade got reversed. The mockups below now carry the
+            "does this reflect my unsaved edit" job on their own -- via
+            plain `isSelected` for the element actually being edited,
+            and `forceAllMockups` (dirty with nothing selected) for a
+            mass change like Reset to defaults -- instead of this image
+            doing it by disappearing.) */}
         {frameUrl && connected && (
           <img className="canvas-frame" src={frameUrl} alt="Live panel frame" />
         )}
@@ -701,11 +1108,13 @@ export default function DashboardCanvas({ frameUrl, connected }) {
               const x = el.x * REF_W;
               const y = el.y * REF_H;
               const fontSize = Math.max(8, (el.font_size ?? 0.05) * REF_H);
-              const color = el.color ? `rgb(${el.color[0]}, ${el.color[1]}, ${el.color[2]})` : "#fff";
+              const solidColor = el.color ? `rgb(${el.color[0]}, ${el.color[1]}, ${el.color[2]})` : "#fff";
+              const { fill: color, defs: gradDefs } = gradientFill(el, "textgrad", solidColor);
               const anchor = { left: "start", center: "middle", right: "end" }[el.align || "center"] || "middle";
               const halfW = Math.max(24, ((el.text || "").length * fontSize) / 3.2);
               return (
                 <g key={el.id}>
+                  {gradDefs && <defs>{gradDefs}</defs>}
                   {isSelected && (
                     <rect x={x - (anchor === "start" ? 4 : anchor === "end" ? halfW * 2 - 4 : halfW)}
                           y={y - fontSize * 0.8} width={halfW * 2} height={fontSize * 1.6}
@@ -725,17 +1134,35 @@ export default function DashboardCanvas({ frameUrl, connected }) {
               );
             }
 
-            if (el.type === "graph" || el.type === "image" || el.type === "media") {
-              const w = (el.width ?? (el.type === "media" ? 0.32 : 0.2)) * REF_W;
-              const h = (el.height ?? (el.type === "media" ? 0.52 : 0.14)) * REF_H;
+            if (el.type === "graph" || el.type === "bar" || el.type === "image" || el.type === "media" || el.type === "weather") {
+              const w = (el.width ?? (el.type === "media" ? 0.32 : el.type === "weather" ? 0.28 : el.type === "bar" ? 0.26 : 0.2)) * REF_W;
+              // Exactly el.width/el.height, no forced minimum -- a
+              // weather element's box is never grown to fit its
+              // content (see dashboard_theme.py's _weather_box()
+              // docstring for why an earlier version of this did grow
+              // it, and why that made things worse: it made the real
+              // on-panel footprint balloon past what these fields say
+              // and overlap neighboring elements). The real render
+              // instead scales the *content* down to fit whatever box
+              // this is, so the mockup here staying exactly this size
+              // is the accurate preview.
+              const h = (el.height ?? (el.type === "media" ? 0.52 : el.type === "weather" ? 0.46 : el.type === "bar" ? 0.12 : 0.14)) * REF_H;
               const x0 = el.x * REF_W - w / 2;
               const y0 = el.y * REF_H - h / 2;
-              const accent = el.type === "graph" ? accentFor(el)
-                : el.type === "media" ? ACCENT_GPU : "rgb(150, 170, 200)";
-              const label = el.type === "graph" ? (meta.stats[el.stat]?.title || el.stat)
-                : el.type === "media" ? "NOW PLAYING" : "PICK AN IMAGE BELOW";
+              const accent = el.type === "graph" || el.type === "bar" ? accentFor(el)
+                : el.type === "media" ? ACCENT_GPU : el.type === "weather" ? "rgb(255, 200, 60)" : "rgb(150, 170, 200)";
+              const label = el.type === "graph" || el.type === "bar" ? (meta.stats[el.stat]?.title || el.stat)
+                : el.type === "media" ? "NOW PLAYING" : el.type === "weather" ? "WEATHER" : "PICK AN IMAGE BELOW";
               const imageUrl = el.type === "image" ? api.dashboardImageUrl(el.image_path) : null;
               const clipId = `clip_${el.id}`;
+              // A bar or graph's mockup mirrors its real gradient fill
+              // (rather than just the flat `accent` swatch every other
+              // box type gets) so customizing a gradient's colors/
+              // direction shows its actual look right away, same as
+              // every other property already updates live in this
+              // canvas.
+              const { fill: boxFill, defs: boxGradDefs } =
+                (el.type === "bar" || el.type === "graph") ? gradientFill(el, "boxgrad", accent) : { fill: accent, defs: null };
               // Mirrors dashboard_theme.py's _fit_into_box(): "contain"
               // (default) never crops, "cover" fills the box and crops
               // overflow, "stretch" ignores aspect ratio entirely --
@@ -745,6 +1172,65 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                 el.type === "image" && el.fit === "cover" ? "xMidYMid slice"
                 : el.type === "image" && el.fit === "stretch" ? "none"
                 : "xMidYMid meet";
+              // Same "the live frame already shows the real thing"
+              // reasoning as the clock face below: media/weather (and
+              // an image element with a picture already picked) are
+              // dynamic/baked content the live frame already draws at
+              // this exact spot, so the tinted fill + border + label
+              // mockup reads as an artifact sitting on top of the real
+              // preview rather than an editor overlay -- only draw it
+              // when there's no live frame to collide with, or once
+              // selected (so you can always find/resize it). A plain
+              // graph or bar (this mockup never attempts to draw their
+              // actual bars/line/fill -- that needs live history/stat
+              // data this editor doesn't have) always keeps its box,
+              // connected or not -- it's the only thing showing where
+              // one of those will be (a bar is different -- see the note
+              // by showMockup below), unlike media/weather's box, which
+              // duplicates a real "NOW PLAYING"/"WEATHER" label the
+              // live frame already shows. An invisible hit-rect keeps
+              // the whole footprint click/drag-able either way.
+              //
+              // A bar element used to be lumped in with graph here too
+              // (always showing its box, connected or not), which is
+              // exactly what a user reported as "the bar looks
+              // highlighted by default" -- a saved, unselected bar kept
+              // its tinted fill/border/label drawn right on top of the
+              // real live photo forever, permanently looking selected.
+              // Unlike a graph (whose mockup is a rough placeholder that
+              // can't approximate a live line/history at all), a bar's
+              // mockup is just its accent-colored fill/border/label at a
+              // fixed demo fraction -- close enough to the real thing,
+              // same as a gauge's demo needle, that there's no reason to
+              // keep it drawn over an accurate live photo. So bar now
+              // defers to the live frame exactly like gauge/clock/media/
+              // weather do (mockup only when selected, disconnected, or
+              // forceAllMockups), and only graph keeps the "always show"
+              // behavior.
+              //
+              // `|| forceAllMockups` in showMockup matters too: the
+              // live frame photo only ever shows what was last *saved*
+              // (see the "Save layout" hint at the top of this panel,
+              // and the canvas-frame <img> above), so right after
+              // Reset to defaults (or an Undo/Redo landing on nothing
+              // selected) that photo is known-stale relative to what's
+              // on screen here, and nothing is selected to fall back
+              // on for showing the update. Forcing every mockup to show
+              // in just that case, on top of the (possibly stale)
+              // photo, is what makes the reset visibly register
+              // immediately even though the photo itself hasn't caught
+              // up yet. It's deliberately NOT just `dirty` -- an
+              // ordinary drag or checkbox edit is dirty too, but always
+              // has the edited element selected, so `isSelected` alone
+              // already covers it; `forceAllMockups` only kicking in
+              // once nothing is selected keeps a plain drag on one
+              // gauge from also lighting up every *other* element's
+              // mockup box/border for the whole gesture. Once Save
+              // layout is clicked, `dirty` (and so `forceAllMockups`)
+              // goes false again and the mockup goes back to deferring
+              // to the real frame.
+              const overLiveFrame = connected && !!frameUrl;
+              const showMockup = el.type === "graph" || isSelected || !overLiveFrame || forceAllMockups;
               return (
                 <g key={el.id}>
                   {imageUrl && (
@@ -752,24 +1238,31 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                       <rect x={x0} y={y0} width={w} height={h} rx={4} />
                     </clipPath>
                   )}
+                  {boxGradDefs && <defs>{boxGradDefs}</defs>}
                   {imageUrl ? (
                     // The actual picked image, shown here the moment
                     // it's uploaded -- not just once Saved/Started, see
                     // uploadImage()'s comment on why this can render
-                    // immediately.
+                    // immediately. Left visible either way (it's what
+                    // the live frame itself shows once baked in, not
+                    // an edit-only annotation).
                     <image href={imageUrl} x={x0} y={y0} width={w} height={h}
                            preserveAspectRatio={preserveAspectRatio} clipPath={`url(#${clipId})`}
                            opacity={el.opacity ?? 1}
                            onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
-                  ) : (
+                  ) : showMockup ? (
                     <rect x={x0} y={y0} width={w} height={h}
-                          fill={accent} fillOpacity={0.1 * (el.opacity ?? 1)}
+                          fill={boxFill}
+                          fillOpacity={boxGradDefs ? 0.55 * (el.opacity ?? 1) : 0.1 * (el.opacity ?? 1)}
                           stroke={accent} strokeOpacity={el.opacity ?? 1}
                           strokeWidth={isSelected ? 3 : 1.5}
                           strokeDasharray={isSelected ? "6 3" : undefined}
                           onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                  ) : (
+                    <rect x={x0} y={y0} width={w} height={h} fill="transparent"
+                          onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
                   )}
-                  {imageUrl && (
+                  {imageUrl && showMockup && (
                     <rect x={x0} y={y0} width={w} height={h} rx={4}
                           fill="none" stroke={isSelected ? "#ffd85e" : accent}
                           strokeOpacity={isSelected ? 1 : 0.6}
@@ -777,7 +1270,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                           strokeDasharray={isSelected ? "6 3" : undefined}
                           style={{ pointerEvents: "none" }} />
                   )}
-                  {!imageUrl && (
+                  {!imageUrl && showMockup && (
                     <text x={x0 + w / 2} y={y0 + h / 2} textAnchor="middle" dominantBaseline="middle"
                           fill="#fff" fontSize={12} style={{ pointerEvents: "none" }}>
                       {label}
@@ -831,6 +1324,13 @@ export default function DashboardCanvas({ frameUrl, connected }) {
               // where it is once it's selected. Same reasoning/pattern
               // for all three faces, just a different hit-shape each.
               const overLiveFrame = connected && !!frameUrl;
+              // `|| forceAllMockups` below (see the box-rendering branch
+              // above for the full reasoning) makes the mockup keep
+              // showing even while connected right after a mass change
+              // like Reset to defaults, since the live frame photo
+              // hasn't caught up to it yet and nothing is selected to
+              // fall back on.
+              const showClockMockup = !overLiveFrame || forceAllMockups;
 
               if (face === "analog") {
                 const r = Math.max(10, (el.radius ?? 0.12) * Math.min(REF_W, REF_H));
@@ -854,7 +1354,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                       <rect x={x - r - 4} y={y - r - 4} width={(r + 4) * 2} height={(r + 4) * 2}
                             fill="none" stroke="#ffd85e" strokeDasharray="4 3" />
                     )}
-                    {overLiveFrame ? (
+                    {!showClockMockup ? (
                       <circle cx={x} cy={y} r={r} fill="transparent"
                               onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }}>
                         <title>Clock (analog) -- showing the real live time from the panel behind it</title>
@@ -892,7 +1392,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                     {imageUrl && (
                       <clipPath id={clipId}><rect x={x0} y={y0} width={w} height={h} rx={4} /></clipPath>
                     )}
-                    {overLiveFrame ? (
+                    {!showClockMockup ? (
                       <rect x={x0} y={y0} width={w} height={h} fill="transparent"
                             onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }}>
                         <title>Clock (custom image) -- showing the real live time from the panel behind it</title>
@@ -956,13 +1456,15 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                 ? (twelveHour ? "12:34:56 PM" : "12:34:56")
                 : (twelveHour ? "12:34 PM" : "12:34");
               const halfW = Math.max(24, (sample.length * fontSize) / 3.4);
+              const { fill: clockColor, defs: clockGradDefs } = gradientFill(el, "clockgrad", color);
               return (
                 <g key={el.id}>
+                  {clockGradDefs && <defs>{clockGradDefs}</defs>}
                   {isSelected && (
                     <rect x={x - halfW} y={y - fontSize * 0.7} width={halfW * 2} height={fontSize * 1.4}
                           fill="none" stroke="#ffd85e" strokeDasharray="4 3" />
                   )}
-                  {overLiveFrame ? (
+                  {!showClockMockup ? (
                     <rect x={x - halfW} y={y - fontSize * 0.7} width={halfW * 2} height={fontSize * 1.4}
                           fill="transparent"
                           onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }}>
@@ -970,7 +1472,7 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                     </rect>
                   ) : (
                     <text x={x} y={y} textAnchor="middle" dominantBaseline="middle"
-                          fontSize={fontSize} fill={color} opacity={el.opacity ?? 1}
+                          fontSize={fontSize} fill={clockColor} opacity={el.opacity ?? 1}
                           onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move", userSelect: "none" }}>
                       {sample}
                     </text>
@@ -984,44 +1486,95 @@ export default function DashboardCanvas({ frameUrl, connected }) {
               );
             }
 
-            // gauge (the original element type)
+            // gauge (the original element type) -- same "the live frame
+            // already shows the real thing" reasoning as clock/media/
+            // weather above: once connected, the live frame already
+            // draws this exact gauge's real ring + live value at this
+            // spot, so the mockup ring + static title text is a
+            // duplicate sitting on top of it. Only draw the mockup when
+            // there's no live frame to collide with, or once selected;
+            // an invisible circle keeps the hit area click/drag-able
+            // either way. `|| forceAllMockups` too, same as the other
+            // element types above -- covers a mass change like Reset to
+            // defaults (nothing selected, live frame photo not caught
+            // up yet) without also lighting up every gauge's mockup
+            // ring during an ordinary drag on some other element.
             const cx = el.x * REF_W;
             const cy = el.y * REF_H;
             const r = el.radius * Math.min(REF_W, REF_H);
             const accent = accentFor(el);
+            const { fill: ringFill, defs: ringGradDefs } = gradientFill(el, "gaugegrad", accent);
             const title = meta.stats[el.stat]?.title || el.stat;
+            const overLiveFrame = connected && !!frameUrl;
+            const showMockup = isSelected || !overLiveFrame || forceAllMockups;
             return (
               <g key={el.id}>
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={r}
-                  fill={accent}
-                  fillOpacity={0.12 * (el.opacity ?? 1)}
-                  stroke={accent}
-                  strokeOpacity={el.opacity ?? 1}
-                  strokeWidth={isSelected ? 3 : 1.5}
-                  strokeDasharray={isSelected ? "6 3" : undefined}
-                  onPointerDown={onPointerDownGauge(el)}
-                  style={{ cursor: "move" }}
-                />
-                <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
-                      fill="#fff" fontSize={Math.max(10, r * 0.28)} style={{ pointerEvents: "none" }}>
-                  {title}
-                </text>
-                <rect
-                  x={cx + r * 0.707 - 7} y={cy + r * 0.707 - 7} width={14} height={14}
-                  fill={accent} stroke="#fff" strokeWidth={1}
-                  onPointerDown={onPointerDownHandle(el)}
-                  style={{ cursor: "nwse-resize" }}
-                />
+                {ringGradDefs && <defs>{ringGradDefs}</defs>}
+                {showMockup ? (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={r}
+                    fill={ringFill}
+                    fillOpacity={0.12 * (el.opacity ?? 1)}
+                    stroke={accent}
+                    strokeOpacity={el.opacity ?? 1}
+                    strokeWidth={isSelected ? 3 : 1.5}
+                    strokeDasharray={isSelected ? "6 3" : undefined}
+                    onPointerDown={onPointerDownGauge(el)}
+                    style={{ cursor: "move" }}
+                  />
+                ) : (
+                  <circle cx={cx} cy={cy} r={r} fill="transparent"
+                          onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                )}
+                {showMockup && (
+                  <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+                        fill="#fff" fontSize={Math.max(10, r * 0.28)} style={{ pointerEvents: "none" }}>
+                    {title}
+                  </text>
+                )}
+                {isSelected && (
+                  <rect
+                    x={cx + r * 0.707 - 7} y={cy + r * 0.707 - 7} width={14} height={14}
+                    fill={accent} stroke="#fff" strokeWidth={1}
+                    onPointerDown={onPointerDownHandle(el)}
+                    style={{ cursor: "nwse-resize" }}
+                  />
+                )}
               </g>
             );
           })}
         </svg>
-      </div>
+          </div>
+        </div>
 
-      {selected && (
+        <div className="canvas-side">
+          {/* Element list -- clicking directly on the canvas is fine
+              when things are spread out, but small or fully-overlapped
+              elements (a mini gauge, a now-playing box sitting on top
+              of a gauge) are hard or impossible to grab precisely, and
+              there's no way to even tell two overlapping things apart.
+              This lists every element by name regardless of where it
+              sits or what's on top of it, and clicking a row selects
+              it exactly like clicking it on the canvas would. */}
+          <ul className="element-list">
+            {ordered.map((el) => (
+              <li key={el.id}>
+                <button
+                  type="button"
+                  className={el.id === selectedId ? "element-row selected" : "element-row"}
+                  onClick={() => setSelectedId(el.id)}
+                >
+                  <span className="element-badge">{ELEMENT_BADGES[el.type] || "?"}</span>
+                  <span className="element-label">{elementLabel(el, meta)}</span>
+                  <span className="element-id">{el.id}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {selected && (
         <div className="canvas-props">
           {selected.type === "text" && (
             <>
@@ -1042,11 +1595,6 @@ export default function DashboardCanvas({ frameUrl, connected }) {
               </div>
               <div className="row">
                 <label>
-                  Color
-                  <input type="color" value={rgbToHex(selected.color || [255, 255, 255])}
-                         onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
-                </label>
-                <label>
                   Font size %
                   <input type="number" min={2} max={25} style={{ width: "5em" }}
                          value={Math.round((selected.font_size ?? 0.05) * 100)}
@@ -1059,6 +1607,8 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                          onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
                 </label>
               </div>
+              <GradientFillControl selected={selected} updateSelected={updateSelected}
+                                    defaultColor={[255, 255, 255]} />
             </>
           )}
 
@@ -1089,18 +1639,95 @@ export default function DashboardCanvas({ frameUrl, connected }) {
               </div>
               <div className="row">
                 <label>
-                  Color
-                  <input type="color" value={rgbToHex(selected.color || [0, 220, 255])}
-                         onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
-                </label>
-                <label>
                   Opacity
                   <input type="range" min={20} max={100}
                          value={Math.round((selected.opacity ?? 1) * 100)}
                          onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
                 </label>
               </div>
+              <GradientFillControl selected={selected} updateSelected={updateSelected} />
             </>
+          )}
+
+          {selected.type === "bar" && (
+            <div className="row">
+              <label>
+                Stat
+                <select value={selected.stat} onChange={(e) => updateSelected({ stat: e.target.value })}>
+                  {Object.entries(meta.stats).map(([key, s]) => (
+                    <option key={key} value={key}>{s.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Orientation
+                <select
+                  value={selected.orientation || "horizontal"}
+                  onChange={(e) => {
+                    const orientation = e.target.value;
+                    const patch = { orientation };
+                    const w = selected.width ?? 0.26;
+                    const h = selected.height ?? 0.12;
+                    // Flip the box's own aspect to suit the new fill
+                    // direction -- a vertical bar that's still wider
+                    // than tall (or a horizontal one taller than wide)
+                    // reads oddly, so swap width/height whenever the
+                    // current box doesn't already fit the orientation
+                    // being switched to. Only ever swaps once: if it's
+                    // already the right shape (or square), this is a
+                    // no-op.
+                    if (orientation === "vertical" && w > h) {
+                      patch.width = h;
+                      patch.height = w;
+                    } else if (orientation === "horizontal" && h > w) {
+                      patch.width = h;
+                      patch.height = w;
+                    }
+                    updateSelected(patch);
+                  }}
+                >
+                  <option value="horizontal">Horizontal</option>
+                  <option value="vertical">Vertical</option>
+                </select>
+              </label>
+              <label>
+                Opacity
+                <input type="range" min={20} max={100}
+                       value={Math.round((selected.opacity ?? 1) * 100)}
+                       onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
+              </label>
+              <label className="row-inline">
+                <input type="checkbox" checked={!!selected.show_knob}
+                       onChange={(e) => updateSelected({ show_knob: e.target.checked })} />
+                Show knob
+              </label>
+            </div>
+          )}
+
+          {selected.type === "bar" && (
+            <GradientFillControl selected={selected} updateSelected={updateSelected} />
+          )}
+
+          {selected.type === "bar" && selected.gradient && (
+            <div className="row">
+              <span className="hint">
+                The color at any point on the bar stays put as the value changes, only how
+                much of it is revealed moves. Direction is independent of Orientation
+                above: a horizontal bar can still gradient top-to-bottom, and a vertical
+                one left-to-right, if that reads better than matching the fill direction.
+              </span>
+            </div>
+          )}
+
+          {selected.type === "bar" && (
+            <div className="row">
+              <span className="hint">
+                A linear meter for this stat's current value -- the same reading a gauge
+                shows, just as a fill bar instead of a ring. No history here (that's what
+                graph is for); this only ever shows the value right now. Orientation picks
+                which way the fill runs -- left-to-right, or bottom-to-top.
+              </span>
+            </div>
           )}
 
           {selected.type === "image" && (
@@ -1161,17 +1788,29 @@ export default function DashboardCanvas({ frameUrl, connected }) {
               <div className="row">
                 <label className="row-inline">
                   <input type="checkbox" checked={selected.show_art ?? true}
-                         onChange={(e) => updateSelected({ show_art: e.target.checked })} />
+                         onChange={(e) => {
+                           const patch = { show_art: e.target.checked };
+                           patch.height = estimateMediaHeight({ ...selected, ...patch });
+                           updateSelected(patch);
+                         }} />
                   Cover art
                 </label>
                 <label className="row-inline">
                   <input type="checkbox" checked={selected.show_name ?? true}
-                         onChange={(e) => updateSelected({ show_name: e.target.checked })} />
+                         onChange={(e) => {
+                           const patch = { show_name: e.target.checked };
+                           patch.height = estimateMediaHeight({ ...selected, ...patch });
+                           updateSelected(patch);
+                         }} />
                   Track/artist name
                 </label>
                 <label className="row-inline">
                   <input type="checkbox" checked={selected.show_time ?? true}
-                         onChange={(e) => updateSelected({ show_time: e.target.checked })} />
+                         onChange={(e) => {
+                           const patch = { show_time: e.target.checked };
+                           patch.height = estimateMediaHeight({ ...selected, ...patch });
+                           updateSelected(patch);
+                         }} />
                   Progress/time
                 </label>
               </div>
@@ -1240,6 +1879,95 @@ export default function DashboardCanvas({ frameUrl, connected }) {
             </>
           )}
 
+          {selected.type === "weather" && (
+            <>
+              <div className="row">
+                <label className="grow">
+                  Location
+                  <input
+                    type="text"
+                    value={selected.location || ""}
+                    onChange={(e) => updateSelected({ location: e.target.value })}
+                    placeholder="City, address, or lat,lon"
+                  />
+                </label>
+                <label>
+                  Units
+                  <select value={selected.units || "celsius"}
+                          onChange={(e) => updateSelected({ units: e.target.value })}>
+                    {Object.entries(meta.weatherUnitOptions || {}).map(([key, label]) => (
+                      <option key={key} value={key}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="row">
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_icon ?? true}
+                         onChange={(e) => {
+                           const patch = { show_icon: e.target.checked };
+                           patch.height = estimateWeatherHeight({ ...selected, ...patch });
+                           updateSelected(patch);
+                         }} />
+                  Icon
+                </label>
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_temp ?? true}
+                         onChange={(e) => {
+                           const patch = { show_temp: e.target.checked };
+                           patch.height = estimateWeatherHeight({ ...selected, ...patch });
+                           updateSelected(patch);
+                         }} />
+                  Temperature
+                </label>
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_description ?? true}
+                         onChange={(e) => {
+                           const patch = { show_description: e.target.checked };
+                           patch.height = estimateWeatherHeight({ ...selected, ...patch });
+                           updateSelected(patch);
+                         }} />
+                  Description
+                </label>
+              </div>
+              <div className="row">
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_details ?? true}
+                         onChange={(e) => {
+                           const patch = { show_details: e.target.checked };
+                           patch.height = estimateWeatherHeight({ ...selected, ...patch });
+                           updateSelected(patch);
+                         }} />
+                  Feels-like/humidity
+                </label>
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_location ?? true}
+                         onChange={(e) => {
+                           const patch = { show_location: e.target.checked };
+                           patch.height = estimateWeatherHeight({ ...selected, ...patch });
+                           updateSelected(patch);
+                         }} />
+                  Location name
+                </label>
+              </div>
+              <div className="row">
+                <label>
+                  Opacity
+                  <input type="range" min={20} max={100}
+                         value={Math.round((selected.opacity ?? 1) * 100)}
+                         onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
+                </label>
+                <span className="hint">
+                  City, address, or "lat,lon" -- looked up via a free weather service (Open-Meteo,
+                  no account/API key needed). Turn off whichever pieces you don't want -- e.g. just
+                  the icon, or just the temperature -- to shrink this down, say to sit next to a
+                  now-playing element. Applies once you Save layout below, even while the dashboard
+                  is already running -- no need to Stop/Start.
+                </span>
+              </div>
+            </>
+          )}
+
           {selected.type === "clock" && (
             <>
               <div className="row">
@@ -1278,17 +2006,17 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                     Show date
                   </label>
                   <label>
-                    Color
-                    <input type="color" value={rgbToHex(selected.color || [235, 235, 242])}
-                           onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })} />
-                  </label>
-                  <label>
                     Font size %
                     <input type="number" min={2} max={25} style={{ width: "5em" }}
                            value={Math.round((selected.font_size ?? 0.05) * 100)}
                            onChange={(e) => updateSelected({ font_size: clamp(Number(e.target.value) / 100, 0.02, 0.25) })} />
                   </label>
                 </div>
+              )}
+
+              {(!selected.face || selected.face === "digital") && (
+                <GradientFillControl selected={selected} updateSelected={updateSelected}
+                                      defaultColor={[235, 235, 242]} />
               )}
 
               {selected.face === "analog" && (
@@ -1404,22 +2132,28 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                     onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })}
                   />
                 )}
-                <label className="row-inline">
-                  <input
-                    type="checkbox"
-                    checked={!!selected.color2}
-                    onChange={(e) => updateSelected({ color2: e.target.checked ? hexToRgb("#ff2ee0") : null })}
-                  />
-                  Gradient (2nd color)
-                </label>
-                {selected.color2 && (
-                  <input
-                    type="color"
-                    value={rgbToHex(selected.color2)}
-                    onChange={(e) => updateSelected({ color2: hexToRgb(e.target.value) })}
-                  />
-                )}
               </div>
+              {/* Gauge used to only ever offer exactly one extra color
+                  (the old `color2` field, ROADMAP.md Phase 6) sweeping
+                  the ring corner-to-corner -- upgraded to the same
+                  shared 2-4 stop control every other element type's
+                  gradient option now uses, with "Diagonal" kept as the
+                  first/default direction so an existing dashboard's
+                  color2 gauges (still read by the backend as a 2-stop
+                  diagonal gradient -- see _element_gauge_gradient())
+                  looks the same as before if re-saved through this UI.
+                  showSolidColorWhenOff=false: the "Custom color"
+                  checkbox+picker just above already covers the solid
+                  case, including its "derive from left/right position"
+                  default when left unchecked, which this component's
+                  own plain `color` fallback doesn't know how to do. */}
+              <GradientFillControl selected={selected} updateSelected={updateSelected}
+                                    defaultColor={[0, 220, 255]} showSolidColorWhenOff={false}
+                                    directionOptions={[
+                                      ["diagonal", "Diagonal"],
+                                      ["horizontal", "Left → Right"],
+                                      ["vertical", "Top → Bottom"],
+                                    ]} />
               <div className="row">
                 <label>
                   X %
@@ -1457,19 +2191,19 @@ export default function DashboardCanvas({ frameUrl, connected }) {
                        value={Math.round(selected.y * 100)}
                        onChange={(e) => updateSelected({ y: clamp(Number(e.target.value) / 100, 0, 1) })} />
               </label>
-              {(selected.type === "graph" || selected.type === "image" || selected.type === "media"
-                || (selected.type === "clock" && selected.face === "image")) && (
+              {(selected.type === "graph" || selected.type === "bar" || selected.type === "image" || selected.type === "media"
+                || selected.type === "weather" || (selected.type === "clock" && selected.face === "image")) && (
                 <>
                   <label>
                     Width %
                     <input type="number" min={4} max={90} style={{ width: "5em" }}
-                           value={Math.round((selected.width ?? (selected.type === "media" ? 0.32 : selected.type === "clock" ? 0.22 : 0.2)) * 100)}
+                           value={Math.round((selected.width ?? (selected.type === "media" ? 0.32 : selected.type === "weather" ? 0.28 : selected.type === "bar" ? 0.26 : selected.type === "clock" ? 0.22 : 0.2)) * 100)}
                            onChange={(e) => updateSelected({ width: clamp(Number(e.target.value) / 100, 0.04, 0.9) })} />
                   </label>
                   <label>
                     Height %
                     <input type="number" min={4} max={90} style={{ width: "5em" }}
-                           value={Math.round((selected.height ?? (selected.type === "media" ? 0.52 : selected.type === "clock" ? 0.22 : 0.14)) * 100)}
+                           value={Math.round((selected.height ?? (selected.type === "media" ? 0.52 : selected.type === "weather" ? 0.46 : selected.type === "bar" ? 0.12 : selected.type === "clock" ? 0.22 : 0.14)) * 100)}
                            onChange={(e) => updateSelected({ height: clamp(Number(e.target.value) / 100, 0.04, 0.9) })} />
                   </label>
                 </>
@@ -1487,7 +2221,9 @@ export default function DashboardCanvas({ frameUrl, connected }) {
             <button onClick={deleteSelected}>Delete</button>
           </div>
         </div>
-      )}
+          )}
+        </div>
+      </div>
 
       {bgDraft && (
         <Collapsible id="dashboard-background" title="Background" defaultOpen={false} as="div" className="canvas-props">
@@ -1547,56 +2283,6 @@ export default function DashboardCanvas({ frameUrl, connected }) {
           </div>
           {bgStatus && <p className="hint settings-saved">{bgStatus}</p>}
           {bgError && <p className="error">{bgError}</p>}
-        </Collapsible>
-      )}
-
-      {mcDraft && (
-        <Collapsible id="dashboard-middle-content" title="Middle content" defaultOpen={false} as="div" className="canvas-props">
-          <div className="row">
-            <label className="grow">
-              Show
-              <select value={mcDraft.value} onChange={(e) => updateMcDraft({ value: e.target.value })}>
-                {Object.entries(mcDraft.options).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {mcDraft.value === "weather" && (
-            <div className="row">
-              <label className="grow">
-                Location
-                <input
-                  type="text"
-                  value={mcDraft.weather_location || ""}
-                  onChange={(e) => updateMcDraft({ weather_location: e.target.value })}
-                  placeholder="City, address, or lat,lon"
-                />
-              </label>
-              <label>
-                Units
-                <select value={mcDraft.weather_units}
-                        onChange={(e) => updateMcDraft({ weather_units: e.target.value })}>
-                  {Object.entries(mcDraft.weather_unit_options).map(([key, label]) => (
-                    <option key={key} value={key}>{label}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          )}
-          <p className="hint">
-            {mcDraft.value === "weather"
-              ? "Looked up via Open-Meteo -- a free weather service, no account or API key needed."
-              : "Nothing is drawn between the two gauge columns -- just the background shows through."}
-            {" "}Applies live, even while the dashboard is already running -- no need to Stop/Start.
-            {" "}The now-playing display isn't part of this any more -- add it with "+ Add now-playing"
-            below and move it wherever you like.
-          </p>
-          <div className="row">
-            <button onClick={saveMiddleContent}>Save</button>
-          </div>
-          {mcStatus && <p className="hint settings-saved">{mcStatus}</p>}
-          {mcError && <p className="error">{mcError}</p>}
         </Collapsible>
       )}
 

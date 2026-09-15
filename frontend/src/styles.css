@@ -10,7 +10,7 @@ body {
 }
 
 .app {
-  max-width: 1400px;
+  max-width: 1800px;
   margin: 0 auto;
   padding: 20px 24px 48px;
   display: flex;
@@ -18,37 +18,42 @@ body {
   gap: 20px;
 }
 
-/* Two columns on a wide window: app-level controls (port, controls,
-   config, system, log) on the left at a fixed comfortable reading
-   width, the live preview and whatever the current theme needs --
-   including the dashboard design canvas, by far the widest thing on
-   this page -- on the right, free to use whatever space is left
-   instead of being squeezed into the same ~720px column everything
-   else was. `align-items: start` keeps each column's height
-   independent (a short left column doesn't stretch to match a tall
-   canvas, and vice versa) -- same reason it's a grid and not a plain
-   two-item flex row. Collapses to one column (left column's app-level
-   settings first, then the right column's preview/canvas) below
-   ~860px, where two side by side would just squeeze the canvas back
-   down to the same cramped width this replaced. */
-.app-columns {
-  display: grid;
-  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+/* Full-width rows, top to bottom (controls, then config+preview, then
+   brightness, system, log) -- see App.jsx's comment on why this
+   replaced the earlier two-column page layout: splitting app-level
+   settings into their own left column and everything else into a
+   right column produced two independently-tall columns, which is
+   exactly what left an empty gap under the shorter one. A plain
+   top-to-bottom stack (this is what `.app`'s own flex-column already
+   gives every direct child) has no such gap -- each row is exactly as
+   tall as its own content and nothing else.
+
+   The one exception is this row: the selected theme's own config
+   really does need to sit next to the live preview, since those two
+   are what's actually being watched together while a theme runs.
+   `flex-wrap: wrap` is the narrow-viewport fallback -- once there's
+   less than both panes' min-widths plus the gap to give them, this
+   drops back to stacked (config first) automatically rather than
+   squeezing either one unreadably thin. */
+.config-and-preview {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
   gap: 20px;
-  align-items: start;
+  flex-wrap: wrap;
 }
 
-.app-col {
+.config-pane {
+  flex: 1 1 420px;
+  min-width: 320px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  min-width: 0; /* lets a wide child (e.g. the canvas box) shrink instead of overflowing the column */
 }
 
-@media (max-width: 860px) {
-  .app-columns {
-    grid-template-columns: 1fr;
-  }
+.preview-pane {
+  flex: 0 0 340px;
+  min-width: 260px;
 }
 
 header {
@@ -306,6 +311,21 @@ button:disabled {
   margin: 8px 0 0;
 }
 
+/* The page-level action-error banner (App.jsx, right under <header>) --
+   deliberately more visible than the plain inline `.error` text above:
+   this is the one place an error from *any* button on the page (not
+   just whichever section happens to be open) shows up, so it needs to
+   actually catch the eye rather than blend in as another line of small
+   red hint text easy to scroll past. */
+.app-error {
+  font-size: 0.85rem;
+  padding: 10px 14px;
+  margin: 0;
+  background: rgba(255, 128, 128, 0.12);
+  border: 1px solid rgba(255, 128, 128, 0.4);
+  border-radius: 6px;
+}
+
 .settings-saved {
   color: #6fd68f;
 }
@@ -327,11 +347,26 @@ button:disabled {
   color: #555;
 }
 
+/* Two children only: the "+ Add X"/undo/redo/reset group and the Save
+   layout button -- space-between is what pushes Save layout to the
+   toolbar's far right, separating "building the layout" from
+   "committing it" instead of the two reading as one flat row of
+   equally-weighted buttons. flex-wrap still lets Save layout drop to
+   its own line below the group on a narrow viewport, rather than
+   forcing the group to squeeze. */
 .canvas-toolbar {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
   margin-bottom: 12px;
+}
+
+.canvas-toolbar-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .canvas-box {
@@ -382,6 +417,34 @@ button:disabled {
   border-top: 1px solid #2a2e35;
 }
 
+/* The canvas itself (live preview) next to the element list + selected-
+   element property panel -- this is the one place on the whole page
+   where preview and config genuinely need to be visible at once (drag
+   something on the left, watch its numbers update on the right), which
+   is exactly what stacking them (the previous layout) made impossible
+   without scrolling. Same wrap-to-stacked fallback as
+   .preview-and-config above once the available width can't fit both
+   comfortably. */
+.canvas-layout {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.canvas-main {
+  flex: 1 1 480px;
+  min-width: 320px;
+}
+
+.canvas-side {
+  flex: 0 0 300px;
+  min-width: 260px;
+  max-width: 360px;
+}
+
 .element-list {
   list-style: none;
   margin: 0 0 12px;
@@ -389,8 +452,21 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  max-height: 140px;
+  /* Tall enough that the default layout's 10-11 rows (8 gauges + clock
+     + media, + weather once added) all fit without scrolling -- this
+     used to be capped at 140px, which was already a tight 2-3 rows
+     before Phase 6 added the clock/media/weather elements on top of
+     the 8 gauges, so the list was scrolling by default even with
+     nothing custom added yet. 480px comfortably fits every built-in
+     default element at this sidebar's width; overflow-y stays on as a
+     safety net for someone who adds many more than that. overflow-x
+     is explicitly hidden (not just "not set") because leaving only
+     overflow-y set lets some browsers resolve the other axis to auto
+     too, drawing a horizontal scrollbar even though nothing here
+     actually overflows sideways -- see CHANGELOG.md. */
+  max-height: 480px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .element-row {

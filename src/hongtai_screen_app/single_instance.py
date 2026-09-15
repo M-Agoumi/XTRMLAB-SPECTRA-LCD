@@ -66,25 +66,47 @@ def _ensure_single_instance():
 
 
 def _bring_existing_window_to_front():
-    """Best-effort: finds the already-running instance's window by its
-    exact title (FindWindowW matches top-level windows regardless of
-    their visibility, so this works even if it's currently withdrawn to
-    the tray) and activates it, so refusing to open a second copy still
-    does something useful instead of the second launch just silently
-    doing nothing."""
+    """Brings the already-running instance's window to front -- so
+    double-clicking the desktop icon (or the .lnk, or launching a
+    second copy any other way) while it's already running (most of the
+    time: minimized to the tray, with no window and no taskbar entry at
+    all) just shows it, the way a normal single-window app behaves,
+    instead of a second launch either silently doing nothing or -- what
+    this used to do -- popping up a "this is already running" message
+    box. A person who double-clicked the icon already knows they just
+    did that; what they wanted was to SEE the app, not be told why they
+    can't have a second one.
+
+    Two mechanisms, in order:
+
+    1. FindWindowW + SetForegroundWindow, same-instant. Matches
+       top-level windows regardless of their visibility, so this can
+       work even while withdrawn to the tray. Best-effort only: Windows
+       restricts which processes are allowed to steal foreground focus,
+       and a process calling this from outside the foreground app can
+       be silently ignored (the window raises but doesn't actually come
+       to the front, or nothing visible happens at all) with no
+       reliable way to detect that from here.
+    2. Touching SHOW_TRIGGER_PATH's mtime -- picked up by the *running*
+       instance's own 100ms log-queue poll (see app.py's
+       App._poll_show_trigger()), which then raises its own window from
+       its own Tk main thread. Windows never gets a say in that, so
+       unlike FindWindowW this always works, just up to ~100ms slower.
+       Done unconditionally (not only when FindWindowW fails) since it's
+       the one guaranteed path and costs nothing extra when the other
+       one also worked."""
     import ctypes
+    from .paths import SHOW_TRIGGER_PATH
+
+    try:
+        with open(SHOW_TRIGGER_PATH, "w", encoding="utf-8") as f:
+            f.write("")
+    except OSError:
+        pass  # best-effort -- FindWindowW below is still tried either way
+
     user32 = ctypes.windll.user32
     hwnd = user32.FindWindowW(None, _WINDOW_TITLE)
-    if not hwnd:
-        try:
-            from tkinter import messagebox
-            messagebox.showinfo(
-                "Hongtai Screen",
-                "Hongtai Screen is already running -- check your system "
-                "tray.")
-        except Exception:  # noqa: BLE001 -- best-effort notice only
-            pass
-        return
-    SW_RESTORE = 9
-    user32.ShowWindow(hwnd, SW_RESTORE)
-    user32.SetForegroundWindow(hwnd)
+    if hwnd:
+        SW_RESTORE = 9
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        user32.SetForegroundWindow(hwnd)

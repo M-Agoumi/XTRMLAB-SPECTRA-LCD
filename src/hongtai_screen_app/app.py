@@ -65,15 +65,15 @@ from .themes import demo_clock
 # rewrite (see ROADMAP.md) pulled out everything that isn't Tkinter into
 # its own module, so the same logic can eventually be driven by a
 # non-Tkinter UI too. This file is now just the Tkinter layer on top.
-from .paths import ICON_PATH, _write_startup_log
-from .config_store import AUTO_DETECT, THEME_TAB_ORDER, load_config, save_config, migrate_dashboard_elements
+from .paths import ICON_PATH, SHOW_TRIGGER_PATH, _write_startup_log
+from .config_store import (AUTO_DETECT, THEME_TAB_ORDER, load_config, save_config,
+                            migrate_dashboard_elements, migrate_dashboard_weather_element)
 from .startup_registration import is_startup_enabled, enable_startup, disable_startup
 from .desktop_shortcut import create_desktop_shortcut
 from .single_instance import _ensure_single_instance
 from .theme_worker import ThemeWorker
 from . import tray_icon
 from . import image_store
-from . import weather
 from . import power_state
 
 
@@ -117,7 +117,9 @@ class App(tk.Tk):
             print(f"(couldn't set the window icon from {ICON_PATH}: {e})")
 
         self.cfg = load_config()
-        if migrate_dashboard_elements(self.cfg):
+        migrated = migrate_dashboard_elements(self.cfg)
+        migrated = migrate_dashboard_weather_element(self.cfg) or migrated
+        if migrated:
             save_config(self.cfg)
         self.log_queue = queue.Queue()
         self.worker = None
@@ -139,6 +141,18 @@ class App(tk.Tk):
                                      # doesn't try to fire it into a
                                      # destroyed window (harmless, but a
                                      # noisy "invalid command name" on exit)
+        # Baseline reading, not None -- see _poll_show_trigger(). Reading
+        # whatever's already on disk (rather than starting from "never
+        # seen it") means a trigger left over from BEFORE this instance
+        # even started (e.g. it crashed right after being touched, or
+        # this app_config.json directory is shared some other way) never
+        # causes a spurious self-show the moment this instance's own
+        # polling starts -- only a touch that happens *after* this line
+        # runs counts as "someone just asked to be shown".
+        try:
+            self._show_trigger_mtime = os.path.getmtime(SHOW_TRIGGER_PATH)
+        except OSError:
+            self._show_trigger_mtime = None
         # Which tab, if any, was actually streaming last -- set on a
         # successful Start, cleared on an explicit Stop or when a theme
         # ends on its own. Persisted to app_config.json so it survives a
@@ -355,45 +369,11 @@ class App(tk.Tk):
             row=row, column=3, sticky="w", padx=(6, 0))
         row += 1
 
-        ttk.Label(f, text="Middle content:", font=("", 10, "bold")).grid(
-            row=row, column=0, columnspan=4, sticky="w", pady=(16, 0))
-        row += 1
-
-        middle_labels = list(dashboard_theme.MIDDLE_CONTENT_OPTIONS.values())
-        self._middle_label_to_key = {v: k for k, v in dashboard_theme.MIDDLE_CONTENT_OPTIONS.items()}
-        self.dash_middle_content = tk.StringVar(
-            value=dashboard_theme.MIDDLE_CONTENT_OPTIONS.get(d.get("middle_content", "none"), middle_labels[0]))
-        self.dash_middle_content.trace_add("write", self._on_dash_middle_change)
-        ttk.Label(f, text="Show:").grid(row=row, column=0, sticky="w", pady=(6, 0))
-        ttk.Combobox(f, textvariable=self.dash_middle_content, values=middle_labels,
-                     state="readonly", width=26).grid(row=row, column=1, columnspan=2, sticky="w", pady=(6, 0))
-        row += 1
-
-        ttk.Label(f, text="What goes between the two gauge columns -- a weather readout, or\n"
-                          "nothing at all. The now-playing display isn't tied to this any more --\n"
-                          "add it (and move it wherever you like) from the web design canvas.",
-                  foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(0, 4))
-        row += 1
-
-        ttk.Label(f, text="Weather location:").grid(row=row, column=0, sticky="w", pady=(6, 0))
-        self.dash_weather_location = tk.StringVar(value=d.get("weather_location", "") or "")
-        self.dash_weather_location.trace_add("write", self._on_dash_weather_change)
-        ttk.Entry(f, textvariable=self.dash_weather_location, width=26).grid(
-            row=row, column=1, columnspan=2, sticky="w", pady=(6, 0))
-
-        unit_labels = list(weather.UNIT_OPTIONS.values())
-        self._unit_label_to_key = {v: k for k, v in weather.UNIT_OPTIONS.items()}
-        self.dash_weather_units = tk.StringVar(
-            value=weather.UNIT_OPTIONS.get(d.get("weather_units", "celsius"), unit_labels[0]))
-        self.dash_weather_units.trace_add("write", self._on_dash_weather_change)
-        ttk.Combobox(f, textvariable=self.dash_weather_units, values=unit_labels,
-                     state="readonly", width=16).grid(row=row, column=3, sticky="w", padx=(6, 0), pady=(6, 0))
-        row += 1
-
-        ttk.Label(f, text="City, address, or \"lat,lon\" -- looked up via a free weather service\n"
-                          "(Open-Meteo, no account/API key needed). Only used when Show above is\n"
-                          "set to Weather. Applies live -- no need to Stop/Start.",
-                  foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(0, 4))
+        ttk.Label(f, text="Weather and the now-playing display are both movable/resizable\n"
+                          "elements now, added (and configured -- location, units, which\n"
+                          "pieces to show) from the web design canvas rather than from here --\n"
+                          "click \"+ Add weather\" or \"+ Add now-playing\" there.",
+                  foreground="#666").grid(row=row, column=0, columnspan=4, sticky="w", pady=(16, 4))
         row += 1
 
         ttk.Label(f, text="\"Nothing playing\" image:").grid(row=row, column=0, sticky="w", pady=(12, 0))
@@ -667,12 +647,35 @@ class App(tk.Tk):
             # the background thread finished on its own (video ended
             # without --loop, a connection error, etc.) -- reset the UI
             self._on_theme_finished()
+        self._poll_show_trigger()
         try:
             self._poll_after_id = self.after(100, self._poll_log_queue)
         except tk.TclError:
             # The window was destroyed (e.g. Quit from the tray menu)
             # while this was scheduled -- nothing left to poll into.
             pass
+
+    def _poll_show_trigger(self):
+        """Piggybacks on this same 100ms timer to check whether another
+        launch touched SHOW_TRIGGER_PATH -- see single_instance.py's
+        _bring_existing_window_to_front(). Double-clicking the desktop
+        icon (or the .lnk) while this instance is already running is
+        the single most common way that happens: rather than a second
+        copy either failing silently or popping up a "already running"
+        message box (what this used to do), this instance just shows
+        itself -- the way double-clicking the icon for any normal
+        single-window app behaves. mtime (not existence) is the signal,
+        since the file is created once and then only ever touched again
+        -- comparing against the last-seen mtime is what lets this fire
+        again on a THIRD launch, a fourth, and so on, not just the
+        first one after this instance started."""
+        try:
+            mtime = os.path.getmtime(SHOW_TRIGGER_PATH)
+        except OSError:
+            return
+        if mtime != self._show_trigger_mtime:
+            self._show_trigger_mtime = mtime
+            self._show_window()
 
     # ------------------------------------------------------------------ #
     # start / stop
@@ -768,23 +771,6 @@ class App(tk.Tk):
         # static background.
         dashboard_theme.set_not_playing_message(self.dash_not_playing_message.get())
 
-    def _on_dash_middle_change(self, *_args):
-        # Same "applies live, no restart" reasoning as _on_dash_art_
-        # change() above -- render_frame() calls get_middle_content()
-        # fresh every frame.
-        key = self._middle_label_to_key.get(self.dash_middle_content.get(), "none")
-        dashboard_theme.set_middle_content(key)
-
-    def _on_dash_weather_change(self, *_args):
-        # weather.py re-reads its current location/units on its own
-        # background poll loop (see set_location()/set_units()), so
-        # this applies on the next poll rather than needing a restart --
-        # start_polling() is idempotent, safe to call every keystroke.
-        weather.set_location(self.dash_weather_location.get())
-        units_key = self._unit_label_to_key.get(self.dash_weather_units.get(), "celsius")
-        weather.set_units(units_key)
-        weather.start_polling()
-
     def _apply_dash_web_settings(self):
         if not (self.running_tab_index == 0 and self.active_screen is not None):
             return  # nothing running yet -- takes effect on the next Start instead
@@ -833,17 +819,17 @@ class App(tk.Tk):
         docstring for why a .vbs rather than a .bat or a shortcut."""
         try:
             if self.startup_var.get():
-                enable_startup()
+                enable_startup(log=self._log)
                 self._log("Launch at Windows startup: enabled "
                           "(resumes whatever theme was last running, or Dashboard if nothing was).")
             else:
-                disable_startup()
+                disable_startup(log=self._log)
                 self._log("Launch at Windows startup: disabled.")
         except Exception as e:  # noqa: BLE001
             self._log(f"(couldn't update Windows startup launcher: {e})")
             messagebox.showerror("Launch at startup", str(e))
             # Reflect what's actually on disk rather than the failed click.
-            self.startup_var.set(is_startup_enabled())
+            self.startup_var.set(is_startup_enabled(log=self._log))
 
     def _on_toggle_keep_active(self):
         # Applies immediately, same as brightness -- power_state.should_
@@ -938,16 +924,12 @@ class App(tk.Tk):
         web_port = self._parse_int(self.dash_web_port.get(), "Web mirror port", default=8765)
         art_path = self.dash_art_path.get().strip() or None
         not_playing_message = self.dash_not_playing_message.get().strip() or None
-        middle_content = self._middle_label_to_key.get(self.dash_middle_content.get(), "none")
-        weather_location = self.dash_weather_location.get().strip() or None
-        weather_units = self._unit_label_to_key.get(self.dash_weather_units.get(), "celsius")
         slots = {slot_key: self._stat_label_to_key.get(var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
                   for slot_key, var in self.dash_slot_vars.items()}
         background = self._dash_background_dict()
         return "Dashboard", dashboard_theme.run, dict(
             port=port, web_port=web_port, enable_web=self.dash_web_enable.get(),
             default_art_path=art_path, not_playing_message=not_playing_message,
-            middle_content=middle_content, weather_location=weather_location, weather_units=weather_units,
             brightness=brightness, slots=slots, background=background,
         )
 
@@ -1026,9 +1008,6 @@ class App(tk.Tk):
             "web_port": self.dash_web_port.get(),
             "default_art_path": self.dash_art_path.get().strip() or None,
             "not_playing_message": self.dash_not_playing_message.get().strip() or None,
-            "middle_content": self._middle_label_to_key.get(self.dash_middle_content.get(), "none"),
-            "weather_location": self.dash_weather_location.get().strip() or None,
-            "weather_units": self._unit_label_to_key.get(self.dash_weather_units.get(), "celsius"),
             "slots": {slot_key: self._stat_label_to_key.get(
                           var.get(), dashboard_theme.DEFAULT_SLOTS[slot_key])
                       for slot_key, var in self.dash_slot_vars.items()},

@@ -119,6 +119,7 @@ dependency is missing.
 import argparse
 import asyncio
 from collections import deque
+import functools
 import io
 import json
 import math
@@ -544,6 +545,36 @@ except Exception:  # noqa: BLE001 -- not on Windows, or winsdk not installed
 _art_cache_key = None
 _art_cache_img = None
 
+# The session manager is a broker-process proxy, not a per-poll query --
+# Microsoft's own guidance is to request it once and reuse it, calling
+# .get_sessions() on it as often as you like. This used to call
+# MediaManager.request_async() fresh on every single poll (once a
+# second, for as long as the theme runs -- hours, if left open
+# overnight) instead, which is the likely cause of a slow, real memory
+# leak reported after leaving the app running overnight: each call
+# round-trips to the system's media broker and constructs a new WinRT
+# projection object graph (manager, session list, properties, timeline,
+# playback info); WinRT objects are COM-reference-counted underneath
+# Python's own refcounting, and that native side doesn't reliably get
+# released just because the Python wrapper falls out of scope on a
+# background asyncio loop that's never actually idle. At ~1 poll/sec,
+# a leak of only ~45KB per call -- entirely plausible for an
+# unreleased COM object graph -- adds up to the ~2GB reported after a
+# single overnight run. Caching the manager removes that whole extra
+# round trip and object graph from every poll but one; if native
+# session/property objects are still the culprit even with this fix,
+# the next thing to try is dropping `session`/`props`/`timeline`/
+# `playback` more aggressively (e.g. `del` before returning) so nothing
+# outlives the function on this event loop's periodic tick.
+_media_manager = None
+
+
+async def _get_media_manager():
+    global _media_manager
+    if _media_manager is None:
+        _media_manager = await MediaManager.request_async()
+    return _media_manager
+
 
 def _winrt_datetime_to_epoch(dt):
     """winsdk maps Windows.Foundation.DateTime to a Python datetime;
@@ -558,7 +589,7 @@ def _winrt_datetime_to_epoch(dt):
 
 
 async def _get_media_info_async():
-    manager = await MediaManager.request_async()
+    manager = await _get_media_manager()
 
     session = None
     for s in manager.get_sessions():
@@ -981,6 +1012,10 @@ _DEFAULT_MEDIA_X = (_DEFAULT_MID_X0 + _DEFAULT_MID_X1) / 2 / REFERENCE_WIDTH
 _DEFAULT_MEDIA_Y = 0.42
 _DEFAULT_MEDIA_W = 0.32
 _DEFAULT_MEDIA_H = 0.52
+_DEFAULT_WEATHER_X = (_DEFAULT_MID_X0 + _DEFAULT_MID_X1) / 2 / REFERENCE_WIDTH
+_DEFAULT_WEATHER_Y = 0.42
+_DEFAULT_WEATHER_W = 0.28
+_DEFAULT_WEATHER_H = 0.46
 
 
 def default_clock_element():
@@ -1019,6 +1054,39 @@ def default_media_element():
         "width": _DEFAULT_MEDIA_W, "height": _DEFAULT_MEDIA_H,
         "opacity": 1.0, "show_art": True, "show_name": True, "show_time": True,
         "z": 101,
+    }
+
+
+def default_weather_element():
+    """A fresh weather element dict at the old fixed middle-column spot
+    -- see default_clock_element()'s docstring for why this is a
+    factory function rather than a shared dict/constant. Unlike the
+    clock/media elements, NOT appended by slots_to_elements() -- the
+    old middle_content default was "none" (opt-in), and this preserves
+    that: weather only ever appears on the canvas once someone clicks
+    "+ Add weather", same as any other element type. `location`/`units`
+    are per-element (weather.py's actual lookup is still one shared
+    background poll, same as before -- see run()'s
+    apply_weather_from_elements()), empty/celsius by default so a
+    freshly-added element shows the "set a location" placeholder
+    (_draw_weather_element()) until someone fills one in.
+
+    `show_icon`/`show_temp`/`show_description`/`show_details`/
+    `show_location` (each default True) let each piece be switched off
+    independently -- same "pick which pieces you actually want" deal
+    as `show_art`/`show_name`/`show_time` on default_media_element(),
+    so a weather element can be shrunk down to just an icon, just the
+    temperature, or any other combination (e.g. for sitting next to a
+    compact now-playing element without the two together eating the
+    whole panel)."""
+    return {
+        "id": "weather", "type": "weather",
+        "x": _DEFAULT_WEATHER_X, "y": _DEFAULT_WEATHER_Y,
+        "width": _DEFAULT_WEATHER_W, "height": _DEFAULT_WEATHER_H,
+        "location": "", "units": "celsius", "opacity": 1.0,
+        "show_icon": True, "show_temp": True, "show_description": True,
+        "show_details": True, "show_location": True,
+        "z": 102,
     }
 
 
@@ -1084,9 +1152,52 @@ def _element_accent2(el):
     means "no gradient, single accent color" (today's look, unchanged);
     set only by an explicit `color2` on the element, never derived like
     `_element_accent()`'s left/right fallback is, since there's no
-    sensible default second color to guess at."""
+    sensible default second color to guess at. Superseded by
+    `_element_gauge_gradient()` below (which folds this in as a
+    fallback) for anything that wants more than exactly 2 stops or a
+    direction other than the original fixed diagonal sweep -- kept
+    as its own function since it's still exactly what an *old* saved
+    gauge with just `color2` set (no `gradient`/`gradient_colors`)
+    needs, with no migration required."""
     color2 = el.get("color2")
     return tuple(color2) if color2 else None
+
+
+def _element_gauge_gradient(el):
+    """A gauge ring's gradient stops + direction, or (None, "diagonal")
+    for a plain single-accent ring. Prefers the newer `gradient_colors`
+    (2-4 stops, the same field text/graph/bar all use) + `gradient_
+    direction` ("diagonal"/"horizontal"/"vertical") over the older,
+    gauge-only `color2` (exactly one second stop, always swept corner-
+    to-corner) -- an existing dashboard saved before gradient_colors
+    existed still renders exactly the same via the color2 fallback,
+    with `_element_accent(el)` (the ring's own first/base color) as the
+    implied first stop, same as before."""
+    if el.get("gradient"):
+        stops = _element_gradient_colors(el)
+        if stops:
+            return stops, el.get("gradient_direction", "diagonal")
+    color2 = _element_accent2(el)
+    if color2 is not None:
+        return [_element_accent(el), color2], "diagonal"
+    return None, "diagonal"
+
+
+def _gauge_gradient_endpoints(cx, cy, radius, direction):
+    """The two (x, y) points a cairo.LinearGradient sweeps between, for
+    a gauge ring of the given center/radius -- "horizontal" (left-to-
+    right) and "vertical" (top-to-bottom) match the same two options
+    the bar/text/graph elements' own gradient direction picker offers;
+    "diagonal" (the default, and the only option that ever existed
+    before gauge got more than exactly 2 stops) is the original fixed
+    corner-to-corner sweep, kept as its own case rather than folded into
+    "horizontal" so an existing `color2` gauge's look never shifts under
+    it."""
+    if direction == "horizontal":
+        return cx - radius, cy, cx + radius, cy
+    if direction == "vertical":
+        return cx, cy - radius, cx, cy + radius
+    return cx - radius, cy - radius, cx + radius, cy + radius
 
 
 # ---------------------------------------------------------------- Phase 6 --
@@ -1108,11 +1219,60 @@ def _element_color(el, key="color", default=(225, 226, 236)):
     return tuple(value) if value else default
 
 
+def _element_gradient_colors(el, key="gradient_colors"):
+    """An element's multi-stop gradient fill colors, or None if there
+    aren't at least 2 of them -- a single stop isn't a gradient, and
+    this is meant to be checked with a plain truthiness test (`if
+    fill_colors:`) at every call site rather than each one re-checking
+    length itself. Started out just for the bar element; text, graph,
+    the digital clock face, and gauge (via _element_gauge_gradient(),
+    which also folds in the older single-`color2` gauge field) all read
+    this the same way now -- every one of them only draws a gradient at
+    all when `el["gradient"]` is truthy, same as the bar element."""
+    value = el.get(key)
+    if not value or len(value) < 2:
+        return None
+    return [tuple(c) for c in value]
+
+
+def _gradient_text(img, xy, text, font, anchor, gradient_colors, direction, opacity=1.0):
+    """Draws `text` filled with a multi-stop gradient instead of a flat
+    color -- PIL's own draw.text() only takes one flat `fill`, so this
+    renders the text as a plain white-on-transparent alpha mask (an "L"
+    image the same size as `img`) and uses it as the alpha channel for a
+    full-image-sized gradient, same masking idea _bar_fill_subtile()
+    uses for the bar element's fill. Composited straight onto `img`,
+    same "paste an RGBA layer" pattern every other dynamic element here
+    uses.
+
+    The gradient is sized to the *whole image*, not just this text's own
+    small bounding box, so a "vertical" gradient looks the same slice of
+    color at the same height across every element that uses one -- two
+    separate text elements a little apart vertically both gradient
+    top-to-bottom consistently, rather than each restarting its own
+    gradient from scratch within its own tiny box (which would make two
+    short labels look like a repeating pattern instead of one coherent
+    gradient across the panel)."""
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).text(xy, text, font=font, fill=255, anchor=anchor)
+    grad = _linear_gradient_multi(img.size[0], img.size[1], gradient_colors, direction).convert("RGBA")
+    grad.putalpha(mask)
+    if opacity < 1.0:
+        grad = _apply_tile_opacity(grad, opacity)
+    img.paste(grad, (0, 0), grad)
+
+
 def _draw_text_element(img, el, width, height):
     """A free-standing text label -- not bound to a stat, just whatever
     string was typed into the canvas. Baked into the static background
     since the text itself never changes frame to frame (same reasoning
-    as the gauge titles above)."""
+    as the gauge titles above).
+
+    `el["gradient"]` + `el["gradient_colors"]` (2-4 stops) + `el
+    ["gradient_direction"]` fill the text with a gradient instead of a
+    flat color, via _gradient_text()'s masking approach -- everything
+    else about the element (font, size, alignment, opacity) is
+    unaffected either way."""
     text = (el.get("text") or "").strip()
     if not text:
         return
@@ -1122,6 +1282,11 @@ def _draw_text_element(img, el, width, height):
     anchor = {"left": "lm", "center": "mm", "right": "rm"}.get(el.get("align", "center"), "mm")
     x, y = el["x"] * width, el["y"] * height
     opacity = el.get("opacity", 1.0)
+    gradient_colors = _element_gradient_colors(el) if el.get("gradient") else None
+    if gradient_colors:
+        _gradient_text(img, (x, y), text, font, anchor, gradient_colors,
+                        el.get("gradient_direction", "horizontal"), opacity)
+        return
     if opacity >= 1.0:
         # Common case: draw straight onto the (opaque) background,
         # same as every other piece of static text in this theme --
@@ -1245,6 +1410,32 @@ def _draw_clock_element(img, el, width, height, fonts):
     time_str = datetime.datetime.now().strftime(_clock_time_format(el))
     opacity = el.get("opacity", 1.0)
     show_date = bool(el.get("show_date"))
+    date_str = datetime.datetime.now().strftime("%a, %b %d") if show_date else None
+    date_font = load_font(max(7, int(size_px * 0.45))) if show_date else None
+
+    # `el["gradient"]` (2-4 stops, same fields text/graph/bar/gauge all
+    # use) fills the time -- and date, if shown, a touch dimmer, same
+    # 210-vs-255 alpha split the flat-color path below already used --
+    # with a gradient instead of a flat color. Drawn fresh every frame
+    # (this whole element is, since the time itself changes every
+    # second -- see this function's own docstring), unlike
+    # _draw_text_element()'s gradient, which only ever needs to render
+    # once since a plain text element's string is static.
+    gradient_colors = _element_gradient_colors(el) if el.get("gradient") else None
+    if gradient_colors:
+        mask = Image.new("L", img.size, 0)
+        mdraw = ImageDraw.Draw(mask)
+        mdraw.text((x, y), time_str, font=font, fill=255, anchor="mm")
+        if show_date:
+            mdraw.text((x, y + size_px * 0.75), date_str, font=date_font, fill=210, anchor="ma")
+        grad = _linear_gradient_multi(
+            img.size[0], img.size[1], gradient_colors, el.get("gradient_direction", "horizontal")
+        ).convert("RGBA")
+        grad.putalpha(mask)
+        grad = _apply_tile_opacity(grad, opacity)
+        img.paste(grad, (0, 0), grad)
+        return
+
     if opacity >= 1.0 and not show_date:
         ImageDraw.Draw(img).text((x, y), time_str, font=font, fill=color, anchor="mm")
         return
@@ -1252,8 +1443,6 @@ def _draw_clock_element(img, el, width, height, fonts):
     draw = ImageDraw.Draw(layer)
     draw.text((x, y), time_str, font=font, fill=(*color, 255), anchor="mm")
     if show_date:
-        date_str = datetime.datetime.now().strftime("%a, %b %d")
-        date_font = load_font(max(7, int(size_px * 0.45)))
         draw.text((x, y + size_px * 0.75), date_str, font=date_font, fill=(*color, 210), anchor="ma")
     layer = _apply_tile_opacity(layer, opacity)
     img.paste(layer, (0, 0), layer)
@@ -1465,13 +1654,29 @@ def _draw_graph_static(img, el, box, fonts):
               fill=(225, 226, 236), anchor="mb")
 
 
-def _draw_graph_tile(el, box, values, accent):
+def _draw_graph_tile(el, box, values, accent, gradient_colors=None, gradient_direction="horizontal"):
     """Renders the actual bars/line for one frame onto a fresh RGBA
     tile the size of the graph's box, from `values` (oldest first,
     matching the deque run() maintains -- see its own comment) -- a
     missing/None sample just leaves a gap instead of drawing a false
     zero, same "don't lie about missing data" rule draw_gauge_dynamic_
-    tile follows for a gauge with no reading."""
+    tile follows for a gauge with no reading.
+
+    `gradient_colors` (2-4 stops) draws the bars/line with a gradient
+    across the tile instead of a flat `accent`, same fields the bar
+    element's own gradient uses. Unlike the bar element's fill (which
+    has to anchor its gradient to a *virtual full track* so a value
+    change doesn't visibly shift colors around -- see
+    _bar_fill_subtile()'s docstring), a graph tile is simpler: every
+    pixel of it is always either "part of a bar/line right now" or not,
+    with no partially-revealed region to keep stable, so the whole
+    tile's own gradient can just be built fresh at the tile's own size
+    every frame and used as-is -- built normally with a flat `accent`
+    first (to get the actual bars/line shape and their existing per-
+    pixel alpha, 210 for bars, 230 for the line, both unchanged), then
+    the gradient's colors swapped in through that same alpha as a mask,
+    same technique _bar_fill_subtile() uses for its own rounded-end
+    mask."""
     w, h = max(1, int(box["w"])), max(1, int(box["h"]))
     tile = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(tile)
@@ -1508,18 +1713,144 @@ def _draw_graph_tile(el, box, values, accent):
             if prev is not None:
                 draw.line([prev, point], fill=(*accent, 230), width=2)
             prev = point
+
+    if gradient_colors:
+        grad = _linear_gradient_multi(w, h, gradient_colors, gradient_direction).convert("RGBA")
+        grad.putalpha(tile.split()[3])
+        return grad
     return tile
 
 
-def _draw_graph_dynamic(img, el, box, values, accent):
+def _draw_graph_dynamic(img, el, box, values, accent, gradient_colors=None, gradient_direction="horizontal"):
     """Redraws one graph element's bars/line for the current frame and
     composites it into the (already-static) background copy, respecting
     the element's own opacity -- same `_apply_tile_opacity()` +
     `img.paste(tile, ..., tile)` pattern every other dynamic element in
     this theme uses."""
-    tile = _draw_graph_tile(el, box, values, accent)
+    tile = _draw_graph_tile(el, box, values, accent, gradient_colors, gradient_direction)
     tile = _apply_tile_opacity(tile, el.get("opacity", 1.0))
     img.paste(tile, (int(box["x0"]), int(box["y0"])), tile)
+
+
+def _bar_box(el, width, height):
+    """A bar element's pixel rect, from its center x/y and its own
+    width/height -- same idea as _graph_box(), just wider-than-tall by
+    default (see makeElement()'s "bar" case on the frontend) since it
+    defaults to reading as a single horizontal meter, not a plot. The
+    box itself doesn't care about `el["orientation"]` -- see
+    _draw_bar_dynamic() for how that picks the fill direction within
+    whatever rect this returns."""
+    w = max(20.0, el.get("width", 0.26) * width)
+    h = max(14.0, el.get("height", 0.12) * height)
+    cx, cy = el["x"] * width, el["y"] * height
+    x0, y0 = cx - w / 2, cy - h / 2
+    return {"x0": x0, "y0": y0, "x1": x0 + w, "y1": y0 + h, "w": w, "h": h, "cx": cx, "cy": cy}
+
+
+def _draw_bar_static(img, el, box, fonts):
+    """The part of a bar element that doesn't change frame to frame:
+    the bound stat's title above it -- same split as _draw_graph_static()
+    above, just for a single current-value linear meter (see
+    _draw_bar_dynamic()'s docstring for why this exists alongside
+    gauge/graph) instead of a scrolling history."""
+    draw = ImageDraw.Draw(img)
+    stat_def = STAT_DEFS.get(el.get("stat"))
+    title = stat_def["title"] if stat_def else str(el.get("stat", "")).upper()
+    draw.text((box["cx"], box["y0"] - 10), title, font=fonts.small_title,
+              fill=(225, 226, 236), anchor="mb")
+
+
+def _draw_bar_dynamic(img, el, box, value, min_v, max_v, accent, font_value, value_fmt):
+    """Redraws one bar element's fill + current-value text for this
+    frame. A linear alternative to `gauge`'s circular ring for the same
+    kind of stat (a live value against its own min/max) -- for anyone
+    who'd rather line several stats up as a compact vertical stack of
+    bars than spread them out as circles, or just prefers the look.
+    Reuses progress_bar_glow() (the same filled-track-plus-glowing-knob
+    look `_draw_media_element()`'s playback bar already draws) rather
+    than inventing a second bar-drawing routine.
+
+    `value` may be None (the stat isn't available yet, or this frame) --
+    same "don't lie about missing data" rule draw_gauge_dynamic()
+    follows for a gauge with no reading: the track (and title, baked in
+    by _draw_bar_static() above) still draws, so the element's
+    footprint is always visible and locatable, but the fill stays empty
+    and the value reads "--" instead of guessing zero.
+
+    `el["orientation"]` ("horizontal", the default, or "vertical")
+    picks which way the fill runs -- left-to-right within the box's
+    full width, or bottom-to-top within its full height -- independent
+    of the box's own width/height fields (the frontend's Orientation
+    control nudges those to match when it's toggled, but nothing here
+    requires it). The bar's own thickness is capped the same way either
+    orientation: min(the box's short axis * 0.55, 22px), so a bar
+    dragged very wide/tall doesn't turn into a slab.
+
+    `el["show_knob"]` (default False -- user feedback on the first
+    version of this element was that the round white handle just
+    looked out of place, since the bar's own fill already shows exactly
+    where the value is without it) toggles progress_bar_glow()'s round
+    handle. `el["gradient"]` + `el["gradient_colors"]` (2-4 RGB tuples)
+    + `el["gradient_direction"]` ("horizontal"/"vertical") pick a
+    multi-stop gradient fill instead of the flat `accent` color --
+    `accent` (still whatever `el["color"]` says, or the default cyan/
+    magenta split) keeps tinting the empty track and the glow regardless
+    of whether the fill itself is flat or a gradient."""
+    tile = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    span = max(1e-6, max_v - min_v)
+    fraction = 0.0 if value is None else max(0.0, min(1.0, (value - min_v) / span))
+    vertical = el.get("orientation") == "vertical"
+    show_knob = bool(el.get("show_knob", False))
+    gradient_colors = _element_gradient_colors(el) if el.get("gradient") else None
+    gradient_direction = el.get("gradient_direction", "horizontal")
+    # progress_bar_glow() builds its own Image tiles from these
+    # (w + 20, h + 20) -- PIL needs actual ints there, same reason
+    # _draw_media_element()'s own bar_w/bar_h (this same helper's other
+    # caller) are int()'d rather than left as the plain floats every
+    # other box dimension in this file is.
+    if vertical:
+        bar_w = int(min(box["w"] * 0.55, 22))
+        bar_h = int(box["h"])
+        bar_x = int(box["cx"] - bar_w / 2)
+        bar_y = int(box["y0"])
+    else:
+        bar_w = int(box["w"])
+        bar_h = int(min(box["h"] * 0.55, 22))
+        bar_x = int(box["x0"])
+        bar_y = int(box["cy"] - bar_h / 2)
+    # knob_scale=0.8, well under progress_bar_glow()'s 1.7 default --
+    # this bar's ~22px track is much thicker than the now-playing
+    # progress bar's 6px one that default was tuned for, and 1.7 would
+    # blow the knob up to a ~75px ball (see that function's own
+    # docstring) that dwarfed the bar and swamped the title/value text
+    # around it. 0.8 keeps the knob a bit larger than the track itself
+    # (still reads as a "handle" -- picked visually, not derived) rather
+    # than ballooning past it several times over.
+    progress_bar_glow(tile, bar_x, bar_y, bar_w, bar_h, fraction, accent, vertical=vertical, knob_scale=0.8,
+                       show_knob=show_knob, fill_colors=gradient_colors, fill_direction=gradient_direction)
+    draw = ImageDraw.Draw(tile)
+    value_str = value_fmt(value) if value is not None else "--"
+    if vertical:
+        # Rotate the horizontal layout's placement 90°: the horizontal
+        # bar's value text sits just past the bar's far end along its
+        # own thickness axis (bar_x + bar_w, bar_y - 6 -- to the right
+        # of the bar, above it). The vertical bar's fill/thickness axes
+        # are swapped, so its value text goes to the right of the bar,
+        # pinned to the bar's *top* -- NOT below it: the knob can land
+        # anywhere from y (full) to y+h (empty), and "below the bar" is
+        # exactly where it sits at low/idle values, the common case, so
+        # putting the text there collided with the knob constantly.
+        # Pinning to the top instead only risks a collision near 100%
+        # fill, same rare-case trade the horizontal layout already
+        # accepts (its own text can sit right on top of the knob once
+        # the bar's nearly full).
+        draw.text((bar_x + bar_w + 6, bar_y), value_str, font=font_value,
+                  fill=(255, 255, 255), anchor="lt")
+    else:
+        draw.text((bar_x + bar_w, bar_y - 6), value_str, font=font_value,
+                  fill=(255, 255, 255), anchor="rb")
+    tile = _apply_tile_opacity(tile, el.get("opacity", 1.0))
+    img.paste(tile, (0, 0), tile)
 
 
 def _apply_tile_opacity(tile, opacity):
@@ -1590,6 +1921,21 @@ def load_font(size, bold=False):
         except Exception:  # noqa: BLE001
             continue
     return ImageFont.load_default()
+
+
+@functools.lru_cache(maxsize=256)
+def _cached_scaled_font(size, bold=False):
+    """A cached wrapper around load_font() for callers that need a font
+    at a size computed on the fly, frame after frame -- currently only
+    _draw_weather_element()'s fit-to-box scaling below. `Fonts` (the
+    theme's normal font set, built once when a theme starts) doesn't
+    need this since it only ever calls load_font() directly at
+    startup; this is for the case where the *size itself* varies per
+    element and can't be known ahead of time, so it has to be resolved
+    fresh -- caching keyed on the exact (rounded) size keeps that from
+    re-hitting disk/FreeType on every single frame for an element whose
+    box isn't changing size frame to frame."""
+    return load_font(size, bold=bold)
 
 
 def rounded_rect(draw, box, radius, **kwargs):
@@ -1682,12 +2028,21 @@ def _cairo_rgba(color, alpha=1.0):
     return (color[0] / 255, color[1] / 255, color[2] / 255, alpha)
 
 
-def draw_gauge_static(g, accent, accent2=None):
+def draw_gauge_static(g, accent, accent2=None, gradient_colors=None, gradient_direction="diagonal"):
     """The parts that never change: the dim track ring (with a soft drop
     shadow and a gradient sweep for a bit of depth), its crisp edge
     lines, and major/minor tick marks -- all real anti-aliased cairo
     arcs instead of PIL's straight-segment `draw.arc()`. Returns an RGBA
-    tile sized g['size']; paste it at _gauge_box(g)."""
+    tile sized g['size']; paste it at _gauge_box(g).
+
+    `gradient_colors` (2-4 stops) + `gradient_direction` supersede the
+    older `accent2` (still accepted for a direct 2-color call, but every
+    real caller now goes through _element_gauge_gradient(), which
+    already folds an old `color2`-only element into this same shape) --
+    cairo's own add_color_stop_rgba() takes an arbitrary offset per
+    stop, so unlike the raster (numpy/PIL) gradient helpers used
+    elsewhere in this file, no separate multi-stop implementation is
+    needed here at all: just loop and add stops evenly spaced 0..1."""
     radius, ring_w, size = g["radius"], g["ring_w"], g["size"]
     cx = cy = size / 2
     a0, a1 = math.radians(GAUGE_START), math.radians(GAUGE_END)
@@ -1709,15 +2064,20 @@ def draw_gauge_static(g, accent, accent2=None):
     # (0.22/0.10 -> 0.55/0.34) so the ring reads as a ring regardless of
     # what's behind it, and the edge lines/minor ticks got the same
     # treatment.
-    track_grad = cairo.LinearGradient(cx - radius, cy - radius, cx + radius, cy + radius)
-    if accent2 is not None:
-        # A user-picked second color (ROADMAP.md Phase 6) -- the ring
-        # sweeps from accent to accent2 corner-to-corner instead of the
-        # single-color near-to-far fade below, same alpha (0.6, splitting
-        # the difference between the single-color version's 0.55/0.34 so
-        # neither end looks washed out against the other).
-        track_grad.add_color_stop_rgba(0, *_cairo_rgba(accent, 0.6))
-        track_grad.add_color_stop_rgba(1, *_cairo_rgba(accent2, 0.6))
+    stops = gradient_colors if gradient_colors and len(gradient_colors) >= 2 else (
+        [accent, accent2] if accent2 is not None else None
+    )
+    gx0, gy0, gx1, gy1 = _gauge_gradient_endpoints(cx, cy, radius, gradient_direction)
+    track_grad = cairo.LinearGradient(gx0, gy0, gx1, gy1)
+    if stops:
+        # A user-picked gradient (ROADMAP.md Phase 6, later widened past
+        # exactly 2 colors) -- the ring sweeps across every stop instead
+        # of the single-color near-to-far fade below, same alpha (0.6,
+        # splitting the difference between the single-color version's
+        # 0.55/0.34 so no stop looks washed out against its neighbors).
+        n = len(stops)
+        for i, c in enumerate(stops):
+            track_grad.add_color_stop_rgba(i / (n - 1), *_cairo_rgba(c, 0.6))
     else:
         track_grad.add_color_stop_rgba(0, *_cairo_rgba(accent, 0.55))
         track_grad.add_color_stop_rgba(1, *_cairo_rgba(accent, 0.34))
@@ -1761,19 +2121,27 @@ def draw_tick_labels(draw, g, font_tick):
         draw.text((tx, ty), str(t), font=font_tick, fill=(140, 142, 158), anchor="mm")
 
 
-def draw_gauge_dynamic_tile(g, value, min_v, max_v, accent, accent2=None):
+def draw_gauge_dynamic_tile(g, value, min_v, max_v, accent, accent2=None,
+                             gradient_colors=None, gradient_direction="diagonal"):
     """The parts that change every frame: the lit value arc, the needle,
     and the glowing hub, plus a blurred glow pass underneath them.
     Returns an RGBA tile sized g['size'] (paste at _gauge_box(g)), or
     None if value is None -- callers should leave the dim static track
     showing with no needle at all rather than pointing at "0", which
-    would read as a real (if low) reading instead of "no data"."""
+    would read as a real (if low) reading instead of "no data".
+
+    `gradient_colors`/`gradient_direction` -- see draw_gauge_static()'s
+    docstring; the lit value arc fades across the same stops the static
+    ring does (falling back through `accent2` to a plain accent fade,
+    same as before) so the two halves of the ring always agree."""
     if value is None:
         return None
 
     radius, ring_w, size = g["radius"], g["ring_w"], g["size"]
     cx = cy = size / 2
     a0 = math.radians(GAUGE_START)
+    stops = gradient_colors if gradient_colors and len(gradient_colors) >= 2 else None
+    gx0, gy0, gx1, gy1 = _gauge_gradient_endpoints(cx, cy, radius, gradient_direction)
 
     pct = max(0.0, min(100.0, (value - min_v) / (max_v - min_v) * 100.0))
     val_angle = math.radians(GAUGE_START + (GAUGE_END - GAUGE_START) * pct / 100)
@@ -1798,12 +2166,18 @@ def draw_gauge_dynamic_tile(g, value, min_v, max_v, accent, accent2=None):
             if solid:
                 ctx.set_source_rgba(*_cairo_rgba(accent, 1))
             else:
-                grad = cairo.LinearGradient(cx - radius, cy - radius, cx + radius, cy + radius)
-                grad.add_color_stop_rgba(0, *_cairo_rgba(dim_accent, 1))
-                # The lit value arc fades toward accent2 if one's set
-                # (matching the static ring's own accent->accent2 sweep
-                # above), otherwise the original single-accent fade.
-                grad.add_color_stop_rgba(1, *_cairo_rgba(accent2 if accent2 is not None else accent, 1))
+                grad = cairo.LinearGradient(gx0, gy0, gx1, gy1)
+                if stops:
+                    n = len(stops)
+                    for i, c in enumerate(stops):
+                        grad.add_color_stop_rgba(i / (n - 1), *_cairo_rgba(c, 1))
+                else:
+                    grad.add_color_stop_rgba(0, *_cairo_rgba(dim_accent, 1))
+                    # The lit value arc fades toward accent2 if one's set
+                    # (matching the static ring's own accent->accent2
+                    # sweep above), otherwise the original single-accent
+                    # fade.
+                    grad.add_color_stop_rgba(1, *_cairo_rgba(accent2 if accent2 is not None else accent, 1))
                 ctx.set_source(grad)
             ctx.set_line_width(ring_w)
             ctx.arc(cx, cy, radius, a0, val_angle)
@@ -1855,8 +2229,9 @@ def draw_gauge_dynamic_tile(g, value, min_v, max_v, accent, accent2=None):
     return out
 
 
-def draw_gauge_dynamic(img, g, value, min_v, max_v, accent, font_value, value_fmt, accent2=None):
-    tile = draw_gauge_dynamic_tile(g, value, min_v, max_v, accent, accent2)
+def draw_gauge_dynamic(img, g, value, min_v, max_v, accent, font_value, value_fmt, accent2=None,
+                        gradient_colors=None, gradient_direction="diagonal"):
+    tile = draw_gauge_dynamic_tile(g, value, min_v, max_v, accent, accent2, gradient_colors, gradient_direction)
     if tile is not None:
         img.alpha_composite(tile, _gauge_box(g)) if img.mode == "RGBA" else img.paste(tile, _gauge_box(g), tile)
 
@@ -1976,32 +2351,16 @@ def get_not_playing_message():
     return _not_playing_message or DEFAULT_NOT_PLAYING_MESSAGE
 
 
-# What goes in the middle column, between the two gauge columns --
-# "weather" (weather.py -- a free, no-API-key lookup, just a place
-# name) or "none" (nothing drawn there at all, the default). The
-# now-playing display used to live here too (the "spotify" option),
-# fixed to this column and always on; it's now just another movable/
-# resizable element instead (see default_media_element()/
-# _draw_media_element()), so it no longer needs a middle_content option
-# of its own -- add or remove it from the canvas like anything else,
-# independently of whatever (if anything) this column shows. Live-
-# settable the same way as DEFAULT_ART_PATH/_not_playing_message above
-# -- render_frame() reads this fresh every frame, so switching it takes
-# effect on the very next frame, no Stop/Start needed.
-MIDDLE_CONTENT_OPTIONS = {
-    "weather": "Weather",
-    "none": "None",
-}
-_middle_content = "none"
-
-
-def set_middle_content(value):
-    global _middle_content
-    _middle_content = value if value in MIDDLE_CONTENT_OPTIONS else "none"
-
-
-def get_middle_content():
-    return _middle_content
+# Weather (weather.py -- a free, no-API-key lookup, just a place name)
+# used to be a "middle_content" choice: a global on/off pinned to the
+# fixed middle column, exactly like the now-playing display used to be
+# a global "spotify" middle_content choice before it became the movable/
+# resizable `media` element (see default_media_element()/
+# _draw_media_element()). Weather has now had the exact same
+# conversion -- see default_weather_element()/_draw_weather_element()
+# below -- so MIDDLE_CONTENT_OPTIONS/_middle_content/set_middle_content()/
+# get_middle_content() are gone entirely: add or remove weather from the
+# canvas like anything else, independently of anything else drawn there.
 
 
 # Layout (elements) and background used to only take effect on the next
@@ -2022,7 +2381,7 @@ def get_middle_content():
 # was baked in at the last Start/Apply until one happened again.
 #
 # Layout/background are now live-appliable the same way
-# DEFAULT_ART_PATH/_not_playing_message/_middle_content already are:
+# DEFAULT_ART_PATH/_not_playing_message already are:
 # controller.py's save_dashboard_elements()/save_dashboard_background()
 # call set_pending_dashboard_layout() below (mirroring
 # set_default_art_path() etc.), and the render loop in run() takes
@@ -2180,22 +2539,128 @@ def fmt_mmss(seconds):
     return f"{m}:{s:02d}"
 
 
-def progress_bar_glow(img, x, y, w, h, fraction, accent):
-    draw = ImageDraw.Draw(img)
-    rounded_rect(draw, [x, y, x + w, y + h], radius=h / 2, fill=dim_color(accent, 0.22))
+def _bar_fill_subtile(full_w, full_h, direction, offset_x, offset_y, sub_w, sub_h, radius, accent, fill_colors):
+    """Builds the `sub_w x sub_h` RGBA tile that gets pasted (and glow-
+    blurred) as the *currently filled* portion of a bar -- either a
+    flat `accent` fill (the original look, `fill_colors` is None) or a
+    slice of a `full_w x full_h` multi-stop gradient taken at
+    (offset_x, offset_y). Slicing from a *virtual full-size* gradient
+    rather than building one sized to just the current fill is what
+    keeps a given spot on the bar's own color fixed as the value (and
+    so the visible fraction) changes over time -- only how much of the
+    gradient is revealed moves, not which colors are where, same as the
+    plain accent fill already behaved. The rounded-rect mask is always
+    built at the actual `sub_w x sub_h` size, though (not cropped from
+    a full-size mask), so the visible end of the fill still gets a
+    proper rounded cap exactly like the original flat-fill version --
+    cropping the mask too would leave a hard-edged cut instead. `radius`
+    is clamped to half of whichever of `sub_w`/`sub_h` is smaller before
+    drawing -- a caller passing the *track's* fixed corner radius (half
+    its thickness) works fine while the fill is at least that thick,
+    but at a low value the filled sliver can be thinner than the radius
+    itself, and an unclamped radius there either draws wrong (older
+    Pillow) or, on newer Pillow that clamps internally, still isn't
+    guaranteed to match exactly how caller code below decides whether
+    to draw at all -- clamping here once, ourselves, means this always
+    produces a sane pill/round shape no matter how thin the sliver is,
+    down to a single filled pixel."""
+    radius = max(0.0, min(radius, sub_w / 2, sub_h / 2))
+    if fill_colors and len(fill_colors) >= 2:
+        grad_full = _linear_gradient_multi(full_w, full_h, fill_colors, direction)
+        arr = np.array(grad_full)
+        sub_arr = arr[offset_y:offset_y + sub_h, offset_x:offset_x + sub_w]
+        color_img = Image.fromarray(sub_arr, "RGB").convert("RGBA")
+    else:
+        color_img = Image.new("RGBA", (sub_w, sub_h), accent + (255,))
+    mask = Image.new("L", (sub_w, sub_h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, sub_w - 1, sub_h - 1], radius=radius, fill=255)
+    color_img.putalpha(mask)
+    return color_img
 
-    fill_w = int(w * max(0.0, min(1.0, fraction)))
-    if fill_w > h:
-        tile = Image.new("RGBA", (w + 20, h + 20), (0, 0, 0, 0))
-        d = ImageDraw.Draw(tile)
-        rounded_rect(d, [10, 10, 10 + fill_w, 10 + h], radius=h / 2, fill=accent + (255,))
-        glow_paste(img, tile, (x - 10, y - 10), blur=5, glow_alpha=0.5)
 
-    knob_x = x + fill_w
-    knob_r = h * 1.7
+def progress_bar_glow(img, x, y, w, h, fraction, accent, vertical=False, knob_scale=1.7,
+                       show_knob=True, fill_colors=None, fill_direction="horizontal"):
+    """Draws the filled-track-plus-glowing-knob meter used by both the
+    now-playing progress bar (always horizontal, a thin 6px track) and
+    the bar element (either orientation, a much thicker ~22px track --
+    see _draw_bar_dynamic()). `vertical=True` just swaps which axis the
+    fill travels along -- bottom-to-top instead of left-to-right -- and
+    which axis the rounded ends/knob sit across; the track rect itself
+    is still exactly [x, y, x+w, y+h] either way, so callers don't need
+    to swap w/h themselves to get a tall-and-narrow vertical track vs.
+    a wide-and-short horizontal one.
+
+    `knob_scale` is the knob's radius as a multiple of the track's own
+    thickness -- 1.7 (the original, still the default so the now-
+    playing progress bar's look is unchanged) reads fine at that bar's
+    thin 6px track, where it works out to a ~20px knob, but the exact
+    same multiplier against the bar element's thicker ~22px track blows
+    the knob up to a ~75px ball that dwarfs the track it's sitting on
+    and swamps the title/value text around it. Callers with a thicker
+    track should pass a smaller `knob_scale` to keep the knob reading
+    as a knob rather than a blob.
+
+    `show_knob=False` skips the round white handle entirely -- added
+    because a thicker bar with its own fill color already showing
+    exactly where the value is doesn't need the extra dot the way the
+    now-playing progress bar's plain single-color fill does; the
+    now-playing bar doesn't pass this, so its knob is unaffected.
+
+    `fill_colors` (2+ RGB tuples) draws the filled portion as a multi-
+    stop gradient instead of a flat `accent` color -- see
+    _bar_fill_subtile() for how it stays anchored across the whole bar
+    as the fraction changes. `fill_direction` ("horizontal" or
+    "vertical") is which screen axis the *gradient* runs across,
+    independent of `vertical` (which picks which axis the *value*
+    fills along) -- a horizontal bar can have a top-to-bottom gradient
+    and a vertical bar a left-to-right one, if that's the look wanted.
+    `accent` is still what tints the empty track and the glow bloom
+    either way."""
     draw = ImageDraw.Draw(img)
-    draw.ellipse([knob_x - knob_r, y + h / 2 - knob_r, knob_x + knob_r, y + h / 2 + knob_r],
-                 fill=(255, 255, 255))
+    fraction = max(0.0, min(1.0, fraction))
+
+    if vertical:
+        rounded_rect(draw, [x, y, x + w, y + h], radius=w / 2, fill=dim_color(accent, 0.22))
+        fill_h = int(h * fraction)
+        # Used to require fill_h > w (the track's own thickness) before
+        # drawing anything at all, because _bar_fill_subtile's rounded-
+        # rect mask used to choke on a radius (w/2) bigger than the
+        # sliver's own height -- which made any value under roughly
+        # "thickness / track length" (e.g. ~15% for a typical bar)
+        # render as a completely empty track, indistinguishable from
+        # 0%, until the value climbed past that threshold. Now that
+        # _bar_fill_subtile clamps its own radius, any nonzero fill
+        # draws -- down to a small round dot at the very bottom for a
+        # tiny fraction, instead of nothing.
+        if fill_h > 0:
+            sub = _bar_fill_subtile(w, h, fill_direction, 0, h - fill_h, w, fill_h, w / 2, accent, fill_colors)
+            tile = Image.new("RGBA", (w + 20, h + 20), (0, 0, 0, 0))
+            tile.paste(sub, (10, 10 + (h - fill_h)), sub)
+            glow_paste(img, tile, (x - 10, y - 10), blur=5, glow_alpha=0.5)
+
+        if show_knob:
+            knob_y = y + h - fill_h
+            knob_r = w * knob_scale
+            draw = ImageDraw.Draw(img)
+            draw.ellipse([x + w / 2 - knob_r, knob_y - knob_r, x + w / 2 + knob_r, knob_y + knob_r],
+                         fill=(255, 255, 255))
+    else:
+        rounded_rect(draw, [x, y, x + w, y + h], radius=h / 2, fill=dim_color(accent, 0.22))
+        fill_w = int(w * fraction)
+        # Same fix as the vertical branch above, mirrored: this used to
+        # require fill_w > h before drawing anything.
+        if fill_w > 0:
+            sub = _bar_fill_subtile(w, h, fill_direction, 0, 0, fill_w, h, h / 2, accent, fill_colors)
+            tile = Image.new("RGBA", (w + 20, h + 20), (0, 0, 0, 0))
+            tile.paste(sub, (10, 10), sub)
+            glow_paste(img, tile, (x - 10, y - 10), blur=5, glow_alpha=0.5)
+
+        if show_knob:
+            knob_x = x + fill_w
+            knob_r = h * knob_scale
+            draw = ImageDraw.Draw(img)
+            draw.ellipse([knob_x - knob_r, y + h / 2 - knob_r, knob_x + knob_r, y + h / 2 + knob_r],
+                         fill=(255, 255, 255))
 
 
 class Fonts:
@@ -2225,6 +2690,38 @@ def _linear_gradient(width, height, top_color, bottom_color):
     top = np.array(top_color, dtype=np.float32).reshape(1, 1, 3)
     bottom = np.array(bottom_color, dtype=np.float32).reshape(1, 1, 3)
     arr = np.broadcast_to(top + (bottom - top) * t, (height, width, 3))
+    return Image.fromarray(arr.astype(np.uint8), "RGB")
+
+
+def _linear_gradient_multi(width, height, colors, direction="horizontal"):
+    """A linear gradient across 2 or more evenly-spaced color stops, in
+    either screen direction -- generalizes _linear_gradient() (kept
+    as-is for its own callers, which only ever need a fixed top-to-
+    bottom two-stop gradient) for the bar element's customizable fill,
+    which needed both "more than two colors" and "not just top-to-
+    bottom" (see _draw_bar_dynamic() and progress_bar_glow()).
+    `direction="horizontal"` varies left-to-right across `width` and is
+    constant down `height`; `"vertical"` is the reverse. A single color
+    (len(colors) == 1) is just a flat fill, handled the same way rather
+    than special-cased, so a caller can always call this uniformly."""
+    cols = np.array(colors, dtype=np.float32)
+    n = len(cols)
+    if n == 1:
+        arr = np.broadcast_to(cols[0].reshape(1, 1, 3), (height, width, 3))
+        return Image.fromarray(arr.astype(np.uint8), "RGB")
+    axis_len = height if direction == "vertical" else width
+    # `t` walks 0..n-1 across the axis; `lo`/`frac` pick which pair of
+    # adjacent stops each position falls between and how far along that
+    # one segment it is -- same idea as a multi-stop CSS/SVG gradient,
+    # just done as one vectorized numpy pass instead of per-pixel.
+    t = np.linspace(0, 1, axis_len, dtype=np.float32) * (n - 1)
+    lo = np.clip(np.floor(t).astype(np.int32), 0, n - 2)
+    frac = (t - lo).reshape(-1, 1)
+    seg = cols[lo] + (cols[lo + 1] - cols[lo]) * frac  # (axis_len, 3)
+    if direction == "vertical":
+        arr = np.broadcast_to(seg.reshape(height, 1, 3), (height, width, 3))
+    else:
+        arr = np.broadcast_to(seg.reshape(1, width, 3), (height, width, 3))
     return Image.fromarray(arr.astype(np.uint8), "RGB")
 
 
@@ -2351,9 +2848,9 @@ def build_static_background(width, height, fonts, elements=None, background=None
             g = gauge_layout(el["x"] * width, el["y"] * height, el["radius"] * base)
             resolved[el["id"]] = g
             accent = _element_accent(el)
-            accent2 = _element_accent2(el)
+            gauge_gradient, gauge_gradient_dir = _element_gauge_gradient(el)
             title = STAT_DEFS[el["stat"]]["title"]
-            tile = draw_gauge_static(g, accent, accent2)
+            tile = draw_gauge_static(g, accent, gradient_colors=gauge_gradient, gradient_direction=gauge_gradient_dir)
             tile = _apply_tile_opacity(tile, el.get("opacity", 1.0))
             # `rotation` is stored and round-trips through config/
             # migration, but isn't actually applied to the drawing yet
@@ -2388,6 +2885,10 @@ def build_static_background(width, height, fonts, elements=None, background=None
             box = _graph_box(el, width, height)
             resolved[el["id"]] = box
             _draw_graph_static(img, el, box, fonts)
+        elif etype == "bar":
+            box = _bar_box(el, width, height)
+            resolved[el["id"]] = box
+            _draw_bar_static(img, el, box, fonts)
         # Any other/unrecognized type is skipped rather than erroring --
         # see this function's own docstring for why (a newer canvas's
         # element type shouldn't crash an older renderer).
@@ -2406,58 +2907,239 @@ def build_static_background(width, height, fonts, elements=None, background=None
     return img, layout
 
 
-def _draw_weather_middle(img, draw, mid_cx, mid_w, height, fonts):
-    """Current-conditions readout (weather.py) for anyone who'd rather
-    see the weather than a Spotify display -- an icon, the temperature,
-    a one-line description, and a couple of secondary details, all
-    centered in the same column the album art normally occupies. Any
+def _weather_content_height(el, box_w):
+    """This weather element's *enabled* pieces' natural (unscaled)
+    combined height -- the same stack _draw_weather_element() draws
+    (icon, temp, description, details, location) at their normal, full
+    size, assuming the "has data" case since a box's size can't depend
+    on whether a weather lookup happens to have succeeded by the time a
+    given frame renders. Purely a sizing input for
+    _draw_weather_element()'s own fit-to-box scaling (see that
+    function's docstring) -- this does NOT get used to resize the box
+    itself; the box is always exactly what `el["width"]`/`el["height"]`
+    say, full stop, so an element never grows into whatever's placed
+    next to it. Icon size here is only capped by the box's own *width*
+    (mid_w * 0.4), not its height, since this same value also feeds
+    _draw_weather_element()'s scale-factor calculation, which needs a
+    height-independent baseline to compare the box's actual height
+    against. `estimateWeatherHeight()` on the frontend mirrors this
+    exact formula, purely as a starting suggestion when a show_*
+    checkbox is toggled -- not a floor, either."""
+    icon_size = box_w * 0.4
+    content_h = 0.0
+    if el.get("show_icon", True):
+        content_h += icon_size + 10
+    if el.get("show_temp", True):
+        content_h += 54
+    if el.get("show_description", True):
+        content_h += 26
+    if el.get("show_details", True):
+        content_h += 22
+    if el.get("show_location", True):
+        content_h += 20
+    return content_h
+
+
+def _weather_box(el, width, height):
+    """A weather element's pixel box, from its center x/y and its own
+    width/height -- same idea as _media_box()/_graph_box(). The box is
+    exactly what `el["width"]`/`el["height"]` say (same 60px floor
+    every other resizable element box uses) -- it is never grown to fit
+    the content (an earlier version of this function did that, and it
+    backfired: growing a box to fit every enabled piece at full size
+    routinely made it balloon well past what its own width/height
+    fields said, overlapping whatever the element next to it was, which
+    read as just as broken as the overflow it was meant to fix, only
+    now the box's own resize handles lied about its actual footprint).
+    See _draw_weather_element()'s docstring for how content instead
+    scales itself down to fit whatever box this returns, so nothing
+    overflows *or* forces the box bigger."""
+    w = max(60.0, el.get("width", _DEFAULT_WEATHER_W) * width)
+    h = max(60.0, el.get("height", _DEFAULT_WEATHER_H) * height)
+    cx, cy = el["x"] * width, el["y"] * height
+    x0, y0 = cx - w / 2, cy - h / 2
+    return {"x0": x0, "y0": y0, "w": w, "h": h, "cx": cx, "cy": cy}
+
+
+def _draw_weather_element(img, el, box, fonts):
+    """Current-conditions readout (weather.py) -- an icon, the
+    temperature, a one-line description, and a couple of secondary
+    details, all centered in the element's own box. Movable/resizable,
+    like _draw_media_element() -- see that function's docstring and
+    default_weather_element()'s for the history here (this used to be
+    a global "middle_content" choice pinned to a fixed column). Any
     missing piece (no location set yet, a lookup that hasn't completed,
     a geocoding failure) degrades to a short centered message instead
-    of a half-drawn readout, the same tolerant-fallback style as the
-    Spotify placeholder above."""
+    of a half-drawn readout, the same tolerant-fallback style as
+    _draw_media_element()'s "nothing playing" placeholder. Fully
+    dynamic (weather.py's background poll can update `info` at any
+    time) so, like media, this is redrawn here in render_frame() every
+    frame rather than baked into the static background.
+
+    `show_icon`/`show_temp`/`show_description`/`show_details`/
+    `show_location` (each default True) let each piece be switched off
+    independently -- see default_weather_element()'s docstring.
+    Whichever pieces are on stack top-to-bottom in that same order,
+    vertically centered as a block in the box (see the content_h
+    pre-measurement below) rather than always starting flush with the
+    box's top edge -- same "top-anchoring left a growing gap under the
+    content, so two boxes lined up edge-to-edge didn't line up their
+    visible content" reasoning as _draw_media_element()'s docstring.
+    Turning a piece off still doesn't leave a gap where it used to be.
+
+    The whole stack (icon size, every font size, every row's height)
+    scales down together -- by the same `scale` factor -- whenever the
+    enabled pieces' natural, full-size combined height would be taller
+    than the box actually is (see `scale` below). This is deliberately
+    a scale-to-fit, not a grow-the-box-to-fit: an earlier version of
+    this function's box (_weather_box()) grew itself to whatever the
+    content needed, which routinely made a small element's real
+    on-panel footprint balloon well past its own width/height fields
+    and overlap whatever sat next to it -- exactly the kind of overlap
+    this element itself is trying not to cause. Scaling the content
+    down instead means the box is always exactly what its width/height
+    fields say (same as every other resizable element), and the
+    content simply never exceeds it -- a very small box just reads a
+    compact readout instead of a full-size one, rather than either
+    overflowing or forcing its neighbors to move."""
+    mid_cx, mid_w, box_h = box["cx"], box["w"], box["h"]
+    opacity = el.get("opacity", 1.0)
+    show_icon = el.get("show_icon", True)
+    show_temp = el.get("show_temp", True)
+    show_description = el.get("show_description", True)
+    show_details = el.get("show_details", True)
+    show_location = el.get("show_location", True)
+
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+
     info = weather.get_weather()
-    icon_size = int(min(mid_w * 0.4, height * 0.28))
-    icon_y = int(height * 0.08)
+    icon_size_natural = min(mid_w * 0.4, box_h * 0.32)
+    has_data = bool(info) and not info.get("error") and info.get("temperature") is not None
 
-    if not info or info.get("error") or info.get("temperature") is None:
-        message = (info or {}).get("error") if info else "Set a location in Settings to show weather here"
-        message = message or "Weather unavailable"
-        y = icon_y + icon_size // 3
-        for line in wrap_text(draw, message, fonts.message, mid_w - 16):
-            draw.text((mid_cx, y), line, font=fonts.message, fill=(200, 190, 220), anchor="ma")
-            y += 28
-        return
+    if not has_data:
+        # No icon/numbers to show either way -- but a text message only
+        # makes sense if at least one text piece is actually switched
+        # on (an icon-only element with no data yet just stays blank
+        # rather than filling its small box with a paragraph). Capped
+        # to however many lines actually fit the box, same "never
+        # overflow, just show less" principle as the has-data path
+        # below -- a message that's still cut off after wrapping to
+        # width just loses its tail rather than spilling past box_h.
+        icon_gap = int(icon_size_natural // 3)
+        message_lines = []
+        if show_temp or show_description or show_details or show_location:
+            if not (el.get("location") or "").strip():
+                message = "Set a location in this element's properties to show weather here"
+            else:
+                message = (info or {}).get("error") or "Weather unavailable"
+            max_lines = max(1, int((box_h - icon_gap) // 28))
+            message_lines = wrap_text(draw, message, fonts.message, mid_w - 16, max_lines=max_lines)
 
-    tile, accent = _weather_icon_tile(info.get("icon", "cloudy"), icon_size)
-    icon_x = int(mid_cx - icon_size / 2)
-    glow_paste(img, tile, (icon_x, icon_y), blur=8, glow_alpha=0.5)
-    img.paste(tile, (icon_x, icon_y), tile)
+        content_h = (icon_gap + 28 * len(message_lines)) if message_lines else 0
+        y = int(box["y0"] + max(0, (box_h - content_h) / 2))
+        if message_lines:
+            y += icon_gap
+            for line in message_lines:
+                draw.text((mid_cx, y), line, font=fonts.message, fill=(200, 190, 220), anchor="ma")
+                y += 28
+    else:
+        units_symbol = "°F" if info.get("units") == "fahrenheit" else "°C"
+        description = (info.get("description") or "") if show_description else ""
+        detail_bits = []
+        if show_details:
+            if info.get("feels_like") is not None:
+                detail_bits.append(f"Feels {round(info['feels_like'])}{units_symbol}")
+            if info.get("humidity") is not None:
+                detail_bits.append(f"{round(info['humidity'])}% humidity")
+        location_text = info.get("location_name") if (show_location and info.get("location_name")) else None
 
-    y = icon_y + icon_size + 10
-    units_symbol = "°F" if info.get("units") == "fahrenheit" else "°C"
-    temp = info.get("temperature")
-    draw.text((mid_cx, y), f"{round(temp)}{units_symbol}", font=fonts.weather_temp,
-               fill=(238, 238, 244), anchor="ma")
-    y += 54
+        # Pre-measure the enabled (and actually present -- a
+        # description/detail/location line with no data to show
+        # doesn't reserve space) pieces' *natural*, full-size combined
+        # height, then scale everything down together if that's taller
+        # than the box -- see this function's own docstring.
+        content_h_natural = 0.0
+        if show_icon:
+            content_h_natural += icon_size_natural + 10
+        if show_temp:
+            content_h_natural += 54
+        if description:
+            content_h_natural += 26
+        if detail_bits:
+            content_h_natural += 22
+        if location_text:
+            content_h_natural += 20
 
-    description = info.get("description") or ""
-    if description:
-        draw.text((mid_cx, y), description, font=fonts.weather_desc, fill=(210, 202, 230), anchor="ma")
-        y += 26
+        # 0.55 is a floor, not a target -- below that, text stops being
+        # legible on a 960x480 panel, so a box too small even for the
+        # scaled-down minimum just quietly clips rather than shrinking
+        # into unreadable soup.
+        scale = 1.0
+        if content_h_natural > box_h and content_h_natural > 0:
+            scale = max(0.55, box_h / content_h_natural)
 
-    detail_bits = []
-    if info.get("feels_like") is not None:
-        detail_bits.append(f"Feels {round(info['feels_like'])}{units_symbol}")
-    if info.get("humidity") is not None:
-        detail_bits.append(f"{round(info['humidity'])}% humidity")
-    if detail_bits:
-        draw.text((mid_cx, y), "  ·  ".join(detail_bits), font=fonts.weather_detail,
-                   fill=(170, 165, 190), anchor="ma")
-        y += 22
+        icon_size = int(icon_size_natural * scale)
+        row_icon = int(round((icon_size_natural + 10) * scale)) if show_icon else 0
+        row_temp = int(round(54 * scale))
+        row_desc = int(round(26 * scale))
+        row_details = int(round(22 * scale))
+        row_location = int(round(20 * scale))
 
-    if info.get("location_name"):
-        draw.text((mid_cx, y + 4), info["location_name"].upper(), font=fonts.weather_location,
-                   fill=(150, 145, 175), anchor="ma")
+        if scale >= 0.999:
+            # The common case (content already fits): reuse the
+            # pre-built Fonts instance exactly as before, byte-for-byte
+            # the same output as prior to this scaling logic existing.
+            font_temp, font_desc, font_details, font_location = (
+                fonts.weather_temp, fonts.weather_desc, fonts.weather_detail, fonts.weather_location)
+        else:
+            font_temp = _cached_scaled_font(max(10, int(48 * scale)))
+            font_desc = _cached_scaled_font(max(9, int(18 * scale)))
+            font_details = _cached_scaled_font(max(8, int(14 * scale)))
+            font_location = _cached_scaled_font(max(8, int(14 * scale)), bold=True)
+
+        content_h = 0
+        if show_icon:
+            content_h += row_icon
+        if show_temp:
+            content_h += row_temp
+        if description:
+            content_h += row_desc
+        if detail_bits:
+            content_h += row_details
+        if location_text:
+            content_h += row_location
+
+        y = int(box["y0"] + max(0, (box_h - content_h) / 2))
+
+        if show_icon:
+            tile, accent = _weather_icon_tile(info.get("icon", "cloudy"), icon_size)
+            icon_x = int(mid_cx - icon_size / 2)
+            glow_paste(layer, tile, (icon_x, y), blur=8, glow_alpha=0.5)
+            layer.paste(tile, (icon_x, y), tile)
+            y += row_icon
+
+        if show_temp:
+            temp = info.get("temperature")
+            draw.text((mid_cx, y), f"{round(temp)}{units_symbol}", font=font_temp,
+                       fill=(238, 238, 244), anchor="ma")
+            y += row_temp
+
+        if description:
+            draw.text((mid_cx, y), description, font=font_desc, fill=(210, 202, 230), anchor="ma")
+            y += row_desc
+
+        if detail_bits:
+            draw.text((mid_cx, y), "  ·  ".join(detail_bits), font=font_details,
+                       fill=(170, 165, 190), anchor="ma")
+            y += row_details
+
+        if location_text:
+            draw.text((mid_cx, y + 4), location_text.upper(), font=font_location,
+                       fill=(150, 145, 175), anchor="ma")
+
+    layer = _apply_tile_opacity(layer, opacity)
+    img.paste(layer, (0, 0), layer)
 
 
 def _media_box(el, width, height):
@@ -2465,7 +3147,7 @@ def _media_box(el, width, height):
     and its own width/height -- same idea as _graph_box()/_element's
     image sizing, just for the widget that used to be pinned to a fixed
     middle column and always-on (the old "spotify" middle_content
-    option, since removed -- see MIDDLE_CONTENT_OPTIONS). Kept generous
+    option, since removed entirely). Kept generous
     by default (see makeElement()'s default shape on the frontend, and
     default_media_element() above) since it has to fit album art *and*
     two lines of text *and* a progress bar stacked vertically."""
@@ -2481,7 +3163,8 @@ def _draw_media_element(img, el, box, media, fonts):
     progress bar), but as its own movable/resizable element instead of
     being pinned to the fixed middle column -- for anyone who wants it
     somewhere other than dead center, or wants it alongside a `weather`
-    or `none` middle_content choice rather than instead of it. Fully
+    element (also its own movable/resizable element -- see
+    default_weather_element()) rather than instead of it. Fully
     dynamic (playback position advances every frame, same as a graph's
     plotted line) so it's redrawn here in render_frame(), never baked
     into the static background the way text/image elements are.
@@ -2491,8 +3174,17 @@ def _draw_media_element(img, el, box, media, fonts):
     switched off independently, since not everyone wants all three
     (e.g. just the art, or just a compact time readout with no cover
     taking up space). Whichever pieces are on stack top-to-bottom in
-    that same order, starting from the top of the box, so turning one
-    off doesn't leave a gap where it used to be."""
+    that same order, vertically centered as a block in the box (see
+    the content_h pre-measurement below) rather than always starting
+    flush with the box's top edge -- top-anchoring left a growing gap
+    under the content whenever the box was taller than the content
+    needed (the common case: the default box is generously sized to
+    fit every piece, so turning pieces off, or just not filling a tall
+    box, left dead space at the bottom), which meant lining up two
+    elements' boxes edge-to-edge didn't actually line up their visible
+    content -- the whole point of dragging boxes next to each other.
+    Turning a piece off still doesn't leave a gap where it used to be,
+    same as before."""
     mid_cx, mid_w, box_h = box["cx"], box["w"], box["h"]
     opacity = el.get("opacity", 1.0)
     show_art = el.get("show_art", True)
@@ -2508,14 +3200,33 @@ def _draw_media_element(img, el, box, media, fonts):
         title, artist = media.get("title"), media.get("artist")
         position, duration = media.get("position"), media.get("duration")
 
-    y = int(box["y0"])
+    # However many of the other two pieces are also on, sizes the art
+    # off the box's remaining space so all of them fit -- art-only
+    # (both others off) lets it use nearly the whole box. Computed once
+    # up front (rather than inside the `if show_art` block below) since
+    # the pre-measurement pass right after needs it too.
+    art_frac = 0.9 if not (show_name or show_time) else 0.55
+    art_size = int(max(24, min(mid_w * 0.75, box_h * art_frac))) if show_art else 0
+
+    # Pre-measure exactly how tall the enabled pieces are actually
+    # going to render (same deltas the drawing pass below applies), so
+    # the whole stack can start centered in the box instead of glued to
+    # its top -- see this function's docstring.
+    content_h = (art_size + 12) if show_art else 0
+    not_playing_lines = None
+    if show_name:
+        if title:
+            content_h += 24 + (22 if artist else 0)
+        elif _MEDIA_OK:
+            not_playing_lines = wrap_text(draw, get_not_playing_message(), fonts.message, mid_w - 12)
+            content_h += 24 * len(not_playing_lines)
+    if show_time and title and duration:
+        content_h += 26  # bar_y offset (4) + bar_h (6) + gap to the time labels (16)
+
+    y = int(box["y0"] + max(0, (box_h - content_h) / 2))
+    bottom = box["y0"] + box_h
 
     if show_art:
-        # However many of the other two pieces are also on, sizes the
-        # art off the box's remaining space so all of them fit --
-        # art-only (both others off) lets it use nearly the whole box.
-        art_frac = 0.9 if not (show_name or show_time) else 0.55
-        art_size = int(max(24, min(mid_w * 0.75, box_h * art_frac)))
         art = None
         if media and media.get("art") is not None:
             art = fit_album_art(media["art"], art_size, radius=14)
@@ -2546,13 +3257,13 @@ def _draw_media_element(img, el, box, media, fonts):
                 draw.text((mid_cx, y), artist_line, font=fonts.artist, fill=(200, 192, 220), anchor="ma")
                 y += 22
         elif _MEDIA_OK:
-            for line in wrap_text(draw, get_not_playing_message(), fonts.message, mid_w - 12):
-                if y > box["y0"] + box_h:
+            for line in not_playing_lines:
+                if y > bottom:
                     break
                 draw.text((mid_cx, y), line, font=fonts.message, fill=(200, 190, 220), anchor="ma")
                 y += 24
 
-    if show_time and title and duration and y + 20 <= box["y0"] + box_h:
+    if show_time and title and duration and y + 20 <= bottom:
         bar_w = int(mid_w * 0.85)
         bar_h = 6
         bar_x = int(mid_cx - bar_w / 2)
@@ -2560,7 +3271,7 @@ def _draw_media_element(img, el, box, media, fonts):
         fraction = max(0.0, min(1.0, (position or 0.0) / duration))
         progress_bar_glow(layer, bar_x, bar_y, bar_w, bar_h, fraction, ACCENT_MID)
         y = bar_y + bar_h + 16
-        if y <= box["y0"] + box_h:
+        if y <= bottom:
             draw.text((bar_x, y), fmt_mmss(position), font=fonts.progress,
                        fill=(170, 165, 190), anchor="lm")
             draw.text((bar_x + bar_w, y), fmt_mmss(duration), font=fonts.progress,
@@ -2590,55 +3301,80 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
     base = min(width, height)
     history = history or {}
 
-    for el in layout["elements"]:
+    # Sorted by `z` here for the same reason build_static_background()
+    # sorts before baking text/image elements into the background image
+    # -- without it, Bring to front/Send to back only ever affected
+    # text/image (the only element types that are fully static and so
+    # actually go through that sorted loop), while every dynamic
+    # element (gauge, graph, bar, media, clock, weather -- everything
+    # redrawn fresh every frame right here) was always drawn back-to-
+    # front in whatever order it happened to sit in `elements`,
+    # regardless of `z`. That's most of what a real dashboard is made
+    # of, so it read as the buttons doing nothing at all.
+    for el in sorted(layout["elements"], key=lambda el: el.get("z", 0)):
         etype = el.get("type", "gauge")
         if etype == "gauge":
             g = layout["resolved"][el["id"]]
             stat = STAT_DEFS[el["stat"]]
             accent = _element_accent(el)
-            accent2 = _element_accent2(el)
+            gauge_gradient, gauge_gradient_dir = _element_gauge_gradient(el)
             big = g["radius"] >= base * BIG_GAUGE_RADIUS_FRACTION
             value_font = fonts.gauge_value if big else fonts.small_value
             draw_gauge_dynamic(img, g, stats.get(el["stat"]), stat["min"], stat["max"],
-                                accent, value_font, stat["fmt"], accent2)
+                                accent, value_font, stat["fmt"],
+                                gradient_colors=gauge_gradient, gradient_direction=gauge_gradient_dir)
         elif etype == "graph":
             box = layout["resolved"].get(el["id"])
             if box is None:
                 continue
             accent = _element_color(el, default=ACCENT_CPU)
-            _draw_graph_dynamic(img, el, box, history.get(el["id"], ()), accent)
+            graph_gradient = _element_gradient_colors(el) if el.get("gradient") else None
+            _draw_graph_dynamic(img, el, box, history.get(el["id"], ()), accent,
+                                 graph_gradient, el.get("gradient_direction", "horizontal"))
+        elif etype == "bar":
+            box = layout["resolved"].get(el["id"])
+            if box is None:
+                continue
+            stat_def = STAT_DEFS.get(el.get("stat"))
+            if stat_def is None:
+                continue
+            accent = _element_color(el, default=ACCENT_CPU)
+            _draw_bar_dynamic(img, el, box, stats.get(el["stat"]), stat_def["min"], stat_def["max"],
+                               accent, fonts.small_value, stat_def["fmt"])
         elif etype == "media":
             box = _media_box(el, width, height)
             _draw_media_element(img, el, box, media, fonts)
         elif etype == "clock":
             _draw_clock_element(img, el, width, height, fonts)
+        elif etype == "weather":
+            box = _weather_box(el, width, height)
+            _draw_weather_element(img, el, box, fonts)
         # text/image elements are fully static -- baked into
         # `background` already, nothing to redraw here.
-
-    # --- middle: weather / nothing ------------------------------------
-    # The clock and now-playing widgets both used to be drawn
-    # unconditionally right here, at hardcoded spots -- they're now
-    # just elements (see default_clock_element()/default_media_element()
-    # and the per-element loop above), and every layout is guaranteed to
-    # have both: a fresh one via slots_to_elements() appending them, an
-    # existing saved one via config_store's one-time elements migration
-    # (see its docstring). So there's no fallback to draw here any
-    # more -- this column is purely opt-in weather, or nothing.
-    mid_x0, mid_w = layout["mid_x0"], layout["mid_w"]
-    mid_cx = mid_x0 + mid_w / 2
-    draw = ImageDraw.Draw(img)
-    content = get_middle_content()
-
-    if content == "weather":
-        _draw_weather_middle(img, draw, mid_cx, mid_w, height, fonts)
-    # "none" (or anything unrecognized): nothing drawn here -- just the
-    # background shows through.
 
     return img
 
 
+def apply_weather_from_elements(elements):
+    """Points weather.py's background poll at whichever `weather`
+    element is on the canvas (the first one, if more than one -- the
+    poll loop is one shared lookup, same as media polling is one shared
+    "now playing" query even though a `media` element could in theory
+    be duplicated too), or clears it if there's none. Called once at
+    startup and again every time a live layout edit lands (see run()'s
+    loop below) so editing an existing weather element's location/units
+    from the design canvas applies without a Stop/Start, the same as
+    every other live-appliable dashboard setting. set_location()/
+    set_units() are both no-ops when the value hasn't actually changed,
+    so calling this on every layout update (whether or not weather
+    changed) is cheap."""
+    weather_el = next((el for el in elements if el.get("type") == "weather"), None)
+    weather.set_location(weather_el.get("location") if weather_el else None)
+    weather.set_units((weather_el.get("units") if weather_el else None) or "celsius")
+
+
 def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
-        not_playing_message=None, middle_content=None, weather_location=None, weather_units=None,
+        not_playing_message=None,
         brightness=90, slots=None, elements=None, background=None,
         stop_event=None, log=print, screen_factory=HongtaiScreen, on_connected=None, screen=None):
     """Runs the dashboard until stop_event is set (or forever, if
@@ -2647,13 +3383,13 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     GUI can start/stop this theme in a background thread instead of
     only being usable from the command line.
 
-    `middle_content` picks what shows between the two gauge columns --
-    "weather" or "none" (default; see MIDDLE_CONTENT_OPTIONS/
-    set_middle_content()). `weather_location`/`weather_units` are only
-    meaningful when it's "weather" -- see weather.py's set_location()/
-    set_units(). The now-playing display is a separate, independently
-    movable "media" element (see default_media_element()), not a
-    middle_content option.
+    Weather (weather.py) and the now-playing display are both separate,
+    independently movable/resizable elements (see default_weather_
+    element()/default_media_element()) -- not a global on/off this
+    function takes a kwarg for. A weather element's own `location`/
+    `units` fields drive weather.py's background poll via
+    apply_weather_from_elements(), called below and again on every
+    live layout edit.
 
     `elements` (ROADMAP.md Phase 4) is the new way to lay the gauges
     out -- a list of dicts in slots_to_elements()'s shape, with their
@@ -2704,9 +3440,6 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
 
     set_default_art_path(default_art_path)
     set_not_playing_message(not_playing_message)
-    set_middle_content(middle_content or "none")
-    weather.set_location(weather_location)
-    weather.set_units(weather_units or "celsius")
     weather.start_polling()
 
     owns_screen = screen is None
@@ -2734,6 +3467,7 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
 
     if elements is None:
         elements = slots_to_elements(slots)
+    apply_weather_from_elements(elements)
 
     fonts = Fonts()
     bg_image, layout = build_static_background(info.width, info.height, fonts, elements, background)
@@ -2755,9 +3489,31 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
         for el in elements if el.get("type") == "graph"
     }
 
+    # Occasional RSS log line -- purely diagnostic, to make a real memory
+    # leak (reported after leaving this theme running overnight) visible
+    # without needing a separate profiler attached ahead of time. Once
+    # every 10 minutes is often enough to see a trend over a multi-hour
+    # run without spamming the log; psutil.Process().memory_info() is
+    # cheap (no per-frame cost worth worrying about at this interval).
+    _mem_log_interval = 600.0
+    _last_mem_log = time.time()
+    try:
+        _this_process = psutil.Process()
+    except Exception:  # noqa: BLE001
+        _this_process = None
+
     try:
         while stop_event is None or not stop_event.is_set():
             frame_start = time.time()
+
+            if _this_process is not None and frame_start - _last_mem_log >= _mem_log_interval:
+                _last_mem_log = frame_start
+                try:
+                    rss_mb = _this_process.memory_info().rss / (1024 * 1024)
+                    log(f"  (memory: {rss_mb:.0f} MB RSS -- if this keeps climbing over "
+                        f"several hours rather than leveling off, that's a real leak)")
+                except Exception:  # noqa: BLE001
+                    pass
 
             # Pick up a live layout/background edit from the design
             # canvas, if one's queued -- see set_pending_dashboard_
@@ -2770,6 +3526,7 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
             if pending_layout:
                 if "elements" in pending_layout:
                     elements = pending_layout["elements"]
+                    apply_weather_from_elements(elements)
                 if "background" in pending_layout:
                     background = pending_layout["background"]
                 bg_image, layout = build_static_background(info.width, info.height, fonts, elements, background)
@@ -2857,18 +3614,14 @@ def main():
     ap.add_argument("--not-playing-message", default=None,
                      help="text to show in place of the track title when nothing is "
                           f"playing (default: {DEFAULT_NOT_PLAYING_MESSAGE!r})")
-    ap.add_argument("--middle-content", choices=list(MIDDLE_CONTENT_OPTIONS), default="none",
-                     help="what to show between the two gauge columns (default: none)")
-    ap.add_argument("--weather-location", default=None,
-                     help="city/address for --middle-content weather (looked up via Open-Meteo, no API key)")
-    ap.add_argument("--weather-units", choices=list(weather.UNIT_OPTIONS), default="celsius",
-                     help="temperature units for --middle-content weather (default: celsius)")
     args = ap.parse_args()
 
+    # Weather (like the now-playing display, text/image/graph elements,
+    # and clock customization) is a design-canvas-only element -- see
+    # default_weather_element() -- with no CLI flag of its own, same as
+    # those other element types never had one either.
     run(port=args.port, web_port=args.web_port, enable_web=not args.no_web,
-        default_art_path=args.default_art, not_playing_message=args.not_playing_message,
-        middle_content=args.middle_content, weather_location=args.weather_location,
-        weather_units=args.weather_units)
+        default_art_path=args.default_art, not_playing_message=args.not_playing_message)
 
 
 if __name__ == "__main__":

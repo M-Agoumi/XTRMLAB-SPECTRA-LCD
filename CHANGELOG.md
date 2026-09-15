@@ -709,6 +709,740 @@ dashboard designer) this is laying groundwork for.
   back to one column (left column's settings first) below ~860px,
   where two side by side would just squeeze the canvas back down to
   the same cramped width this replaced.
+- **Likely fix for a real memory leak reported after leaving the app
+  running overnight (~2GB RSS by morning).** Prime suspect:
+  `_get_media_info_async()` (the Spotify now-playing poll, dashboard
+  theme only) called `MediaManager.request_async()` fresh on every
+  single poll -- once a second, indefinitely -- instead of requesting
+  it once and reusing it the way Microsoft's own guidance for this API
+  describes. Each call round-trips to the Windows media broker and
+  builds a whole new WinRT projection object graph (manager, session
+  list, properties, timeline, playback info); those are COM-reference-
+  counted underneath Python's own refcounting, which doesn't reliably
+  release the native side just because the Python wrapper goes out of
+  scope on a background asyncio loop that's never idle. A leak of only
+  ~45KB per call -- entirely plausible for an unreleased COM object
+  graph -- accounts for the full ~2GB after a single overnight run at
+  1 poll/sec. Fixed by caching the manager (`_get_media_manager()`) so
+  only the first poll ever requests one. Also added an occasional (every
+  10 minutes) `memory: N MB RSS` log line to the running theme so a
+  real leak -- this one or another -- is visible in the Log panel over
+  a multi-hour run without needing a profiler attached ahead of time.
+  Not independently confirmed against real hardware/Windows yet (this
+  is a Windows-only, WinRT-specific code path that can't be exercised
+  in a Linux sandbox) -- flagged here as the most likely cause based on
+  code review, not a verified fix. If RSS still climbs after this with
+  Spotify/media running, the next suspects are the `session`/`props`/
+  `timeline`/`playback` WinRT objects themselves (try `del`-ing them
+  explicitly before returning) rather than the manager.
+- **Double-clicking the desktop icon while the app is already running no
+  longer shows a "this is already running" message box** -- it now just
+  brings the already-running window to the front, the way any normal
+  single-window app behaves. `single_instance.py`'s
+  `_bring_existing_window_to_front()` used to fall back to a
+  `messagebox.showinfo()` only when `FindWindowW` couldn't locate/
+  activate the other instance's window -- which, in practice, was most
+  of the time: Windows restricts which processes are allowed to steal
+  foreground focus, and a background process calling
+  `SetForegroundWindow` can be silently ignored with no way to detect
+  that failure from the caller's side. Replaced with a mechanism that
+  can't fail that way: the second launch now touches a plain sentinel
+  file's mtime (`SHOW_TRIGGER_PATH`, next to `app_config.json`), and the
+  *running* instance's own existing 100ms log-queue poll timer
+  (`app.py`'s new `App._poll_show_trigger()`) notices the mtime change
+  and raises its own window from its own Tk main thread -- guaranteed
+  to work, since it's the app raising its own window rather than an
+  outside process trying to steal focus. `FindWindowW` +
+  `SetForegroundWindow` is still tried first, same-instant, as a bonus
+  (feels snappier when Windows allows it); the file-touch path is what
+  actually always works, just up to ~100ms slower. No dialog of any
+  kind is shown to the end user any more for this case.
+- **Redesigned the web frontend's layout again** -- the two-column
+  split above (Preview stacked directly on top of the current theme's
+  settings/design canvas, in the right column) still forced scrolling
+  between the live preview and whatever needed configuring, and left a
+  visibly empty gap under the short left column once the right column
+  kept going past it. Preview and the current theme's settings now sit
+  side by side in a `.preview-and-config` flex row instead of stacked,
+  for Video/Webpage/Clock. The dashboard theme is handled differently:
+  since `DashboardCanvas` already draws the live frame inside its own
+  canvas box, a separate Preview panel next to it would just be the
+  same image polled and shown twice, so it's skipped there and
+  `DashboardCanvas` gets the full row's width -- which it uses for its
+  own internal side-by-side split (`.canvas-layout`): the drag/drop
+  canvas on the left, the element list and the selected element's
+  property panel stacked in a sidebar on the right. Both splits wrap
+  back to a single stacked column automatically below their combined
+  minimum widths, same fallback behavior as the outer two-column grid.
+  `.app`'s max page width raised from 1400px to 1800px so a wide
+  monitor gets more benefit from all of this. Note: this is still a
+  page rendered in whatever browser tab the user opens it in, not a
+  native window this app controls -- there's no way to make the
+  browser's own window wider from here; Phase 7's packaged webview
+  window will be able to pick a sensible default size and shape once
+  that lands.
+- **Frontend rows redesigned again, this time to the exact layout
+  requested**: one full-width row for panel port + theme picker +
+  Start/Stop/Apply (merged into a single "Controls" section), the
+  selected theme's own config next to the live preview right below it
+  (same side-by-side reasoning and dashboard-theme exception as
+  above), then brightness, System, and Log each getting their own
+  full-width row instead of being split into a left/right page column.
+  The old two-column `.app-columns` page grid is gone entirely --
+  `.app`'s own top-to-bottom flex stack is what lays out every row now,
+  so there's no longer a second, independently-tall column that can
+  leave an empty gap under a shorter one.
+- **Root-caused and fixed why double-clicking the desktop icon could
+  appear to do nothing at all** (not even the dialog the earlier fix
+  above removed): `startup_registration.py`'s `enable_startup()` and
+  `desktop_shortcut.py`'s `create_desktop_shortcut()` both resolved
+  "the app" via `sys.modules["__main__"].__file__` -- fine as long as
+  the only thing that ever calls them is `app.py` itself, but both are
+  reachable from the exact same control-server endpoints the web
+  frontend's System panel hits, and that control server can just as
+  well be `scripts/run_backend.py` or `scripts/run_v2_app.py`
+  (`backend_app.py`, ROADMAP.md Phase 2c) during development/testing.
+  Toggling "Launch at Windows startup" or clicking "Create Desktop
+  Shortcut" while either of those was `__main__` silently baked THAT
+  script into the Startup entry or the desktop shortcut instead of the
+  real `app.py`. Since neither of those ever opens `app.py`'s Tkinter
+  window, and both call the same `_ensure_single_instance()` mutex
+  check, the result was a shortcut/Startup entry that (a) holds the
+  same single-instance mutex `app.py` checks, but (b) has no
+  "Hongtai Screen Control" window and no `SHOW_TRIGGER_PATH` poll loop
+  for `app.py`'s side of that check to ever find -- so double-clicking
+  the real desktop icon while one of these was running just silently
+  wrote the trigger file, found nothing to raise, and exited. Fixed by
+  resolving the app path via `paths.py`'s `_app_base_dir()` (the real
+  on-disk repo root) in both functions instead of trusting whichever
+  script happened to be `__main__` -- both now always point at the one
+  real `app.py` regardless of which entry point's UI triggered them.
+  Anyone who already has a stale shortcut/Startup entry from before
+  this fix needs to quit whatever's currently running (check the
+  system tray) and re-click "Create Desktop Shortcut" / re-tick
+  "Launch at Windows startup" once to regenerate it correctly -- this
+  fix prevents the problem going forward, it doesn't repair a shortcut
+  already written.
+- **Cut over the desktop icon and "Launch at Windows startup" to the
+  React/webview app, ahead of ROADMAP.md's planned Phase 7 -- at the
+  user's explicit request**, once it became clear the fix above just
+  correctly restored double-click back to launching Tkinter, which
+  wasn't actually what was wanted after this whole session's work went
+  into the web frontend. `desktop_shortcut.py` and
+  `startup_registration.py` now point at `scripts/run_v2_app.py`
+  (`backend_app.py`: the control API + tray icon + a `pywebview`
+  window showing the same React frontend) instead of `app.py`.
+  `backend_app.py` gained `BackendApp.start_show_watcher()`, a
+  background thread polling `SHOW_TRIGGER_PATH` (the same file
+  `single_instance.py`'s `_bring_existing_window_to_front()` already
+  touches on a second launch) -- without this, double-clicking the
+  icon while the backend was already running would have hit the exact
+  same "does nothing" bug this whole thread started from, just for a
+  different reason (no Tk event loop here to piggyback a poll onto
+  like app.py's `_poll_show_trigger()` does, so a plain daemon thread
+  does the same job instead). Also swapped `main()`'s two startup
+  `print()` calls for the controller's own `_log()` (mirrored to
+  `STARTUP_LOG_PATH` for `--autostart`) -- launched via `pythonw.exe`
+  with no console attached (which is what actually happens once this
+  is what the desktop icon points at), a bare `print()` either goes
+  nowhere or can raise outright. `pywebview` moved from a commented-out
+  optional line in `requirements.txt` to a required one. `app.py`'s
+  Tkinter GUI is untouched and keeps working for manual/headless use
+  (`python app.py`), it's simply not launched automatically any more.
+  The one known gap: the frozen-build (`.exe`) branch in both files
+  still targets the old Tkinter build (`packaging/hongtai_screen.spec`
+  hasn't been updated to package `run_v2_app.py` + the webview UI yet)
+  -- this cutover only covers running from source
+  (`pip install -r requirements.txt`), which is how this app is
+  currently run; a proper frozen build of the new stack is still real
+  Phase 7 packaging work.
+- Fixed a pre-existing design-canvas bug, surfaced once the canvas
+  redesign above made it the page's full-width centerpiece: a gauge
+  element's resize-handle square rendered unconditionally in
+  `DashboardCanvas.jsx`, unlike every other element type (text, graph,
+  image, media, clock), which all correctly gate their handle(s) behind
+  "only when selected". Fixed by wrapping the gauge handle in the same
+  `{isSelected && (...)}` check the others already use.
+- **Removed the "Middle content" setting (weather vs. nothing, a global
+  on/off pinned to the fixed column between the two gauge columns) and
+  made weather a movable/resizable canvas element instead** -- the
+  exact same conversion the now-playing display already got earlier in
+  this rewrite (from a fixed always-on "spotify" `middle_content`
+  choice into the `media` element). Click "+ Add weather" in the
+  design canvas to add one; drag/resize it like any other element, and
+  set its location/units in its own property panel (previously a
+  single global location/units pair shared by the whole app).
+  `dashboard_theme.py`'s `MIDDLE_CONTENT_OPTIONS`/`_middle_content`/
+  `set_middle_content()`/`get_middle_content()` are gone entirely,
+  replaced by `default_weather_element()`/`_draw_weather_element()`
+  (mirroring `default_media_element()`/`_draw_media_element()`) and a
+  new `apply_weather_from_elements()` helper that points weather.py's
+  shared background poll at whichever `weather` element is on the
+  canvas (called at Dashboard startup and again on every live layout
+  edit, so editing an existing element's location/units from the
+  design canvas applies without a Stop/Start, same as everything else
+  on this canvas). A saved config that had `middle_content: "weather"`
+  is migrated automatically (`config_store.migrate_dashboard_weather_
+  element()`, the same one-time-migration pattern
+  `migrate_dashboard_elements()` already established) into a real
+  `weather` element carrying its old location/units; `middle_content`/
+  `weather_location`/`weather_units` are dropped from config either
+  way. The web UI's "Middle content" panel (and its
+  `/api/dashboard/middle_content` endpoint) are gone; `app.py`'s
+  Tkinter Dashboard tab drops its own Show/Location/Units controls too
+  (a short pointer to the web design canvas takes their place), so it
+  no longer writes those now-retired keys back into the shared config.
+- Fixed the design canvas's element list scrolling by default: its
+  `max-height: 140px` predated the clock/media/weather elements, so
+  once those joined the 8 default gauges the list's 10-11 rows no
+  longer fit and it scrolled even with nothing custom added. Raised
+  to 480px; also made `overflow-x: hidden` explicit, fixing a phantom
+  horizontal scrollbar some browsers drew from only `overflow-y`
+  being set.
+- **Weather's icon/temperature/description/feels-like+humidity/
+  location-name are now independently switchable**, the same
+  show_art/show_name/show_time deal `media` already has -- so a
+  weather element can be shrunk to just an icon or just the
+  temperature, e.g. to sit next to a now-playing element without the
+  two eating the whole panel between them. New
+  `show_icon`/`show_temp`/`show_description`/`show_details`/
+  `show_location` fields (each default True, so an existing saved
+  weather element is unaffected); whichever pieces are on stack
+  top-to-bottom with no gap left by a disabled one, and the "no data
+  yet" placeholder only draws when at least one text piece is on.
+- **Fixed now-playing/weather content not matching its own box**,
+  reported as the layout looking "not accurate" and making the two
+  hard to line up precisely. Both elements' content used to always
+  start flush with the box's top edge, so a box taller than its
+  (possibly piece-reduced) content left a growing gap underneath, all
+  still inside the box -- meaning lining up two boxes edge-to-edge
+  didn't actually line up their visible pictures/text. Fixed by
+  pre-measuring exactly how tall the currently-enabled pieces are
+  going to render and centering that whole stack vertically in the
+  box instead of anchoring it to the top.
+- **Stopped the design canvas's edit-only mockup boxes from being
+  drawn on top of the real live panel image**, reported as the
+  tinted fill/border/"NOW PLAYING"/"WEATHER" labels visibly sitting
+  over the actual rendered content once connected, "ruining the
+  preview." The design canvas doubles as a live preview: once
+  connected, it overlays the real live frame (an actual JPEG of what
+  the panel is showing) under the SVG editor layer, so the frame
+  already draws a graph/image/now-playing/weather element's real
+  content at that exact spot -- the mockup box was then just a
+  duplicate annotation sitting on top of it. The `clock` element type
+  already handled this correctly (its hands-and-face mockup only
+  draws when there's no live frame to collide with, or the element is
+  selected); this extends the same `overLiveFrame` condition
+  (`connected && !!frameUrl`) to the graph/image/media/weather box-
+  rendering branch in `DashboardCanvas.jsx` via a new `showMockup`
+  flag (`el.type === "graph" || isSelected || !overLiveFrame`) that
+  now gates the tinted rect, the picked-image border rect, and the
+  centered label text. A plain `graph` element keeps its mockup box
+  always, connected or not, since nothing in the live frame draws
+  where a graph *will* go the way it does for the others. When the
+  mockup is hidden, an invisible `fill="transparent"` rect takes its
+  place so the element's full footprint stays click/drag-able even
+  though nothing is drawn -- selecting, moving, and resizing an
+  element still works exactly the same whether or not its box happens
+  to be visible right now. Verified via Playwright that disconnected/
+  no-live-frame mode (pure editor use) is unaffected -- every element
+  still shows its mockup box whether selected or not, matching the
+  pre-existing `clock` behavior this reuses.
+- **Extended the same overlay hiding to gauges.** A gauge's ring +
+  stat-title text is dynamic content the live frame already draws at
+  that exact spot too (the real value baked in, not just the title),
+  so it had the same duplicate-mockup problem the box types above
+  did. The gauge branch in `DashboardCanvas.jsx` now computes its own
+  `overLiveFrame`/`showMockup` (`isSelected || !overLiveFrame`) and
+  gates the visible ring + title text behind it, falling back to an
+  invisible `fill="transparent"` circle in the same spot so it's
+  still click/drag-able either way; the selection outline and resize
+  handle are unaffected, same as every other element type. Verified
+  via Playwright in disconnected mode: gauges render unchanged both
+  selected and deselected.
+- **Fixed "Reset to defaults" (and any other unsaved edit) appearing to
+  do nothing while connected**, a side effect of the mockup-hiding fix
+  just above: `showMockup` was gated purely on `isSelected ||
+  !overLiveFrame`, with no way to tell that the live frame it was
+  deferring to hadn't actually caught up with the edit yet. The live
+  frame only ever shows what was last *saved* -- an edit only reaches
+  the physical panel once Save layout is clicked (see that button's own
+  hint text) -- so resetting (which touches every element and leaves
+  none selected) made every mockup disappear at once while the live
+  frame underneath still showed the old, un-reset layout: from the
+  outside, absolutely nothing looked like it had changed. Fixed by
+  adding `&& !dirty` to all three `overLiveFrame` computations (box
+  types, clock, gauge) -- `dirty` (`elements !== savedElementsRef.
+  current`) already existed, driving the toolbar's own "You have
+  unsaved changes" hint, so this just wires the same flag into the
+  mockup-hiding decision: any unsaved edit now keeps every mockup
+  visible regardless of connection state, and hiding only resumes once
+  Save layout brings the live frame back in sync.
+- **Now-playing/weather's selection box now shrinks and grows with
+  whichever pieces are switched on**, instead of staying at whatever
+  size it was last dragged to. The earlier centering fix
+  (`dashboard_theme.py`'s content-height pre-measurement) made the
+  *content* re-center inside the box when a piece was turned off, but
+  the box itself -- the thing actually being looked at and lined up
+  against other elements on the design canvas -- never changed size to
+  match, so a compact icon-only weather element still had a box sized
+  for the full readout. Each show_* checkbox's `onChange` in
+  `DashboardCanvas.jsx` now also computes a new `height` via one of two
+  new estimator functions, `estimateWeatherHeight()`/
+  `estimateMediaHeight()`, that mirror `_draw_weather_element()`'s/
+  `_draw_media_element()`'s own content-height pre-measurement as
+  closely as a browser-side estimate can (an exact match isn't
+  possible -- whether weather data has loaded, or something's actually
+  playing, isn't known until the theme is running, so this always
+  assumes the fully-populated case). Height only, not width, since
+  these elements stack their pieces vertically. Verified via
+  Playwright: adding a weather element and unchecking description/
+  feels-like+humidity/location dropped its height from 46% to 36%;
+  also unchecking temperature (icon only) dropped it to 24%, with the
+  on-canvas selection box visibly shrinking to match at each step.
+- **Fixed dragging an element snapping its center to wherever the
+  cursor first landed**, reported as "clicking on a gauge moves it to
+  where I clicked" -- grabbing a gauge anywhere other than dead center
+  (its edge, say) made it jump so that exact point became the new
+  center, instead of moving smoothly from wherever it already was.
+  `onPointerMove`'s "move" branch set the element's x/y straight to the
+  cursor's own fraction-of-canvas position every frame, with nothing
+  recording *where on the element* it had actually been grabbed.
+  Fixed by computing `offsetX`/`offsetY` (the gap between the cursor
+  and the element's center) once at the moment of the grab, in
+  `onPointerDownGauge`, and subtracting it back out of every subsequent
+  cursor position in `onPointerMove` -- the element now tracks the
+  cursor's movement, not its raw position. Affects every element type
+  that uses this same shared move handler (gauge, text, graph, image,
+  media, weather, clock), not just gauges. While tracking this down, a
+  second, independently-triggering bug in the same code path turned up
+  and got fixed alongside it: `onPointerMove` re-queried
+  `svgRef.current.getBoundingClientRect()` on every single move, and a
+  drag's very first move flips `dirty` true (see the entry above),
+  which reveals the "unsaved changes" hint line above the canvas -- a
+  real layout reflow that shifts the canvas box (and this rect) down by
+  however tall that line is, *mid-gesture*. Every move after the first
+  was then computing its fraction against a rect whose top had silently
+  shifted out from under the still-held cursor, so the element drifted
+  off the cursor by that same amount for the rest of the drag. Fixed by
+  snapshotting the rect once in `onPointerDownGauge`/
+  `onPointerDownHandle` and reusing that same snapshot for the whole
+  gesture instead of re-querying it. Verified with a Playwright test
+  that reads the dragged element's exact (unrounded) on-canvas position
+  before and after a drag and compares it against the exact pixel
+  delta moved: previously a pure-vertical 40px drag registered as only
+  20 viewBox units of movement (should be ~32) due to the reflow bug
+  alone, and a 40px-vertical/off-center grab additionally registered
+  only half the expected vertical delta from the offset bug; after both
+  fixes, a drag's on-canvas movement matches the cursor's own pixel
+  movement exactly, on both axes, however it's grabbed.
+- **Fixed "Reset to defaults" still visually showing custom content
+  (uploaded images, a moved gauge, whatever was there before) even
+  though the element list on the right correctly showed only the
+  defaults**, a gap the `!dirty` fix above didn't close: that fix made
+  every element's *mockup* correctly reappear at its default position,
+  but the actual `<img className="canvas-frame">` underneath it --
+  a real photo of what the physical panel is showing *right now* -- is
+  a separate piece of the canvas, and it kept rendering regardless,
+  since it only ever reflects the last *saved* layout and Reset alone
+  doesn't save anything. So the on-screen result was every default
+  mockup box correctly showing, layered on top of an unchanged photo
+  of the old custom layout still visibly showing through everywhere
+  the new mockups didn't fully cover it -- from the outside this read
+  as "the preview didn't actually change." Fixed by adding the same
+  `&& !dirty` this canvas-frame `<img>`'s own render condition
+  (previously just `frameUrl && connected`): now any unsaved edit
+  hides the stale photo entirely, dropping the canvas back to the same
+  plain dark background pure-editor mode it already uses while
+  disconnected, so what's on screen is exactly (and only) what
+  `elements` currently says, with no stale photo left to disagree with
+  it. The photo reappears the instant Save layout clears `dirty`, now
+  showing the real, caught-up panel again.
+- **Reworked the design canvas toolbar's Save layout button**, on
+  feedback that it "shouldn't be like adding stuff": it used to sit
+  inline with the "+ Add X" buttons, always enabled, with a separate
+  "* You have unsaved changes..." sentence underneath explaining when
+  it actually mattered. Removed that sentence entirely; the toolbar is
+  now two groups (`.canvas-toolbar-group` for add-element/undo/redo/
+  reset, and Save layout on its own) laid out with `justify-content:
+  space-between`, pushing Save layout to the toolbar's far right so it
+  reads as a distinct, separate action rather than one more button in
+  the "add stuff" row. It's also properly `disabled` (greyed out, the
+  same as Undo/Redo already were) whenever `dirty` is false, and only
+  enabled -- with its existing orange "unsaved" styling -- once there's
+  actually something to push to the panel, so the button's own state
+  now carries the information the removed sentence used to.
+- **Added a `bar` element type** ("we don't have bars, we have gauges,
+  graphs, we need bars") -- a linear meter for one stat's current
+  value, the same reading a `gauge` shows (a live value against its
+  own min/max) but as a horizontal fill bar instead of a circular ring,
+  for lining several stats up as a compact stack or just for the look.
+  Not a history/trend view -- that's `graph` (which already has its
+  own "Bar" *style* option for a bars-over-time chart; this is a
+  different thing, a single always-current reading). Backend:
+  `_bar_box()`/`_draw_bar_static()` (box + title, baked into the
+  static background like `graph`'s own split) and `_draw_bar_dynamic()`
+  (the live fill + value text, redrawn every frame like a gauge's
+  needle) in `dashboard_theme.py`, reusing `progress_bar_glow()` --
+  the same filled-track-plus-glowing-knob look `_draw_media_element()`'s
+  playback bar already draws -- rather than inventing a second bar-
+  drawing routine. A missing stat reading draws an empty track and
+  "--" instead of guessing zero, same rule `draw_gauge_dynamic()`
+  follows. Frontend: "+ Add bar" in the toolbar, a Stat/Color/Opacity
+  property panel (no Style/History fields -- there's no time axis to
+  configure), and its own resizable box in the design canvas, treated
+  the same as `graph`'s mockup box (always shown, connected or not,
+  since neither one's mockup attempts to draw the real bars/fill --
+  that needs live data this editor doesn't have -- unlike `media`/
+  `weather`'s mockup, which duplicates a label the live frame already
+  shows and so hides once connected). Verified: direct `render_frame()`
+  calls for a normal reading, a missing stat, and a very small box all
+  render without error; Playwright confirms "+ Add bar" adds a
+  correctly-labeled, selectable, resizable BAR element to the canvas.
+- **Reverted the "hide the live panel photo while dirty" fix above**
+  ("i dont want a stall image, and i dont want the background black"):
+  hiding `<img className="canvas-frame">` whenever there was an unsaved
+  edit did stop it from showing stale content after Reset to defaults,
+  but at the cost of the whole canvas dropping to a plain black
+  background the instant *any* edit was in progress -- a drag, a
+  checkbox toggle, even just clicking to select something -- which read
+  as broken far more often than the original staleness ever did. The
+  photo is back to always rendering whenever `connected && frameUrl`,
+  regardless of `dirty`, so the canvas never goes black and always
+  shows a live, continuously-refreshing view of the real panel. The
+  "does this edit show up immediately" job Reset to defaults needed
+  moved onto the mockups instead: every element type's `showMockup`
+  now also checks `dirty` (`... || dirty`, previously the `!dirty` sat
+  on `overLiveFrame` itself), so an unsaved edit still draws its mockup
+  immediately on top of the (possibly stale-until-Save) photo, without
+  making the photo itself disappear to do it.
+- **Added a Horizontal/Vertical orientation to the `bar` element**: a
+  new `orientation` field (default `"horizontal"`) picks which way the
+  fill runs -- left-to-right within the box's width, or bottom-to-top
+  within its height -- via a new `progress_bar_glow(..., vertical=...)`
+  parameter that swaps which axis the fill/rounded-ends/knob travel
+  along while keeping the same track rect either way. The property
+  panel's new Orientation dropdown also swaps the element's own width/
+  height when toggled (so switching to vertical turns a wide-short box
+  tall-narrow, matching the new fill direction, and back again).
+  Vertical bars place their live value text to the right of the bar,
+  pinned to its top, instead of directly below it -- an initial version
+  put it below, which collided with the fill's knob at low/idle values
+  (the common case, since the knob sits at the bottom of the track when
+  the reading is near its minimum); pinning to the top only risks the
+  same rare-case collision the horizontal layout already accepts (text
+  near the knob once a reading is close to its max). Verified via
+  direct `render_frame()` calls (horizontal, vertical, and vertical
+  with a missing stat reading -- confirms the empty-track "--" case
+  renders with no text/knob collision) and a Playwright pass confirming
+  the Orientation dropdown appears, swaps Width%/Height%, and updates
+  the on-canvas mockup's shape.
+- **Shrunk the bar element's knob** ("bar is looking bad? what is
+  that?") -- on real hardware, `progress_bar_glow()`'s knob (radius =
+  track thickness × 1.7) came out to a ~75px ball on the bar's ~22px-
+  thick track, dwarfing the track itself and swamping the title/value
+  text around it; that multiplier had only ever been tuned against the
+  now-playing progress bar's much thinner 6px track (~20px knob there).
+  `progress_bar_glow()` gained a `knob_scale` parameter (default 1.7,
+  unchanged, so the now-playing bar's look is untouched) and the bar
+  element's own call now passes `knob_scale=0.8`, bringing its knob
+  down to a reasonable size relative to the track.
+- **Fixed the weather element's content overflowing its own box**
+  ("weather box still not containing it, it still overflowing") --
+  `_draw_weather_element()` only ever centers its icon/temp/description/
+  details/location stack within the box height, it never clips or
+  scales it down, so a box shorter than what the enabled pieces
+  actually need (a manual resize, or a stale height left over from
+  before a piece was switched back on) just let the content spill past
+  the box silently -- most visibly the "Feels 32°C · 57% humidity"
+  detail line running into whatever sat below it.
+
+  First attempt: grow `_weather_box()` to fit the content
+  (`_weather_content_height()`) whenever the stored height was smaller.
+  That did stop weather's own content from overflowing, but a follow-up
+  screenshot on real hardware showed a worse side effect: growing the
+  box made a small element's real on-panel footprint balloon well past
+  what its own width/height fields said, so it started overlapping the
+  now-playing element sitting above it and the clock sitting below it
+  instead -- still visibly broken, just a different collision.
+
+  Replaced that with the reverse: the box now always stays exactly
+  `el["width"]`/`el["height"]`, no exceptions, and
+  `_draw_weather_element()` instead scales its *content* down to fit
+  whatever box that is -- icon size and every font size shrink together
+  (a new `scale = box_h / content_h_natural` factor, floored at 0.55 so
+  text never shrinks past legible) whenever the enabled pieces'
+  natural, full-size combined height would be taller than the box.
+  Scaled fonts are loaded through a new small `_cached_scaled_font()`
+  (an `lru_cache`-wrapped `load_font()`) so a per-element scale factor
+  that's the same frame to frame doesn't re-hit FreeType on every
+  single frame. `_weather_box()` lost the grow-to-fit logic entirely;
+  `estimateWeatherHeight()` on the frontend (used to auto-fit the box
+  on each show_* checkbox toggle) is unchanged as a *suggestion*, but
+  is no longer also applied as a floor on the mockup's rendered height
+  -- the mockup now always matches `el.width`/`el.height` exactly, same
+  as the real render. Verified via a direct `render_frame()` call
+  reproducing the screenshot's exact layout (a small 19%×9% weather box
+  with all five pieces on, sandwiched between a now-playing element and
+  a clock): the box no longer grows past its own dimensions and every
+  piece renders as a compact, fully-contained readout instead, with no
+  overlap into either neighbor; a Playwright pass confirms the on-canvas
+  mockup box now stays at exactly the Width%/Height% the property panel
+  says, even shrunk down to 19%/9%.
+- **Fixed unrelated elements' mockup boxes/borders lighting up while
+  dragging something else** ("when i move an object, why do other
+  objects get highlighted?") -- a regression from the "keep the live
+  panel photo always visible" fix a few entries up, which added
+  `|| dirty` to every element type's `showMockup` so a mass change like
+  Reset to defaults (nothing selected) would still visibly update. The
+  bug: *any* edit sets `dirty`, not just a mass one -- so an ordinary
+  drag on a single gauge, or a single checkbox flip, also flipped
+  `dirty` true, which meant every *other* box-type element (an image,
+  now-playing, weather) lit up its mockup border for the whole gesture
+  too, even though only one element was actually being touched.
+  Replaced the bare `dirty` check with a new `forceAllMockups = dirty
+  && !selectedId`: a mass change like Reset to defaults (or an
+  Undo/Redo landing on nothing selected) has no selection, so this
+  still kicks in and forces every mockup to show; an ordinary drag or
+  property-panel edit always has the element being edited selected, so
+  `isSelected` alone already covers that one element, and
+  `forceAllMockups` no longer fires for everyone else's. Verified: the
+  underlying `dirty && !selectedId` logic checked directly against the
+  three scenarios it needs to tell apart (drag with a selection -->
+  false, Reset with no selection --> true, no edits --> false); a
+  Playwright pass added a second box-type element (an image) alongside
+  a gauge and confirmed dragging the gauge moves only the gauge, with
+  the image element's own mockup box unaffected throughout the drag.
+- **Fixed clicking an element sometimes nudging it and always marking
+  the layout unsaved** ("sometimes when selecting something, i think it
+  gets moved a bit, because as soon as i click on an object, the save
+  layout activates"). A mouse/trackpad/touch "click" is never *exactly*
+  zero pixels of movement between pointerdown and pointerup -- there's
+  always a stray pointermove carrying a pixel or two of jitter -- and
+  every pointermove during a drag gesture ran straight through to
+  `setElements()`'s `prev.map(...)`, which allocates a new array (and a
+  new element object) even when the computed x/y come out numerically
+  unchanged. `dirty` is a strict `elements !== savedElementsRef.current`
+  reference check, so that alone was enough to flip it true and light up
+  "Save layout*" on a plain click, and in principle also let a stray
+  jitter pixel or two land as a barely-visible unintended move. Fixed
+  with a `MOVE_THRESHOLD_PX = 4` guard: `onPointerMove` now measures real
+  screen-pixel distance from where the gesture started and does nothing
+  at all -- no `setElements` call -- until that's crossed, so a plain
+  click leaves `elements` at its exact prior reference and `dirty` stays
+  false; once the threshold is crossed even once, the rest of the
+  gesture behaves exactly as before. `endDrag` also now skips pushing a
+  before/after pair onto the Undo stack for a gesture that never crossed
+  the threshold, since nothing changed. Verified with a Playwright pass:
+  a real mouse down/move-1px/move-2px/up sequence on a gauge left "Save
+  layout" inactive, while the same sequence with a 20px move afterward
+  correctly flipped it to "Save layout*".
+- **Fixed the `bar` element always showing its mockup box/border/label,
+  even saved and unselected** ("the bar looks highlighted by default").
+  `bar` had been lumped in with `graph` in `showMockup`'s "always show,
+  connected or not" case when it was added, on the reasoning that
+  neither mockup can preview live data this editor doesn't have. That
+  reasoning holds for `graph` (a rough placeholder that can't fake a
+  real line/history), but not for `bar` -- its mockup is just an
+  accent-colored fill/border/label at a fixed demo fraction, close
+  enough to the real thing (same as a gauge's demo needle) that keeping
+  it drawn permanently on top of an accurate live photo just reads as a
+  permanently-selected-looking box. `bar` now defers to the live frame
+  exactly like gauge/clock/media/weather already do (mockup only when
+  selected, disconnected, or right after a Reset/Undo-Redo with nothing
+  selected); only `graph` keeps the unconditional mockup. Verified the
+  `showMockup` boolean directly against the selected/connected/
+  forceAllMockups matrix for both `bar` and `graph`.
+- **Made the `bar` element's fill fully customizable**: an optional
+  "Show knob" toggle (off by default now -- direct follow-up feedback
+  on the round white handle from the previous entry was "i dont like
+  [it]"), and a "Gradient fill" option with 2-4 color stops (not just
+  the two colors gauge's own gradient option is limited to) and a
+  direction picker -- Left→Right or Top→Bottom, independent of the
+  bar's Orientation (fill direction), so a horizontal bar can gradient
+  top-to-bottom and a vertical one left-to-right if that reads better
+  than matching the value's own fill axis. Backend: a new
+  `_linear_gradient_multi()` generalizes the existing `_linear_gradient()`
+  (kept as-is for its own fixed top-to-bottom two-stop callers) to an
+  arbitrary stop count and either axis; `progress_bar_glow()` gained
+  `show_knob` and `fill_colors`/`fill_direction` params, and a new
+  `_bar_fill_subtile()` helper slices the *filled* portion's colors out
+  of a virtual full-bar-sized gradient (so a given spot on the bar keeps
+  its color as the value changes -- only how much of the gradient is
+  revealed moves) while still building the rounded-end mask at the
+  actual small fill size (so the visible end keeps its rounded cap
+  instead of a hard-cropped edge). Frontend: the bar's on-canvas mockup
+  now renders an actual SVG `linearGradient` matching the selected
+  stops/direction instead of a flat color swatch, so picking colors
+  shows the real result immediately. Verified by rendering the backend
+  helpers directly (2-stop and 3-stop horizontal, vertical-direction-on-
+  horizontal-bar, horizontal-direction-on-vertical-bar, knob on/off) and
+  a Playwright pass driving the new panel controls end to end (add a
+  bar, toggle gradient on, add a third stop, switch direction, confirm
+  the mockup gradient updates each time).
+- **Extended the bar element's gradient-fill option (2-4 stops +
+  direction) to text, graph, clock's digital face, and gauge**, and
+  added a **"Preview on screen" button** so a layout edit can be shown
+  on the real panel for 5 seconds without Save layout first, then
+  reverted automatically. Frontend: the bar-only gradient JSX became a
+  shared `GradientFillControl` component and a shared `gradientFill()`
+  mockup helper, reused by every element's property panel and canvas
+  preview; gauge keeps its separate "Custom color" override alongside
+  the new gradient option, with its own Diagonal/Left→Right/Top→Bottom
+  direction choices. Backend: text and clock's digital face gradient
+  by drawing the glyphs as an alpha mask and recoloring it with
+  `.putalpha()`; graph reuses its existing tile's alpha the same way;
+  gauge uses cairo's native `add_color_stop_rgba()` for an arbitrary
+  stop count, with the older single `color2` field still honored
+  (folded into a 2-stop diagonal gradient) on layouts saved before
+  this change. Preview reuses Save layout's existing "push to the
+  live render loop without restarting" mechanism but skips writing to
+  disk, and a `threading.Timer` reverts to whatever's actually saved
+  after 5 seconds -- cancelled if a new preview or a real Save happens
+  first. The button is disabled whenever Save layout would be, too
+  (Dashboard theme not running). Verified by direct-rendering all four
+  new backend gradient paths, a Playwright pass confirming the Preview
+  button's disabled state and the new gradient panels on text, graph,
+  and gauge (direction dropdown, color swatches, live mockup update,
+  gauge's Custom color checkbox left intact).
+
+- **Fixed Bring to front/Send to back doing nothing for most elements.**
+  The canvas already tracked each element's `z` and sorted by it
+  correctly when baking the *static* layer (text/image, baked once into
+  the background image) -- but `render_frame()`'s per-frame loop for
+  every *dynamic* element (gauge, graph, bar, media, clock, weather --
+  i.e. nearly everything a real dashboard is made of) walked the raw
+  `elements` list instead, completely ignoring `z`. So reordering two
+  overlapping gauges, or a now-playing box and the gauges behind it,
+  visibly did nothing, because the thing actually drawn on top every
+  frame never consulted the order the buttons were changing. Fixed by
+  sorting that loop by `z` too, same as the static bake already did.
+  Note: a dynamic element still always draws on top of every static
+  (text/image) one regardless of `z`, since static elements are baked
+  into the background once and dynamic ones are layered on top of that
+  afterward every frame -- ordering *within* the dynamic group (the
+  common case) now works, ordering across the static/dynamic boundary
+  is a separate, deeper limitation left for later.
+- **Fixed the bar element showing nothing at all below roughly its own
+  thickness ÷ track length as a fraction** (~15% for a typical bar --
+  e.g. a vertical CPU-usage bar reading flat empty until usage spiked).
+  `_bar_fill_subtile()`'s rounded-corner mask used a fixed radius (half
+  the track's thickness) that could exceed the actual filled sliver's
+  own height/width at a low value, so `progress_bar_glow()` skipped
+  drawing the fill entirely rather than risk a malformed rounded rect --
+  the knob still moved, but the colored fill (and gradient, if any)
+  stayed invisible until the value climbed past that threshold, reading
+  as a stuck 0%. Fixed by clamping the mask's radius to the sliver's
+  own size before drawing, so any nonzero value now shows a proportional
+  fill down to a small round dot at the very bottom/left instead of
+  nothing.
+
+- **"Launch at Windows startup" switched from a Startup-folder .vbs to
+  a Task Scheduler task (logon trigger).** A user report -- the app
+  taking over a minute to appear after logging in, versus 5 seconds
+  for another vendor's startup app on the same machine -- traced to the
+  launch mechanism itself, not anything about this app's own code:
+  items in the Startup folder (and the Run registry key) are exactly
+  what Windows' own post-login "boot storm" mitigation deliberately
+  staggers/delays, sometimes by minutes, to keep the system responsive
+  right after logon. A Task Scheduler task with an "at logon" trigger
+  fires directly off that event instead, bypassing that throttling --
+  the standard fix for a slow-to-appear startup app. An existing
+  install migrates automatically the next time the "Launch at Windows
+  startup" checkbox is touched (off, or back on) -- no manual file
+  cleanup needed, and toggling it never leaves both the old and new
+  mechanism registered at once (which would have launched the app
+  twice at login).
+
+- **Fixed action errors (including a failed "Launch at Windows startup"
+  toggle) being invisible unless the Controls section happened to be
+  open.** Every button that fails goes through the same shared error
+  state, but it was only ever rendered inside the Controls -- panel &
+  theme section -- so a failure from a button anywhere else on the page
+  (the System section's startup/shortcut controls, among others) set
+  the error just fine, it just landed nowhere the person was looking,
+  read as "nothing happens, no error anywhere." Moved that banner to
+  right under the header, above every section, so it's visible no
+  matter which one is open or closed, and gave it a bit more visual
+  weight (background tint, border, padding) so an error can't blend in
+  as another line of small text. Verified with Playwright: opened
+  System with Controls collapsed, triggered a failing action, and
+  confirmed the banner renders above Controls regardless.
+
+- **Added detailed logging around the "Launch at Windows startup"
+  toggle**, after a report that the checkbox still didn't work with no
+  error anywhere, even after the previous two fixes to this area.
+  Every step now writes to the app's own Log panel: the exact command
+  that would run at logon, the literal `schtasks.exe` invocation, its
+  exit code and both stdout/stderr, whether a leftover old-style
+  launcher got cleaned up, and a re-check right after saying whether
+  Windows now actually reports the task as registered. Previously only
+  a failure's single exception message was visible (nothing at all on
+  a call that "succeeded" but didn't actually take) -- this makes it
+  possible to tell apart "schtasks refused" (permissions/policy),
+  "schtasks silently didn't do what was asked", and "it worked, but
+  something downstream is reporting it wrong" by reading what actually
+  happened, rather than guessing from a blank Log panel. Threaded
+  through both the web UI's controller and the Tkinter app's own
+  "Launch at startup" checkbox, so either one logs the same way.
+
+- **"Launch at Windows startup" now retries with a UAC elevation
+  prompt if the plain attempt is refused.** The new logging above
+  immediately paid off: a real machine came back with `schtasks
+  exited 1 -- stderr: ERROR: Access is denied.` on the very first
+  (non-elevated) attempt, even for a `/rl limited` task (one that
+  only ever *runs* at the person's own privilege level once it fires
+  at logon -- evidently *creating* it still needed an elevated
+  creator, on that account/policy). A plain attempt is still tried
+  first and is enough on most machines, so most people never see a
+  prompt at all; only when that specific attempt looks like a
+  permissions refusal does it retry via PowerShell's `Start-Process
+  -Verb RunAs` (the actual UAC consent dialog), captures that elevated
+  attempt's own exit code and stdout/stderr the same way, and logs
+  every step of it too. Declining the prompt surfaces as a clear
+  "permission prompt was declined" error rather than the login-task
+  silently never existing with no explanation.
+
+- **Fixed the elevated retry itself failing before it could even show
+  a UAC prompt** -- the very first version tried `-Verb RunAs`
+  directly on schtasks.exe together with `-RedirectStandardOutput`/
+  `-RedirectStandardError` (to capture its output the same way the
+  plain attempt does), which PowerShell immediately rejected with
+  "Parameter set cannot be resolved using the specified named
+  parameters" -- confirmed by a real run, where no UAC prompt ever
+  appeared at all. Output redirection and elevation are two different,
+  mutually exclusive parameter sets on `Start-Process`: an elevated
+  child runs with a different token in effectively a different
+  session, so its streams can't be piped back across that boundary
+  the normal way, and PowerShell refuses to even attempt the
+  combination. Fixed by elevating a small temporary `.ps1` script
+  instead of schtasks directly -- the script runs *inside* the
+  elevated process and writes schtasks' own combined output and exit
+  code to two plain temp files with ordinary `Out-File`, so nothing
+  needs to cross the elevation boundary at all; the outer, unelevated
+  `Start-Process -Verb RunAs -Wait` call only elevates and waits, with
+  no redirection parameters to conflict. The script and its two output
+  files are temporary (a random suffix per attempt) and always cleaned
+  up afterward, success or failure.
+- **Fixed the elevated retry reporting a real success as a failure** --
+  with the `.ps1`-script fix above in place, a real run showed the UAC
+  prompt appearing, being approved, and schtasks itself printing
+  `SUCCESS: The scheduled task "HongtaiScreenApp" has successfully
+  been created.` to its own output file, yet the app logged `elevated
+  schtasks exited -1` and left the "Launch at Windows startup"
+  checkbox unchecked. Cause: the inner elevated script writes both
+  output files with `Out-File -Encoding utf8`, and Windows PowerShell
+  5.1's `utf8` encoding (unlike PowerShell 7's same-named one) always
+  prepends a UTF-8 byte-order-mark; reading that back with Python's
+  `encoding="utf-8"` left the BOM glued onto the text as a leading
+  `﻿` character, which `str.strip()` doesn't remove since it
+  isn't whitespace -- so `int("﻿0")` raised `ValueError` and fell
+  through to the `-1` fallback every single time, regardless of what
+  schtasks actually returned. Fixed by reading both temp files with
+  `encoding="utf-8-sig"` instead, which strips a leading BOM when
+  present and is otherwise identical to `"utf-8"`; also added a log
+  line on that fallback path so a future parse failure (if any) names
+  the actual exception instead of just showing `-1`.
 
 ## [1.0.0] — 2026-08-29
 

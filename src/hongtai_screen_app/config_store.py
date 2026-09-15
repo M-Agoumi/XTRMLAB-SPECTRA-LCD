@@ -96,3 +96,52 @@ def migrate_dashboard_elements(cfg):
     d["elements"] = elements
     d["_migrated_elements_v1"] = True
     return True
+
+
+def migrate_dashboard_weather_element(cfg):
+    """One-time upgrade for a saved config that used the old global
+    `middle_content` "weather" choice (dashboard_theme.py's now-removed
+    MIDDLE_CONTENT_OPTIONS/set_middle_content()) -- converts it into a
+    real `weather` element (dashboard_theme.default_weather_element())
+    carrying that config's `weather_location`/`weather_units`, the same
+    "the old global setting becomes a real element" move
+    migrate_dashboard_elements() above already made for the old
+    "spotify" middle_content choice and the now-playing display.
+
+    Mutates `cfg` in place and returns True if it changed anything --
+    same caller contract as migrate_dashboard_elements() (both
+    AppController.__init__ and App.__init__ call this right after it).
+    Flagged via `dashboard._migrated_weather_v1` so it runs exactly
+    once -- without that flag, someone who deliberately removes the
+    weather element from their canvas would just get it silently
+    re-added on the next launch."""
+    d = cfg.get("dashboard")
+    if not isinstance(d, dict):
+        return False
+    if d.get("_migrated_weather_v1"):
+        return False
+
+    had_weather = d.get("middle_content") == "weather"
+    elements = d.get("elements")
+    has_weather = isinstance(elements, list) and any(el.get("type") == "weather" for el in elements)
+
+    if had_weather and not has_weather:
+        from .themes import dashboard_theme  # lazy: keep load_config() light for callers that don't need it
+
+        weather_el = dashboard_theme.default_weather_element()
+        weather_el["location"] = d.get("weather_location") or ""
+        weather_el["units"] = d.get("weather_units") or "celsius"
+        elements = list(elements) if isinstance(elements, list) else []
+        elements.append(weather_el)
+        d["elements"] = elements
+
+    # `middle_content`/`weather_location`/`weather_units` are retired
+    # either way -- weather.py's location/units now live on the element
+    # itself (see dashboard_theme.apply_weather_from_elements()), and
+    # anyone who had middle_content "none" just wasn't showing weather,
+    # exactly as leaving it off the canvas now means.
+    d.pop("middle_content", None)
+    d.pop("weather_location", None)
+    d.pop("weather_units", None)
+    d["_migrated_weather_v1"] = True
+    return True

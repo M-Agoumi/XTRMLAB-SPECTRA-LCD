@@ -65,15 +65,15 @@ def dashboard_kwargs(cfg, port, brightness):
     web_port = _parse_int(d.get("web_port"), default=8765)
     art_path = d.get("default_art_path") or None
     not_playing_message = d.get("not_playing_message") or None
-    middle_content = d.get("middle_content") or "none"
-    weather_location = d.get("weather_location") or None
-    weather_units = d.get("weather_units") or "celsius"
+    # Weather no longer has its own kwargs here -- it's a `weather`
+    # element in `elements` now (see dashboard_theme.default_weather_
+    # element()), applied via dashboard_theme.run()'s own call to
+    # apply_weather_from_elements() rather than being passed in.
     elements = resolve_dashboard_elements(cfg)
     background = dict(dashboard_theme.DEFAULT_BACKGROUND, **(d.get("background") or {}))
     return "Dashboard", dashboard_theme.run, dict(
         port=port, web_port=web_port, enable_web=bool(d.get("enable_web", False)),
         default_art_path=art_path, not_playing_message=not_playing_message,
-        middle_content=middle_content, weather_location=weather_location, weather_units=weather_units,
         brightness=brightness, elements=elements, background=background,
     )
 
