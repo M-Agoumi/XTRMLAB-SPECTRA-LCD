@@ -3355,6 +3355,78 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
     return img
 
 
+# Fixed, plausible demo values used only for render_preset_thumbnail()
+# below -- never a real hardware/psutil reading. Picked mid-range
+# rather than 0 or blank so every gauge/bar in a thumbnail actually
+# shows a visible fill instead of looking broken or empty; fixed
+# (not randomized) so the same preset always renders the same
+# thumbnail rather than jittering on every page load.
+_THUMBNAIL_STATS = {
+    "cpu_load": 42, "gpu_load": 55, "gpu_temp": 58, "ram": 61,
+    "network": 12.4, "cpu_freq": 3.6, "disk_usage": 47, "vram_usage": 38,
+    "swap": 5, "disk_io": 8.2, "gpu_power": 95, "process_count": 210,
+    "cpu_load_peak": 68, "battery": 80,
+}
+
+_thumbnail_fonts_cache = None
+
+
+def _thumbnail_fonts():
+    """A single shared Fonts() instance (loading fonts from disk isn't
+    free) reused across every render_preset_thumbnail() call in this
+    process -- fine to share since Fonts() is read-only once built and
+    a thumbnail render never mutates it, same reasoning run()'s own
+    `fonts = Fonts()` (built once per Start, not per frame) already
+    relies on."""
+    global _thumbnail_fonts_cache
+    if _thumbnail_fonts_cache is None:
+        _thumbnail_fonts_cache = Fonts()
+    return _thumbnail_fonts_cache
+
+
+def render_preset_thumbnail(elements, background, width=480, height=240):
+    """Renders a small preview image of `elements` on `background` --
+    what actually shows in the web UI's preset picker (DashboardCanvas.
+    jsx) so a person can see what a saved preset looks like before
+    loading it, instead of picking a name blind out of a dropdown.
+
+    Deliberately reuses the exact same build_static_background()/
+    render_frame() pipeline the real panel renders through, rather than
+    a separate lightweight mock -- a thumbnail that drew gauges/bars/
+    text some other way could quietly drift from what Start/Apply
+    actually shows, which would make the picker actively misleading
+    instead of merely absent. The only inputs a thumbnail needs that a
+    live render doesn't: `_THUMBNAIL_STATS` (fixed, plausible numbers)
+    stand in for psutil/GPU readings no panel connection or hardware
+    poll is needed to produce here; `media=None` reuses the theme's own
+    existing "nothing playing" placeholder rendering rather than a
+    separate fake-track mock; and each graph element gets a short
+    synthetic wave instead of an empty history deque, so its line
+    actually shows rather than rendering as a flat, empty box.
+
+    Rendered at a fixed small size (480x240 by default -- half of the
+    panel's own 960x480 REFERENCE_WIDTH/HEIGHT) rather than the real
+    panel's resolution: every element's x/y/radius/etc. is stored as a
+    fraction of the reference size (see REFERENCE_WIDTH/HEIGHT's own
+    comment), so the exact same layout renders correctly at any target
+    size -- a thumbnail has no reason to pay for a full-resolution
+    render (and the base64 payload size that comes with it) just to be
+    shrunk again for display in a small picker card."""
+    fonts = _thumbnail_fonts()
+    bg_image, layout = build_static_background(width, height, fonts, elements, background)
+    history = {}
+    for el in elements:
+        if el.get("type") != "graph":
+            continue
+        n = 12
+        base_val = _THUMBNAIL_STATS.get(el.get("stat")) or 50
+        history[el["id"]] = deque(
+            (max(0.0, min(100.0, base_val + 15 * math.sin(i / 2))) for i in range(n)),
+            maxlen=n,
+        )
+    return render_frame(bg_image, layout, width, height, fonts, _THUMBNAIL_STATS, None, history)
+
+
 def apply_weather_from_elements(elements):
     """Points weather.py's background poll at whichever `weather`
     element is on the canvas (the first one, if more than one -- the

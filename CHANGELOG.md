@@ -1467,6 +1467,50 @@ dashboard designer) this is laying groundwork for.
   to steal focus outright, with no reliable way to detect that from
   here), so this is the same caveat `single_instance.py` already
   documents, not a new limitation.
+- **Dashboard presets are now a grid of actual rendered pictures
+  instead of a `<select>` of plain names.** The old picker made
+  picking a preset a memory test -- "Streaming layout" and "Minimal"
+  tell you nothing about what either one actually looks like until
+  after you've loaded it. `dashboard_theme.py` gained
+  `render_preset_thumbnail()`, which renders a small preview image of
+  a set of elements through the *exact same*
+  `build_static_background()`/`render_frame()` pipeline the real panel
+  renders through (not a separate lightweight mock, so a thumbnail can
+  never drift from what loading the preset would actually show) --
+  fixed, plausible demo stat values stand in for live psutil/GPU
+  readings (no hardware connection needed to render one), `media=None`
+  reuses the theme's own existing "nothing playing" placeholder, and
+  each graph element gets a short synthetic wave instead of an empty
+  history buffer. `AppController._dashboard_preset_thumbnails()`
+  renders one PNG per saved preset (against the currently configured
+  background, since presets only ever store `elements`, never their
+  own background) and hands them back as `data:image/png;base64,...`
+  strings -- both from `dashboard_meta()` (so the picker has pictures
+  on page load) and from `save_dashboard_preset()`/
+  `delete_dashboard_preset()`'s own responses (so saving or deleting a
+  preset updates the picker's pictures without a full page reload). A
+  single malformed saved preset logs and is skipped rather than
+  blanking the whole picker.
+
+  `DashboardCanvas.jsx`'s preset picker is now a grid of cards (one
+  per preset): clicking a card's thumbnail loads it immediately --
+  seeing the picture and picking it is the same gesture, no separate
+  Load button -- and each card has its own Delete button that arms on
+  the first click ("Confirm?", auto-disarming after 3 seconds) and
+  only actually deletes on a second, so a card that loads on a single
+  click doesn't leave a one-misclick-from-losing-a-layout trap next to
+  it. A preset whose thumbnail somehow failed to render still gets a
+  clickable card with a "No preview" placeholder instead of vanishing
+  from the picker entirely.
+
+  Verified with a mocked backend (two saved presets, real thumbnails
+  rendered through the actual pipeline) driven through a headless
+  browser: both thumbnails render correctly and look visibly
+  different, clicking a card's thumbnail loads that preset (element
+  count changes, status line confirms), the delete button's first
+  click arms it ("Confirm?") without deleting, and the second click
+  deletes only that card, leaving the other preset's card untouched --
+  no console errors at any point.
 
 ## [1.0.0] — 2026-08-29
 

@@ -13,6 +13,7 @@ fully testable without a display -- and, unlike the Tkinter app, built
 on ScreenEngine (screen_engine.py) instead of ThemeWorker, so switching
 themes here reuses one persistent connection instead of reconnecting.
 """
+import io
 import os
 import queue
 import sys
@@ -317,6 +318,7 @@ class AppController:
             "elements": theme_kwargs.resolve_dashboard_elements(cfg),
             "defaults": dashboard_theme.DEFAULT_ELEMENTS,
             "presets": d.get("presets", {}),
+            "presetThumbnails": self._dashboard_preset_thumbnails(d.get("presets", {})),
             "stats": {
                 key: {"label": meta["label"], "title": meta["title"]}
                 for key, meta in dashboard_theme.STAT_DEFS.items()
@@ -522,7 +524,7 @@ class AppController:
             dashboard_cfg["presets"] = presets
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
-            return presets
+            return {"presets": presets, "thumbnails": self._dashboard_preset_thumbnails(presets)}
 
     def delete_dashboard_preset(self, name):
         with self._lock:
@@ -532,7 +534,43 @@ class AppController:
             dashboard_cfg["presets"] = presets
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
-            return presets
+            return {"presets": presets, "thumbnails": self._dashboard_preset_thumbnails(presets)}
+
+    def _dashboard_preset_thumbnails(self, presets, background=None):
+        """Renders every saved preset's small preview picture (a
+        `data:image/png;base64,...` URI, ready for an <img src=...>) --
+        see dashboard_theme.render_preset_thumbnail()'s own docstring
+        for why this reuses the real render pipeline instead of a
+        lightweight mock. `background` defaults to the currently
+        configured panel background: a preset only ever stores
+        `elements` (see save_dashboard_preset() just above), never its
+        own background, since the background is one global panel
+        setting shared by every preset -- so "what loading this preset
+        would actually look like" always means against whatever
+        background is configured right now.
+
+        Called with the lock already held by save/delete above (cheap
+        enough -- a handful of presets, each a small Pillow render --
+        not to be worth releasing it for) and without the lock from
+        dashboard_meta() (which only reads self.cfg once up front,
+        outside its own `with` block, same as every other field it
+        returns). A single bad/malformed saved preset (hand-edited
+        app_config.json, say) logs and is skipped rather than taking
+        down the whole picker -- every other preset's thumbnail still
+        renders."""
+        dashboard_cfg = self.cfg.get("dashboard") or {}
+        if background is None:
+            background = dict(dashboard_theme.DEFAULT_BACKGROUND, **(dashboard_cfg.get("background") or {}))
+        thumbnails = {}
+        for name, elements in presets.items():
+            try:
+                img = dashboard_theme.render_preset_thumbnail(elements, background)
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                thumbnails[name] = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+            except Exception as e:  # noqa: BLE001 -- one bad preset shouldn't blank the whole picker
+                self._log(f"(dashboard: couldn't render a thumbnail for preset {name!r}: {e})")
+        return thumbnails
 
     def list_ports(self):
         """Scans for Hongtai-family panels right now (driver.
