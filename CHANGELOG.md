@@ -1787,6 +1787,49 @@ dashboard designer) this is laying groundwork for.
   thumbnails; loading either in a headless browser shows every label/
   value row and the clock+date live and in place, no overlap or
   clipping.
+- **Fixed: Save layout not applying a loaded preset's background** —
+  reported directly: "pressing a preset, and pressing save layout
+  doesn't update the background". Save layout only ever called
+  `saveDashboardElements()`; a preset's own background sat in
+  `bgDraft` until a *second*, separate "Save background" click further
+  down the page, which nothing in the UI actually made clear was
+  still required. Save layout now persists both together in one
+  action whenever a background is staged and differs from what's
+  saved (a new `savedBackgroundRef`, mirroring the existing
+  `savedElementsRef`, plus a `backgroundsEqual()` structural-compare
+  helper since `bgDraft` is a fresh object on every edit, not a stable
+  reference the way `elements` is). `dirty` and the live-preview
+  polling effect both now cover a background-only change too, not
+  just an elements change -- a background-only edit used to silently
+  need its own separate Save click with no visual "you have unsaved
+  changes" cue at all. "Save background" stays as its own button, for
+  a background-only edit made directly in the Background section
+  without touching the canvas. Verified: loading a preset and clicking
+  Save layout now fires both `/api/dashboard/elements` and
+  `/api/dashboard/background` with the preset's own background.
+- **Cherry Blossom/Petal Dream redesigned** — direct follow-up
+  feedback on the pair added just above: "the background integrate
+  into the design, that's a sophisticated theme, yours isn't, it's a
+  simple background on text on top of it". Fair complaint against the
+  reference photo -- v1's generated backgrounds were a blurred scatter
+  of flower blobs sitting *behind* independently-placed text, not a
+  design the text was actually part of. Rewrote both generators
+  (`scripts/generate_backgrounds.py`) with real line art positioned
+  using the *same x/y fractions* as the matching preset's own text
+  elements, not random placement: a proper ribbon/banner shape (a
+  closed polygon with V-notch ends) sits directly behind the title,
+  thin rule lines underline each column header, a vertical divider
+  separates the two stat columns, ornate nested-arc corner swirls
+  frame the whole card, and a small 3-flower bouquet with leaves
+  anchors the empty gap between the columns -- standing in for the
+  reference photo's portrait as the composition's visual focal point,
+  the way v1 had nothing playing that role at all. The divider now
+  stops short of the bouquet instead of drawing straight through it,
+  and the loose flower scatter is confined to the margins outside the
+  text columns instead of drifting across the stat rows themselves.
+  Verified: `render_live_preview()` on both shows the ribbon-framed
+  title, ruled column headers, corner swirls, and the bouquet sitting
+  cleanly in the gap with no divider line cutting through it.
 
 ## [1.0.0] — 2026-08-29
 
