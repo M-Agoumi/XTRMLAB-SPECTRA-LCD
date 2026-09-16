@@ -1680,6 +1680,15 @@ dashboard designer) this is laying groundwork for.
   "..." button in the card footer (opens a small menu with Duplicate
   and Delete, closes on an outside click or once an action completes),
   so the name gets the footer's width back.
+- **Fixed: that new "..." menu's popover getting clipped off** --
+  visible starting to open but cut off mid-button, reported against
+  the "Deep Space" card. `.preset-card` had `overflow: hidden` (to
+  round the thumbnail image's top corners to match the card), which
+  also clipped the popover since it's deliberately positioned outside
+  the footer's own box to float over the thumbnail above it. Moved
+  that clipping onto `.preset-card-thumb` itself (the only part that
+  actually needs rounded corners) and dropped `overflow: hidden` from
+  the card, so the popover is free to render fully.
 
 ## [1.0.0] — 2026-08-29
 

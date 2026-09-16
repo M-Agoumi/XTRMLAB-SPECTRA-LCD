@@ -2185,6 +2185,22 @@ the name. Verified: duplicate-then-delete both still work end to end
 through the new menu, the menu opens/closes correctly, and preset
 names not aggressively long render in full.
 
+Immediately caught a second problem with that same menu, this time
+from a screenshot: the popover started opening but was cut off
+mid-button ("Deep Space"'s menu showing only a sliver of "Duplicate").
+`.preset-card` had `overflow: hidden` on it -- there to round the
+thumbnail image's top corners down to match the card's own
+`border-radius` -- and that clipped the menu too, since it's
+positioned (deliberately) outside the footer's own box so it can float
+over the thumbnail above it rather than getting squeezed into the
+footer's few remaining pixels. Moved the corner-rounding onto `.preset-
+card-thumb` itself (`border-radius: 7px 7px 0 0; overflow: hidden`,
+scoped to just the thumbnail) and dropped `overflow: hidden` from the
+card entirely. Verified at the user's own narrow viewport width (5
+columns, same as their screenshot): the popover's bounding box now
+sits fully outside the card with both buttons visible and clickable,
+and duplicating through it still works end to end.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit
