@@ -2201,6 +2201,52 @@ columns, same as their screenshot): the popover's bounding box now
 sits fully outside the card with both buttons visible and clickable,
 and duplicating through it still works end to end.
 
+Reported next, with a screenshot: loading "Panic Mode" showed a broken
+mashup -- its own gauges/text overlapping ghosted labels and a stray
+icon that turned out to belong to whatever theme the panel was
+actually still running. Two separate things were going on. First, the
+design canvas's live-panel photo (`.canvas-frame`) only ever updates
+from the real hardware, and loading a preset doesn't push anything to
+the hardware by itself (Save layout/Save background or Preview on
+screen do that) -- so right after a load, the photo underneath was
+still the *previous* theme, while `forceAllMockups` (dirty, nothing
+selected) correctly drew the *new* preset's mockups on top of it. Two
+unrelated designs, stacked. Fixed by showing that preset's own pre-
+rendered thumbnail (`meta.presetThumbnails[name]` -- the exact image
+the picker card itself already uses, layout and background baked
+together) as the canvas backdrop instead, for exactly the window
+between loading and the next thing that makes it stale (a drag,
+property edit, undo/redo, Reset to defaults, or an actual Save/
+Preview) -- tracked via a ref holding the `elements` array reference
+the thumbnail was captured for, cleared by a small effect the moment
+`elements` moves on to anything else. `forceAllMockups` also had to
+learn about this: with an accurate thumbnail already showing every
+element in place, forcing the SVG mockups on top too would have
+just re-introduced the same double-render problem against accurate
+content instead of stale content, so it's now suppressed for that one
+window (`hasAccurateBackdrop`, replacing each mockup gate's own local
+`connected && frameUrl` check, folds in "or presetPreviewUrl is
+standing in for it").
+
+Second, and the actual reason the *background* specifically never
+showed up even after intentionally trying it on the real panel:
+"Preview on screen" only ever sent the edited elements to
+`preview_dashboard_elements()`, never the background, even though a
+loaded preset (or a hand-edited background dropdown) stages one right
+alongside the elements. `preview_dashboard_elements()` now takes an
+optional `background` too, snapshots the currently-saved background
+the same way it already snapshots saved elements, and reverts both
+together when the preview window ends; `save_dashboard_background()`
+picked up the same pending-preview-cancel guard
+`save_dashboard_elements()` already had, so a real Save landing mid-
+preview can't get silently reverted by that preview's timer a few
+seconds later. Verified: loading a preset now shows its own clean,
+accurate render immediately (zero overlapping SVG text or shapes
+until something's actually selected or edited); dragging an element
+correctly falls back to the real live photo + per-element mockups;
+Save layout clears the stand-in thumbnail; Preview on screen's request
+now carries both the elements and the preset's own background.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

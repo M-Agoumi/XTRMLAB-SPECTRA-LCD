@@ -1689,6 +1689,24 @@ dashboard designer) this is laying groundwork for.
   that clipping onto `.preset-card-thumb` itself (the only part that
   actually needs rounded corners) and dropped `overflow: hidden` from
   the card, so the popover is free to render fully.
+- **Fixed: loading a preset showed a broken-looking mashup instead of
+  a clean preview** -- the new layout's mockups drawn on top of
+  whatever the *previous* theme still looked like on the physical
+  panel, since nothing had actually been pushed there yet. The design
+  canvas's live-panel photo now only updates from the real panel once
+  something's actually been applied; right after loading a preset it
+  shows that preset's own pre-rendered thumbnail instead (the same
+  accurate image the picker card itself uses, layout and background
+  together) until an edit, Save, or Preview makes something else the
+  accurate view again. Also fixed the underlying reason a preset's
+  background never showed up on the actual panel from "Preview on
+  screen": that button only ever sent the edited *elements*, never the
+  background, even when one had just been staged from a loaded preset
+  (or edited by hand) -- `preview_dashboard_elements()` now takes an
+  optional `background` too and reverts both together when the preview
+  window ends, and `save_dashboard_background()` cancels a pending
+  preview revert the same way `save_dashboard_elements()` already did,
+  so a Save landing mid-preview can't get stomped back afterward.
 
 ## [1.0.0] — 2026-08-29
 

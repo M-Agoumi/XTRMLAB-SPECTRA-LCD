@@ -134,18 +134,22 @@ export function saveDashboardElements(elements) {
   }).then(asJson);
 }
 
-export function previewDashboardElements(elements, duration = 5) {
+export function previewDashboardElements(elements, background = null, duration = 5) {
   // Same shape as saveDashboardElements(), but the backend never
-  // touches config_store for this one -- it just shows `elements` live
-  // on the running dashboard theme for `duration` seconds, then reverts
-  // to whatever's actually saved on its own (controller.py's
-  // preview_dashboard_elements()/_revert_dashboard_preview()). Lets the
-  // design canvas offer "see this on the real panel" without it being
-  // the same commitment as Save layout.
+  // touches config_store for this one -- it just shows `elements` (and,
+  // if given, `background`) live on the running dashboard theme for
+  // `duration` seconds, then reverts both to whatever's actually saved
+  // on its own (controller.py's preview_dashboard_elements()/
+  // _revert_dashboard_preview()). Lets the design canvas offer "see
+  // this on the real panel" without it being the same commitment as
+  // Save layout / Save background. `background` used to not be sent at
+  // all -- previewing only ever pushed elements, so a preview right
+  // after loading a preset showed its layout over whatever background
+  // was still actually saved, not the preset's own.
   return fetch("/api/dashboard/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ elements, duration }),
+    body: JSON.stringify({ elements, background, duration }),
   }).then(asJson);
 }
 
