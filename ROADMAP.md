@@ -2247,6 +2247,56 @@ correctly falls back to the real live photo + per-element mockups;
 Save layout clears the stand-in thumbnail; Preview on screen's request
 now carries both the elements and the preset's own background.
 
+Next question back, almost immediately: "clicking on a preset it only
+shows it's image, the gauges and graphs dont move?" -- exactly right,
+and a real regression to flag, not just a nice-to-have. The static
+thumbnail fix above traded "two designs smashed together" for "a
+frozen picture" -- better, but a needle that never moves and a network
+reading stuck at one number for as long as you're looking at it reads
+as its own kind of broken, especially right after the *previous*
+fix's real live frame really had been visibly ticking (just showing
+the wrong design). Rebuilt it properly instead of patching the
+symptom: a new `dashboard_theme.render_live_preview()` renders
+`elements`/`background` with this machine's actual current stats --
+the exact same psutil/SystemInfos.exe/pynvml/winsdk calls run()'s own
+render loop makes every frame, just called once per request instead of
+in a 10Hz loop -- and a new `POST /api/dashboard/live_preview`
+(`controller.py`'s `render_dashboard_live_preview()`) exposes it. The
+design canvas polls that endpoint on a ~1.2s interval (EDITING_
+PREVIEW_POLL_MS) whenever `elements`/`bgDraft` differ from what's
+actually saved and there's no active "Preview on screen" countdown
+already showing the real thing for real -- covering a loaded preset,
+a drag, a property edit, undo/redo, Reset to defaults, all the same
+"the real live photo doesn't reflect this yet" cases the static
+thumbnail covered, just kept alive with fresh numbers on every tick
+instead of frozen at whatever it looked like the moment it was
+rendered. `forceAllMockups`/`hasAccurateBackdrop` didn't need to
+change shape at all -- editingPreviewUrl slotted into the exact same
+"is there an accurate backdrop right now" role presetPreviewUrl had,
+just refreshed repeatedly instead of set once.
+
+Caught one real bug writing the "stop polling once saved" half:
+saveLayout() marks things saved by mutating `savedElementsRef.current`
+(a ref) to match `elements`, which already equals the just-saved array
+-- there's no `setElements()` call to go with it, since nothing about
+`elements` itself needs to change. But a ref mutation alone doesn't
+retrigger a `useEffect` whose dependency array never actually changed,
+so the polling loop from before the save just kept ticking forever
+with a stale closure, silently never noticing `dirty` had gone false.
+Fixed with a plain `savedVersion` counter, bumped on every successful
+save and added to the effect's dependency list purely to give it a
+reason to re-run and notice.
+
+Verified against this sandbox's own real (if modest) CPU/RAM/network
+readings, not fixed placeholder numbers: loading a preset shows a
+live-rendered JPEG immediately, three separate polls over ~2.8s each
+actually reached the backend (confirmed via a call counter added to
+the mock server) and produced genuinely different images between at
+least some of them, and clicking Save layout stops the polling
+outright and hands back to the real (mocked) live frame -- verified
+both by the frame's `src` switching back to `/frame.jpg` and by the
+poll counter staying flat afterward instead of continuing to climb.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

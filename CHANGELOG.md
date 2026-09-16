@@ -1707,6 +1707,24 @@ dashboard designer) this is laying groundwork for.
   window ends, and `save_dashboard_background()` cancels a pending
   preview revert the same way `save_dashboard_elements()` already did,
   so a Save landing mid-preview can't get stomped back afterward.
+- **The preset-load preview above now genuinely moves instead of being
+  a frozen picture.** The static thumbnail fixed the broken-mashup
+  look, but a needle that never moves and a live network reading stuck
+  at one number reads as its own kind of "this is broken". A new
+  `render_live_preview()` (`dashboard_theme.py`) renders the current
+  design with this machine's actual live stats (same psutil/
+  SystemInfos.exe/pynvml/winsdk calls the real render loop makes) each
+  time it's called; the design canvas polls a new `/api/dashboard/
+  live_preview` endpoint on an interval (~1.2s) whenever there's an
+  unsaved edit the real live panel photo doesn't reflect yet -- a
+  loaded preset, a drag, a property change, all the same cases the
+  static thumbnail covered, just kept fresh now instead of rendered
+  once. Skips polling during an active "Preview on screen" countdown,
+  since the real panel is already showing this exact design for real at
+  that point. Verified: loading a preset shows genuinely different
+  numbers (this sandbox's own real CPU/RAM/network readings, not fixed
+  placeholder values) across repeated polls, and Save layout correctly
+  stops the polling and hands back to the real live frame.
 
 ## [1.0.0] — 2026-08-29
 

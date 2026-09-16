@@ -150,6 +150,10 @@ def _make_handler(controller: AppController):
                 elif path == "/api/dashboard/background":
                     body = self._read_json_body()
                     self._send_json(200, controller.save_dashboard_background(body.get("background")))
+                elif path == "/api/dashboard/live_preview":
+                    body = self._read_json_body()
+                    image = controller.render_dashboard_live_preview(body.get("elements"), body.get("background"))
+                    self._send_json(200, {"image": image})
                 elif path == "/api/dashboard/now_playing":
                     body = self._read_json_body()
                     self._send_json(200, controller.save_dashboard_now_playing(body.get("patch")))

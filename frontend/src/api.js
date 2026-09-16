@@ -153,6 +153,22 @@ export function previewDashboardElements(elements, background = null, duration =
   }).then(asJson);
 }
 
+export function renderDashboardLivePreview(elements, background) {
+  // A one-shot render of `elements`/`background` using this machine's
+  // actual current stats (controller.py's render_dashboard_live_
+  // preview() / dashboard_theme.render_live_preview()) -- returns
+  // {image: "data:image/jpeg;base64,..."}, ready for an <img src=...>.
+  // The design canvas polls this on an interval while there's an
+  // unsaved edit the real live panel photo doesn't reflect yet, so
+  // gauges/graphs keep visibly moving with real numbers instead of
+  // freezing on whatever they showed the moment a preset was loaded.
+  return fetch("/api/dashboard/live_preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ elements, background }),
+  }).then(asJson);
+}
+
 export function saveDashboardBackground(background) {
   return fetch("/api/dashboard/background", {
     method: "POST",
