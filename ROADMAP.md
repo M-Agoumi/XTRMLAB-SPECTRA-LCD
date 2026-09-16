@@ -2391,6 +2391,89 @@ mock) surfaces both as distinct 12th/13th picker cards with correct
 thumbnails; loading either in a headless browser shows every row live
 and in place immediately, no clipping, no console errors.
 
+Two pieces of direct feedback on that pair, immediately: "u saw the
+example i give u? the background integrate into the design, that's a
+sophisticated theme, your isn't, it's a simple background on text on
+top of it, i dont like it, aslo presssing a preset, and pressing save
+layout doesn't update the background". Two separate bugs, one design
+and one functional.
+
+The design one first, since it's the bigger piece of work: v1's
+generated backgrounds (`scripts/generate_backgrounds.py`'s
+`make_cherry_blossom()`/`make_lavender_bloom()`) were a scatter of
+soft-blurred flower blobs behind text placed independently on top --
+technically "a background" and "some text", but not one integrated
+design the way the reference photo's ornate gold corner scrollwork,
+title cartouche, and portrait all visibly belong to the same card.
+Rewrote both generators with real line art instead of only soft
+blobs, and -- the actual fix for "integrate into the design" -- placed
+every one of those elements using the *exact same x/y fractions* as
+the matching preset's own text elements in dashboard_theme.py (new
+`_CHERRY_LAYOUT`/`_PETAL_LAYOUT` constants mirror those elements'
+positions verbatim), instead of scattering shapes at random and hoping
+they'd roughly line up. Concretely: `_draw_title_banner()` draws a
+proper ribbon/pennant silhouette (a single closed polygon with a
+V-notch cut into each end) directly behind where the title text lands
+-- the first attempt used a rounded-rect outline plus separately-drawn
+diagonal "flag" lines that didn't actually meet the rounded corners,
+rendering as a pill shape with two disconnected floating chevrons next
+to it; fixed by tracing the whole ribbon (including both notched ends)
+as one connected polygon. `_draw_corner_flourish()` draws 3 nested
+quarter-circle arcs curling in from each corner plus a few
+embellishment dots, composited via `Image.transpose()` flips so one
+base image serves all 4 corners. `_card_frame_and_divider()` draws a
+thin rule under each column header and a vertical divider between the
+two stat columns, using the shared layout constants so the divider
+lands exactly between where the CPU/GPU (or System/Graphics) columns
+actually render. `_draw_flower_medallion()` (built on the existing
+`_draw_petal_flower()`, plus a new `_draw_leaf()` -- a small rotated
+ellipse, since PIL has no rotated-ellipse primitive -- for the first
+time anything in this file needed actual foliage, not just flower
+heads) composes a small 3-flower bouquet with leaves tucked under it,
+placed in the empty gap between the two stat columns as the
+composition's visual anchor -- standing in for the reference photo's
+portrait, which v1 had no equivalent of at all. First version of the
+bouquet had the leaves *longer than the flowers* and angled out past
+their edges, reading as stray antennae rather than supporting
+foliage, and the vertical divider drew straight through the middle of
+it looking like a skewer; fixed by shortening/steepening the leaves so
+only their tips peek out from under the petals, drawing them before
+the flowers so the petals layer on top, and giving
+`_card_frame_and_divider()` an optional `medallion_cy`/`medallion_gap`
+so the divider draws as two segments that stop short of the bouquet
+instead of one continuous line through it. The loose flower scatter
+(60 petals drifting across the *entire* canvas in v1, including
+directly behind the stat rows) is now 9 flowers confined to the
+margins outside the two text columns, so the readout itself stays
+calm instead of competing with background clutter for attention.
+
+The functional bug: Save layout only ever called `saveDashboardElements
+()` -- a loaded preset's own background sat in `bgDraft`, staged but
+unsaved, until a *second*, separate "Save background" click further
+down the page under Background settings, which the status message
+technically mentioned ("Save layout / Save background to apply") but
+nothing about the button itself made obvious was still required.
+Reported exactly right. Fixed by having Save layout persist both
+together in one action whenever a background is staged and actually
+differs from what's saved: a new `savedBackgroundRef` (mirroring the
+existing `savedElementsRef`) tracks what's actually persisted, and a
+`backgroundsEqual()` structural-compare helper is needed because
+unlike `elements` (always a fresh array from commit()/undo()/redo(),
+so reference equality works for `dirty`), `updateBgDraft()` spreads
+into a new object on every keystroke -- reference equality there would
+read as "dirty" on every render. `dirty` itself and the live-preview
+polling effect were both extended the same way, since neither had ever
+covered a background-only edit (no element touched) either -- that
+case used to leave `elements === savedElementsRef.current` true and
+silently skip the live-preview backdrop entirely, so a background-only
+change showed no visual feedback at all until a manual Save background
+click. "Save background" stays as its own button for exactly that
+case (background-only, no canvas edit); the two now overlap on purpose
+rather than one replacing the other. Verified through the mock
+harness: loading a preset and clicking Save layout fires both
+`/api/dashboard/elements` and `/api/dashboard/background` with the
+preset's own background, matching the elements call.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit
