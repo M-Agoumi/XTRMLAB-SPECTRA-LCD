@@ -82,6 +82,20 @@ function basename(path) {
   return path.split(/[\\/]/).pop();
 }
 
+// backgroundsEqual: plain structural comparison for `dirty` tracking
+// below -- a background object is always a flat {mode, scheme,
+// image_path} dict (never nested, never containing anything
+// non-JSON-safe like a function or a Date), so JSON.stringify on both
+// sides is a correct and cheap deep-equal here, same trick Save
+// layout's own "has anything actually changed" check needs. Treats
+// null/undefined as equal to each other (both "no background staged
+// yet") without treating either as equal to a real object.
+function backgroundsEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 // A short human-readable label for the element list panel -- "what is
 // this thing", not its full config. Mirrors the labels already drawn
 // inline on the canvas itself (gauge's stat title, graph/image/media's
@@ -573,6 +587,15 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   // enough: commit()/undo()/redo()/load() always hand back a *new*
   // array, never mutate elements in place.
   const savedElementsRef = useRef(null);
+  // Same idea as savedElementsRef, for the background -- lets `dirty`
+  // (and Save layout, below) know whether bgDraft is still just what's
+  // actually saved or a staged-but-unpersisted change (a loaded
+  // preset's own background, or a hand-edited background field).
+  // Compared structurally (backgroundsEqual()), not by reference: unlike
+  // elements (always handed a fresh array by commit()/undo()/redo()),
+  // updateBgDraft() spreads into a new object on every keystroke, so
+  // reference equality here would read as "dirty" on every render.
+  const savedBackgroundRef = useRef(null);
   const dragRef = useRef(null); // {id, mode: 'move'|'resize', beforeElements}
   const svgRef = useRef(null);
 
@@ -584,6 +607,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
         setElements(m.elements);
         savedElementsRef.current = m.elements;
         setBgDraft(m.background);
+        savedBackgroundRef.current = m.background;
         setNpDraft(m.nowPlaying);
         historyRef.current = [];
         futureRef.current = [];
@@ -599,24 +623,32 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
 
   // Keeps editingPreviewUrl fresh (see its own comment) while there's
   // an edit the real live panel photo doesn't reflect yet -- any
-  // difference from `savedElementsRef.current` covers a loaded preset
-  // exactly the same way it covers a drag, a property edit, undo/redo,
-  // or Reset to defaults, no separate tracking needed for any of those.
-  // Skipped during an active "Preview on screen" countdown
+  // difference from `savedElementsRef.current` *or* `savedBackgroundRef
+  // .current` covers a loaded preset exactly the same way it covers a
+  // drag, a property edit, undo/redo, Reset to defaults, or a
+  // background-only change (picking a different mode/scheme/photo with
+  // no element touched at all -- elements alone used to miss this case
+  // entirely, since `elements` stays the same reference until commit()
+  // hands back a new one, so a background-only edit's live backdrop
+  // silently kept showing the *old* background until Save background
+  // was clicked). Skipped during an active "Preview on screen" countdown
   // (previewSecondsLeft !== null): the real panel is showing this
   // exact design for real during that window (previewLayout() just
   // pushed it), so the real live frame is already a more accurate
   // backdrop than a second render of the same thing done here.
   // `savedVersion` is in the dependency list purely so saveLayout()'s
   // save can retrigger this: it marks things saved by mutating
-  // savedElementsRef.current (a ref), not by changing `elements` itself
-  // (it's already the just-saved array), and a ref mutation alone
-  // doesn't retrigger an effect whose actual dependencies never
-  // changed -- without this, the poll from before the save would just
-  // keep ticking forever with a stale closure, never noticing `dirty`
-  // had gone false.
+  // savedElementsRef.current/savedBackgroundRef.current (refs), not by
+  // changing `elements`/`bgDraft` themselves (they're already the
+  // just-saved values), and a ref mutation alone doesn't retrigger an
+  // effect whose actual dependencies never changed -- without this, the
+  // poll from before the save would just keep ticking forever with a
+  // stale closure, never noticing `dirty` had gone false.
   useEffect(() => {
-    if (!elements || elements === savedElementsRef.current || previewSecondsLeft !== null) {
+    const unsaved =
+      elements &&
+      (elements !== savedElementsRef.current || !backgroundsEqual(bgDraft, savedBackgroundRef.current));
+    if (!unsaved || previewSecondsLeft !== null) {
       setEditingPreviewUrl(null);
       return;
     }
@@ -954,20 +986,46 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     setSelectedId(null);
   };
 
-  const saveLayout = () =>
-    api.saveDashboardElements(elements).then(
-      () => {
+  // Save layout now saves the *whole canvas* -- elements and, if it's
+  // staged and different from what's actually saved, the background
+  // too -- in one action. It used to only ever touch elements, leaving
+  // a loaded preset's background sitting in bgDraft until a *second*,
+  // separate "Save background" click down in the Background section.
+  // Reported directly: "pressing a preset, and pressing save layout
+  // doesn't update the background" -- exactly right, and the same
+  // trap "Preview on screen" used to have before it was fixed to send
+  // both together (see previewDashboardElements()'s own comment) --
+  // Save layout just never got the matching fix at the time. A
+  // background-only edit (no element touched) now saves correctly too,
+  // instead of silently needing its own separate button press.
+  const saveLayout = () => {
+    const backgroundNeedsSaving = bgDraft && !backgroundsEqual(bgDraft, savedBackgroundRef.current);
+    const saveElements = api.saveDashboardElements(elements);
+    const saveBg = backgroundNeedsSaving ? api.saveDashboardBackground(bgDraft) : Promise.resolve(null);
+    return Promise.all([saveElements, saveBg]).then(
+      ([, savedBg]) => {
         savedElementsRef.current = elements;
+        if (backgroundNeedsSaving) {
+          savedBackgroundRef.current = savedBg;
+          setBgDraft(savedBg);
+          setBgStatus(null);
+        }
         // Retriggers the live-preview polling effect (see its own
         // comment on why a plain ref mutation above isn't enough on its
         // own) so it notices `dirty` just went false, stops polling,
         // and the canvas goes back to the real live panel photo, which
-        // is about to actually match this layout on its own next frame.
+        // is about to actually match this layout (and background) on
+        // its own next frame.
         setSavedVersion((v) => v + 1);
-        setStatus("Layout saved -- applies live, even while the dashboard is already running.");
+        setStatus(
+          backgroundNeedsSaving
+            ? "Layout and background saved -- applies live, even while the dashboard is already running."
+            : "Layout saved -- applies live, even while the dashboard is already running."
+        );
       },
       (e) => setError(e.message)
     );
+  };
 
   // "Preview on screen": shows whatever's currently on this canvas --
   // saved or not -- on the real panel for PREVIEW_SECONDS, then the
@@ -1049,18 +1107,25 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     setBgDraft((prev) => ({ ...prev, ...patch }));
   };
 
+  // Kept as its own button for a background-only change (no element
+  // touched) made straight in the Background section, separately from
+  // whatever's on the canvas -- Save layout above now also covers a
+  // staged background, so the two buttons overlap on purpose rather
+  // than one replacing the other.
   const saveBackground = () => {
     if (!bgDraft) return;
     setBgError(null);
     api.saveDashboardBackground(bgDraft).then(
       (bg) => {
         setBgDraft(bg);
-        // If elements are still separately unsaved, the live-preview
-        // backdrop rightly keeps showing (now with this background
-        // actually baked into it, since bgDraft just changed too) --
-        // only saveLayout() clearing `dirty` turns it off. No explicit
-        // step needed here either way; see the polling effect's own
-        // comment.
+        savedBackgroundRef.current = bg;
+        // Retriggers the live-preview polling effect the same way
+        // saveLayout()'s own savedVersion bump does -- a ref mutation
+        // alone (savedBackgroundRef.current above) doesn't retrigger an
+        // effect whose dependency array never actually changed, so
+        // without this a background-only save would clear `dirty` but
+        // leave the previous poll ticking on a stale closure.
+        setSavedVersion((v) => v + 1);
         setBgStatus("Background saved -- applies live, even while the dashboard is already running.");
       },
       (e) => setBgError(e.message)
@@ -1127,11 +1192,10 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     // a live-rendered backdrop of this new design in place of the live
     // panel photo, which still shows whatever the *previous* theme
     // looked like until an actual Save/Preview pushes this one.
-    setStatus(
-      preset.background
-        ? `Loaded preset "${name}" (layout + background) -- Save layout / Save background to apply.`
-        : `Loaded preset "${name}" -- Save layout to apply.`
-    );
+    // Save layout alone now applies both (see its own comment) --
+    // used to need a second, separate "Save background" click too,
+    // which this message wrongly implied was required either way.
+    setStatus(`Loaded preset "${name}" -- Save layout to apply.`);
   };
 
   const duplicatePreset = (name) => {
@@ -1196,7 +1260,12 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
 
   const selected = elements.find((el) => el.id === selectedId) || null;
   const ordered = [...elements].sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
-  const dirty = elements !== savedElementsRef.current;
+  // Includes a staged-but-unsaved background now too, not just
+  // elements -- Save layout persists both together (see its own
+  // comment), so the button's enabled/attention state needs to reflect
+  // a background-only change exactly the same way it already reflects
+  // an element-only one, instead of only lighting up for the latter.
+  const dirty = elements !== savedElementsRef.current || !backgroundsEqual(bgDraft, savedBackgroundRef.current);
   // Forces every element's mockup to show, not just the selected one --
   // needed for Reset to defaults (and Undo/Redo landing on a state with
   // nothing selected), which touches every element at once and leaves

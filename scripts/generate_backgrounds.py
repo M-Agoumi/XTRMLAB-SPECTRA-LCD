@@ -29,6 +29,17 @@ W, H = 1920, 960
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "backgrounds")
 
 
+def rounded_rect(draw, box, radius, **kwargs):
+    """A local copy of dashboard_theme.py's own tiny helper of the same
+    name (not imported from there -- this script intentionally has no
+    dependency on the app package, just PIL/numpy) -- falls back to a
+    plain rectangle on a very old Pillow with no rounded_rectangle."""
+    try:
+        draw.rounded_rectangle(box, radius=radius, **kwargs)
+    except AttributeError:  # noqa: BLE001
+        draw.rectangle(box, **kwargs)
+
+
 def save(img, name):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name)
@@ -221,14 +232,47 @@ def make_bokeh(seed=4):
 
 
 # ---------------------------------------------------------------------
-# 5. Cherry Blossom -- soft rose/blush gradient, a scatter of simple
-# 5-petal flower doodles (each just overlapping soft-edged ellipses
-# around a center point, via soft_blob -- no external art), a light
-# drift of loose petal shapes, and a pair of soft corner glows
-# standing in for an ornate frame. Built for the "girly"-styled
-# text-stat presets (Cherry Blossom / Petal Dream), same request that
-# added Circuit Bloom.
+# 5/6. Cherry Blossom / Petal Dream -- v2, redesigned after direct
+# feedback that v1 ("a scatter of blurred flower blobs behind text")
+# read as a generic photo background with text floating on top, not as
+# one integrated design -- unlike the reference photo, where the
+# ornate corner swirls, the banner behind the title, and the flowers
+# all visibly belong to the same card the text sits in.
+#
+# What changed, concretely: real line art (nested arcs forming a
+# corner swirl, `_draw_corner_flourish()`) instead of only soft blobs;
+# a scroll/banner shape drawn directly behind where the title text
+# lands (`_draw_title_banner()`); thin rule lines marking the column
+# header underlines and the vertical divider between the two stat
+# columns (`_draw_rule()`); and, most importantly, every one of these
+# is positioned using the *exact same x/y fractions* as the matching
+# preset's own elements (dashboard_theme.py's "Cherry Blossom"/"Petal
+# Dream" entries -- see _CHERRY_LAYOUT/_PETAL_LAYOUT below, which
+# mirror those elements' x/y verbatim) instead of being scattered at
+# random. The flower motifs are cut down and deliberately placed too:
+# a single "bouquet" medallion anchoring the empty middle gap between
+# the two columns (standing in for the reference's portrait as the
+# composition's visual anchor) plus a light scatter confined to the
+# margins, not layered across the text zones the way v1's 60-petal
+# "falling blossom" drift was -- so the columns stay calm and legible
+# instead of competing with the stat rows for attention.
+#
+# NOTE: because of that coordinate mirroring, a future edit to either
+# preset's own element x/y in dashboard_theme.py should update the
+# matching _CHERRY_LAYOUT/_PETAL_LAYOUT constants here too (and
+# re-run this script) to keep the background's frame/divider/banner
+# aligned with where the text actually lands.
 # ---------------------------------------------------------------------
+_CHERRY_LAYOUT = {
+    "title_y": 0.075, "header_y": 0.235, "col_l": 0.22, "col_r": 0.78,
+    "row_top": 0.35, "row_bottom": 0.71, "clock_y": 0.885,
+}
+_PETAL_LAYOUT = {
+    "title_y": 0.075, "header_y": 0.22, "col_l": 0.22, "col_r": 0.78,
+    "row_top": 0.335, "row_bottom": 0.68, "clock_y": 0.9,
+}
+
+
 def _draw_petal_flower(layer, cx, cy, size, petal_color, center_color, rng, petals=5):
     """One flower doodle: `petals` soft-edged ellipse "petals" arranged
     in a ring around (cx, cy) via soft_blob (so they blend into the
@@ -250,71 +294,215 @@ def _draw_petal_flower(layer, cx, cy, size, petal_color, center_color, rng, peta
     layer.alpha_composite(center)
 
 
+def _draw_leaf(layer, cx, cy, length, width_, angle_deg, color, alpha=170):
+    """A small rotated-ellipse leaf, for filling out a flower medallion
+    into something that reads as an arranged bouquet rather than just
+    flower heads. Drawn on its own tiny canvas and rotated (PIL has no
+    rotated-ellipse primitive), then composited onto `layer` at (cx,
+    cy) via the instance `alpha_composite(im, dest)` form -- cheaper
+    than allocating a full canvas-sized RGBA layer per leaf the way
+    soft_blob()-based shapes do, since a leaf doesn't need the same
+    soft radial falloff."""
+    pad = 2
+    leaf = Image.new("RGBA", (length + pad * 2, width_ + pad * 2), (0, 0, 0, 0))
+    ImageDraw.Draw(leaf).ellipse([pad, pad, pad + length, pad + width_], fill=(*color, alpha))
+    leaf = leaf.rotate(angle_deg, expand=True, resample=Image.BICUBIC)
+    lw, lh = leaf.size
+    layer.alpha_composite(leaf, (int(cx - lw / 2), int(cy - lh / 2)))
+
+
+def _draw_flower_medallion(layer, cx, cy, size, petal_palette, center_color, leaf_color, rng):
+    """A small arranged bouquet -- 3 flowers (one larger center, two
+    smaller flanking it lower down) plus a handful of leaves filling
+    the gaps between and below them -- used once per background as the
+    composition's visual anchor, in the empty gap between the two stat
+    columns. Deliberately just `_draw_petal_flower()` called a few
+    times with real relative sizing/placement instead of a denser
+    flower or a bigger single one, so it reads as an arrangement (like
+    the reference's framed portrait anchoring its own layout) rather
+    than one more scattered blob."""
+    # 3 short leaves tucked close under the flower cluster, mostly
+    # meant to peek out from beneath it rather than spread wide --
+    # v1's leaves were both longer than the flowers and angled out
+    # past their edges, reading as stray antennae instead of a
+    # supporting stem/foliage. Drawn *before* the flowers so the
+    # petals sit on top and only each leaf's lower tip shows.
+    _draw_leaf(layer, cx - size * 0.32, cy + size * 0.62, int(size * 0.62), int(size * 0.2),
+               25, leaf_color, alpha=170)
+    _draw_leaf(layer, cx + size * 0.32, cy + size * 0.62, int(size * 0.62), int(size * 0.2),
+               -25, leaf_color, alpha=170)
+    _draw_leaf(layer, cx, cy + size * 0.7, int(size * 0.55), int(size * 0.18), 90, leaf_color, alpha=170)
+    # 2 smaller flowers flanking a larger center one, all close enough
+    # together to read as one bouquet rather than 3 separate blooms --
+    # drawn largest-last so the center flower sits visually on top.
+    _draw_petal_flower(layer, cx - size * 0.6, cy + size * 0.22, size * 0.58,
+                        rng.choice(petal_palette), center_color, rng)
+    _draw_petal_flower(layer, cx + size * 0.6, cy + size * 0.22, size * 0.58,
+                        rng.choice(petal_palette), center_color, rng)
+    _draw_petal_flower(layer, cx, cy, size * 1.05, rng.choice(petal_palette), center_color, rng, petals=6)
+
+
+def _draw_corner_flourish(size, color, rng):
+    """An ornamental swirl -- 3 nested quarter-circle arcs curling in
+    from a corner, plus 3 small embellishment dots along the outermost
+    one -- rendered as real line art (draw.arc), not a soft blob, so it
+    reads as an intentional frame the way the reference photo's gold
+    corner scrollwork does. Returns an RGBA image of size (size, size)
+    drawn assuming it anchors the *top-left* corner (its own (0, 0));
+    callers flip it via Image.transpose() for the other 3 corners
+    before compositing (see the two make_*() functions below)."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    radii = (size * 0.92, size * 0.62, size * 0.36)
+    widths = (max(2, int(size * 0.02)), max(2, int(size * 0.015)), max(2, int(size * 0.011)))
+    for r, w in zip(radii, widths):
+        draw.arc([0 - r, 0 - r, r, r], start=0, end=90, fill=(*color, 235), width=w)
+    for t in (0.18, 0.5, 0.82):
+        ang = math.radians(90 * t)
+        r = radii[0] * 0.8
+        px, py = r * math.cos(ang), r * math.sin(ang)
+        dr = max(2, int(size * 0.022))
+        draw.ellipse([px - dr, py - dr, px + dr, py + dr], fill=(*color, 220))
+    return img
+
+
+def _place_corner_flourishes(layer, size, color, margin, rng):
+    """Composites `_draw_corner_flourish()` into all 4 corners of
+    `layer` (an RGBA image), flipped as needed so each one visibly
+    curls inward from its own actual corner."""
+    w, h = layer.size
+    base = _draw_corner_flourish(size, color, rng)
+    layer.alpha_composite(base, (margin, margin))
+    layer.alpha_composite(base.transpose(Image.FLIP_LEFT_RIGHT), (w - margin - size, margin))
+    layer.alpha_composite(base.transpose(Image.FLIP_TOP_BOTTOM), (margin, h - margin - size))
+    layer.alpha_composite(base.transpose(Image.ROTATE_180), (w - margin - size, h - margin - size))
+
+
+def _draw_title_banner(draw, cx, cy, width, height, color, line_width=3):
+    """A ribbon/pennant outline behind the title text: a flat-sided
+    rectangular body with a V-notch cut into each end, the classic
+    "banner" silhouette -- one continuous closed polygon (traced as a
+    connected line loop, since not every Pillow version supports
+    polygon(outline=..., width=...)), so the two ends read as attached
+    swallow-tails instead of v1's disconnected rounded-pill-plus-
+    floating-chevrons. Outline only, so the title text stays fully
+    legible sitting on top of it."""
+    left, right = cx - width / 2, cx + width / 2
+    top, bottom = cy - height / 2, cy + height / 2
+    tail = height * 0.55
+    points = [
+        (left - tail, top), (left, cy), (left - tail, bottom),
+        (left, bottom), (right, bottom),
+        (right + tail, bottom), (right, cy), (right + tail, top),
+        (right, top), (left, top),
+    ]
+    for i in range(len(points)):
+        p0, p1 = points[i], points[(i + 1) % len(points)]
+        draw.line([p0, p1], fill=(*color, 235), width=line_width)
+
+
+def _draw_rule(draw, x0, y, x1, color, width=2):
+    draw.line([(x0, y), (x1, y)], fill=(*color, 190), width=width)
+
+
+def _card_frame_and_divider(img, layout, accent_color, medallion_cy=None, medallion_gap=0):
+    """The parts of the "integrated card" look that are straight line
+    art rather than flowers: a thin rule under each column header
+    (CPU/GPU, or System/Graphics), and a vertical divider between the
+    two columns that stops short of the header row and the clock row
+    so it reads as separating the *stat block* specifically, not the
+    whole card top-to-bottom. Shared by both make_*() functions below
+    since both presets use the same 2-column layout shape.
+
+    `medallion_cy`/`medallion_gap` (both in pixels, optional): when the
+    bouquet medallion sits on this same vertical line, the divider is
+    drawn as two shorter segments stopping `medallion_gap` above/below
+    it instead of one continuous line straight through the flowers --
+    v1 drew it as a single line, which looked like a skewer stabbed
+    through the bouquet in testing."""
+    draw = ImageDraw.Draw(img)
+    header_y = layout["header_y"] * H
+    row_top = layout["row_top"] * H
+    row_bottom = layout["row_bottom"] * H
+    col_l, col_r = layout["col_l"] * W, layout["col_r"] * W
+    rule_half = W * 0.055
+    _draw_rule(draw, col_l - rule_half, header_y + H * 0.028, col_l + rule_half, accent_color)
+    _draw_rule(draw, col_r - rule_half, header_y + H * 0.028, col_r + rule_half, accent_color)
+    divider_top = header_y + H * 0.06
+    divider_bottom = row_bottom + H * 0.05
+    if medallion_cy is not None:
+        draw.line([(W * 0.5, divider_top), (W * 0.5, medallion_cy - medallion_gap)],
+                  fill=(*accent_color, 130), width=2)
+        draw.line([(W * 0.5, medallion_cy + medallion_gap), (W * 0.5, divider_bottom)],
+                  fill=(*accent_color, 130), width=2)
+    else:
+        draw.line([(W * 0.5, divider_top), (W * 0.5, divider_bottom)], fill=(*accent_color, 130), width=2)
+
+
 def make_cherry_blossom(seed=5):
     rng = random.Random(seed)
-    img = vertical_gradient(W, H, (255, 224, 232), (238, 180, 198)).convert("RGBA")
+    layout = _CHERRY_LAYOUT
+    gold = (214, 150, 110)
+    img = vertical_gradient(W, H, (255, 226, 233), (244, 196, 209)).convert("RGBA")
 
-    # A warm, soft corner glow top-left and bottom-right -- an easy
-    # stand-in for an ornate frame without drawing actual line art.
-    glow_a = soft_blob(W, H, W * 0.06, H * 0.05, H * 0.85, (255, 214, 150), strength=70)
-    glow_b = soft_blob(W, H, W * 0.96, H * 1.0, H * 0.85, (255, 160, 190), strength=70)
-    img = Image.alpha_composite(img, glow_a)
-    img = Image.alpha_composite(img, glow_b)
+    margin = int(H * 0.05)
+    _place_corner_flourishes(img, int(H * 0.32), gold, margin, rng)
+
+    medallion_cy = H * ((layout["row_top"] + layout["row_bottom"]) / 2 + 0.03)
+    medallion_size = H * 0.13
+
+    draw = ImageDraw.Draw(img)
+    _draw_title_banner(draw, W * 0.5, layout["title_y"] * H, W * 0.34, H * 0.1, gold)
+    _card_frame_and_divider(img, layout, gold, medallion_cy=medallion_cy, medallion_gap=medallion_size * 1.5)
 
     flower_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     petal_palette = [(255, 150, 180), (255, 190, 205), (255, 130, 160)]
-    for _ in range(16):
-        cx = rng.uniform(W * 0.05, W * 0.95)
-        cy = rng.uniform(H * 0.1, H * 0.95)
-        size = rng.uniform(H * 0.05, H * 0.11)
-        petal_color = rng.choice(petal_palette)
-        _draw_petal_flower(flower_layer, cx, cy, size, petal_color, (255, 235, 210), rng)
-    # Loose drifting petals -- single soft ellipses, smaller and more
-    # numerous, for a "falling blossom" feel between the flowers.
-    for _ in range(60):
-        cx = rng.uniform(0, W)
-        cy = rng.uniform(0, H)
-        r = rng.uniform(4, 12)
-        color = rng.choice(petal_palette)
-        petal = soft_blob(W, H, cx, cy, r, color, strength=rng.randint(90, 160))
-        flower_layer = Image.alpha_composite(flower_layer, petal)
-    flower_layer = flower_layer.filter(ImageFilter.GaussianBlur(1.2))
+    center_color = (255, 235, 210)
+    # The bouquet anchor, centered in the empty gap between the two
+    # stat columns (below the divider's midpoint) -- the composition's
+    # focal point, echoing where the reference photo's portrait sits.
+    _draw_flower_medallion(flower_layer, W * 0.5, medallion_cy,
+                            medallion_size, petal_palette, center_color, (150, 200, 150), rng)
+    # A light, deliberately sparse scatter confined to the margins
+    # outside the two text columns (left of col_l, right of col_r) --
+    # not behind the stat rows themselves, so the readout stays calm.
+    for _ in range(9):
+        side = rng.choice([-1, 1])
+        cx = W * (0.08 if side < 0 else 0.92) + rng.uniform(-W * 0.03, W * 0.03)
+        cy = rng.uniform(H * 0.3, H * 0.8)
+        size = rng.uniform(H * 0.035, H * 0.06)
+        _draw_petal_flower(flower_layer, cx, cy, size, rng.choice(petal_palette), center_color, rng)
     img = Image.alpha_composite(img, flower_layer)
     return img.convert("RGB")
 
 
-# ---------------------------------------------------------------------
-# 6. Lavender Bloom -- the same soft-flower technique as Cherry
-# Blossom, in a lavender/lilac-to-mint palette instead of rose/blush,
-# for the second "girly" text-stat preset (Petal Dream) so the two
-# don't just look like recolors sitting next to each other in the
-# picker.
-# ---------------------------------------------------------------------
 def make_lavender_bloom(seed=6):
     rng = random.Random(seed)
-    img = vertical_gradient(W, H, (230, 220, 250), (200, 225, 235)).convert("RGBA")
+    layout = _PETAL_LAYOUT
+    gold = (150, 130, 190)
+    img = vertical_gradient(W, H, (232, 223, 250), (204, 227, 236)).convert("RGBA")
 
-    glow_a = soft_blob(W, H, W * 0.08, H * 0.08, H * 0.8, (215, 190, 255), strength=70)
-    glow_b = soft_blob(W, H, W * 0.94, H * 0.96, H * 0.8, (180, 230, 220), strength=70)
-    img = Image.alpha_composite(img, glow_a)
-    img = Image.alpha_composite(img, glow_b)
+    margin = int(H * 0.05)
+    _place_corner_flourishes(img, int(H * 0.32), gold, margin, rng)
+
+    medallion_cy = H * ((layout["row_top"] + layout["row_bottom"]) / 2)
+    medallion_size = H * 0.12
+
+    draw = ImageDraw.Draw(img)
+    _draw_title_banner(draw, W * 0.5, layout["title_y"] * H, W * 0.32, H * 0.1, gold)
+    _card_frame_and_divider(img, layout, gold, medallion_cy=medallion_cy, medallion_gap=medallion_size * 1.5)
 
     flower_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     petal_palette = [(190, 160, 240), (170, 210, 235), (200, 180, 245)]
-    for _ in range(16):
-        cx = rng.uniform(W * 0.05, W * 0.95)
-        cy = rng.uniform(H * 0.1, H * 0.95)
-        size = rng.uniform(H * 0.05, H * 0.11)
-        petal_color = rng.choice(petal_palette)
-        _draw_petal_flower(flower_layer, cx, cy, size, petal_color, (235, 245, 230), rng)
-    for _ in range(60):
-        cx = rng.uniform(0, W)
-        cy = rng.uniform(0, H)
-        r = rng.uniform(4, 12)
-        color = rng.choice(petal_palette)
-        petal = soft_blob(W, H, cx, cy, r, color, strength=rng.randint(90, 160))
-        flower_layer = Image.alpha_composite(flower_layer, petal)
-    flower_layer = flower_layer.filter(ImageFilter.GaussianBlur(1.2))
+    center_color = (235, 245, 230)
+    _draw_flower_medallion(flower_layer, W * 0.5, medallion_cy,
+                            medallion_size, petal_palette, center_color, (150, 195, 175), rng)
+    for _ in range(9):
+        side = rng.choice([-1, 1])
+        cx = W * (0.08 if side < 0 else 0.92) + rng.uniform(-W * 0.03, W * 0.03)
+        cy = rng.uniform(H * 0.28, H * 0.78)
+        size = rng.uniform(H * 0.035, H * 0.06)
+        _draw_petal_flower(flower_layer, cx, cy, size, rng.choice(petal_palette), center_color, rng)
     img = Image.alpha_composite(img, flower_layer)
     return img.convert("RGB")
 
