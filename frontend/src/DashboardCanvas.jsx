@@ -49,6 +49,15 @@ const MAX_RADIUS = 0.45;
 // the rest of the gesture (see the `moved` flag on dragRef.current).
 const MOVE_THRESHOLD_PX = 4;
 
+// How often the canvas polls a fresh live-rendered preview (see
+// editingPreviewUrl's own comment) while there's an unsaved edit. Each
+// poll is a real server-side render (gauge drawing included, not just
+// a cheap pixel copy the way the real panel's own frame poll is), so
+// this stays well below the real panel's FRAME_POLL_MS (App.jsx) --
+// still frequent enough that gauges/graphs read as "alive", not so
+// frequent it's hammering the backend for a design-canvas convenience.
+const EDITING_PREVIEW_POLL_MS = 1200;
+
 function rgbToHex([r, g, b]) {
   return "#" + [r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("");
 }
@@ -525,33 +534,34 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   // button's own countdown label so it's obvious when the live panel is
   // about to revert back to whatever's actually saved.
   const [previewSecondsLeft, setPreviewSecondsLeft] = useState(null);
-  // A just-loaded preset's own pre-rendered thumbnail (meta.
-  // presetThumbnails[name] -- the exact same image the preset picker's
-  // own card shows, so it's already an accurate render of that
-  // preset's layout *and* background together), shown as the canvas's
-  // backdrop in place of the live panel photo until something makes it
-  // stale (see loadedPresetElementsRef's effect below, and
-  // clearPresetPreview() at every point that also stops it being
-  // accurate: an edit, Save, or Preview). Loading a preset used to
-  // leave the *old* live photo showing underneath the new preset's SVG
-  // mockups -- since nothing had actually been pushed to the panel yet
-  // -- which combined two unrelated designs into one broken-looking
-  // mess (the old theme's own baked-in text/gauges bleeding through
-  // the new one's mockup overlay). This stands in for "what will
-  // actually be on the panel" during that in-between window instead.
-  const [presetPreviewUrl, setPresetPreviewUrl] = useState(null);
-  // The `elements` reference `presetPreviewUrl` was captured for --
-  // once `elements` changes to anything else (a drag, a property edit,
-  // undo/redo, Reset to defaults, ...) the thumbnail no longer matches
-  // what's on the canvas, so the effect below clears it. Loading
-  // *another* preset updates this ref again in the same tick it sets
-  // a new presetPreviewUrl, so that doesn't trip the "went stale"
-  // effect on itself.
-  const loadedPresetElementsRef = useRef(null);
-  const clearPresetPreview = () => {
-    loadedPresetElementsRef.current = null;
-    setPresetPreviewUrl(null);
-  };
+  // A live render of whatever's currently on this canvas -- elements
+  // *and* background draft, both possibly unsaved -- using this
+  // machine's actual current stats (controller.py's render_dashboard_
+  // live_preview()), shown as the canvas's backdrop in place of the
+  // live panel photo whenever there's an edit that photo doesn't
+  // reflect yet. See the polling effect below for when it runs.
+  //
+  // Loading a preset used to leave the *old* live photo showing
+  // underneath the new preset's SVG mockups -- since nothing had
+  // actually been pushed to the panel yet -- which combined two
+  // unrelated designs into one broken-looking mess (the old theme's
+  // own baked-in text/gauges bleeding through the new one's mockup
+  // overlay). A single static thumbnail fixed that mess but traded it
+  // for a frozen picture -- gauges that don't move and a live reading
+  // that's visibly stale within a second reads as "broken" in a
+  // different way. Polling this on an interval is what keeps it
+  // genuinely alive: same fix, just re-rendered with fresh numbers
+  // instead of rendered once.
+  const [editingPreviewUrl, setEditingPreviewUrl] = useState(null);
+  // Bumped by saveLayout() on a successful save -- see the polling
+  // effect below. Needed because saveLayout() marks things saved by
+  // mutating savedElementsRef.current (a ref), not by changing
+  // `elements` itself (`elements` is already the just-saved array,
+  // that's the whole point) -- so `dirty` (elements !== savedElementsRef
+  // .current) flips to false, but a ref mutation alone doesn't retrigger
+  // an effect whose dependency array never actually changed. This is a
+  // plain "something happened" signal for the effect to notice that.
+  const [savedVersion, setSavedVersion] = useState(0);
 
   const historyRef = useRef([]);
   const futureRef = useRef([]);
@@ -587,17 +597,45 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     load();
   }, [load]);
 
-  // Drops the just-loaded-preset preview the moment `elements` moves on
-  // to something that thumbnail no longer represents -- any further
-  // edit (drag, resize, property change, Reset to defaults, undo/redo).
-  // Loading a preset sets loadedPresetElementsRef.current to that exact
-  // same array reference it just committed, so this only fires on a
-  // *later*, different commit -- not on the load itself.
+  // Keeps editingPreviewUrl fresh (see its own comment) while there's
+  // an edit the real live panel photo doesn't reflect yet -- any
+  // difference from `savedElementsRef.current` covers a loaded preset
+  // exactly the same way it covers a drag, a property edit, undo/redo,
+  // or Reset to defaults, no separate tracking needed for any of those.
+  // Skipped during an active "Preview on screen" countdown
+  // (previewSecondsLeft !== null): the real panel is showing this
+  // exact design for real during that window (previewLayout() just
+  // pushed it), so the real live frame is already a more accurate
+  // backdrop than a second render of the same thing done here.
+  // `savedVersion` is in the dependency list purely so saveLayout()'s
+  // save can retrigger this: it marks things saved by mutating
+  // savedElementsRef.current (a ref), not by changing `elements` itself
+  // (it's already the just-saved array), and a ref mutation alone
+  // doesn't retrigger an effect whose actual dependencies never
+  // changed -- without this, the poll from before the save would just
+  // keep ticking forever with a stale closure, never noticing `dirty`
+  // had gone false.
   useEffect(() => {
-    if (loadedPresetElementsRef.current && elements !== loadedPresetElementsRef.current) {
-      clearPresetPreview();
+    if (!elements || elements === savedElementsRef.current || previewSecondsLeft !== null) {
+      setEditingPreviewUrl(null);
+      return;
     }
-  }, [elements]);
+    let cancelled = false;
+    const tick = () => {
+      api.renderDashboardLivePreview(elements, bgDraft).then(
+        (r) => {
+          if (!cancelled) setEditingPreviewUrl(r.image);
+        },
+        () => {} // a failed poll just leaves the previous frame showing -- not worth a page-level error for a background convenience refresh
+      );
+    };
+    tick();
+    const id = setInterval(tick, EDITING_PREVIEW_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [elements, bgDraft, previewSecondsLeft, savedVersion]);
 
   // A preset card's Delete button arms on the first click and only
   // actually deletes on a second (see deletePreset()); auto-disarming
@@ -920,11 +958,12 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     api.saveDashboardElements(elements).then(
       () => {
         savedElementsRef.current = elements;
-        // The live panel photo is about to actually match this layout
-        // (its next frame rebakes with it), so the stand-in preset
-        // thumbnail -- if one was still showing -- has done its job and
-        // can step aside for the real thing.
-        clearPresetPreview();
+        // Retriggers the live-preview polling effect (see its own
+        // comment on why a plain ref mutation above isn't enough on its
+        // own) so it notices `dirty` just went false, stops polling,
+        // and the canvas goes back to the real live panel photo, which
+        // is about to actually match this layout on its own next frame.
+        setSavedVersion((v) => v + 1);
         setStatus("Layout saved -- applies live, even while the dashboard is already running.");
       },
       (e) => setError(e.message)
@@ -958,9 +997,10 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     api.previewDashboardElements(elements, bgDraft, PREVIEW_SECONDS).then(
       () => {
         setPreviewSecondsLeft(PREVIEW_SECONDS);
-        // Same reasoning as saveLayout()'s clearPresetPreview() call --
-        // the real live photo is about to catch up to this preview.
-        clearPresetPreview();
+        // No explicit "stop the live-preview backdrop" step needed --
+        // the polling effect's own previewSecondsLeft dependency turns
+        // it off on its next run, since the real live photo is about to
+        // actually show this exact preview for real.
         const started = Date.now();
         const tick = () => {
           const remaining = PREVIEW_SECONDS - (Date.now() - started) / 1000;
@@ -1015,10 +1055,12 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     api.saveDashboardBackground(bgDraft).then(
       (bg) => {
         setBgDraft(bg);
-        // Same reasoning as saveLayout()'s clearPresetPreview() call --
-        // the live panel photo is about to actually show this
-        // background, so any stand-in preset thumbnail can step aside.
-        clearPresetPreview();
+        // If elements are still separately unsaved, the live-preview
+        // backdrop rightly keeps showing (now with this background
+        // actually baked into it, since bgDraft just changed too) --
+        // only saveLayout() clearing `dirty` turns it off. No explicit
+        // step needed here either way; see the polling effect's own
+        // comment.
         setBgStatus("Background saved -- applies live, even while the dashboard is already running.");
       },
       (e) => setBgError(e.message)
@@ -1077,14 +1119,14 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     // (every preset saved before this existed) leaves the current
     // background draft alone rather than clearing it to something.
     if (preset.background) setBgDraft(preset.background);
-    // Show this preset's own pre-rendered thumbnail (layout + background
-    // together, exactly what the picker card itself shows) as the
-    // canvas backdrop instead of the live panel photo, which still
-    // shows whatever the *previous* theme looked like until an actual
-    // Save/Preview pushes this one -- see presetPreviewUrl's own
-    // comment for why that mismatch used to look broken.
-    loadedPresetElementsRef.current = preset.elements;
-    setPresetPreviewUrl(meta?.presetThumbnails?.[name] || null);
+    // No explicit "show a preview" step needed beyond the commit()/
+    // setBgDraft() above -- both just landed `elements`/`bgDraft` in a
+    // state that differs from what's actually saved, and the
+    // editingPreviewUrl polling effect picks up on exactly that (any
+    // unsaved edit, not just a freshly-loaded preset) to start showing
+    // a live-rendered backdrop of this new design in place of the live
+    // panel photo, which still shows whatever the *previous* theme
+    // looked like until an actual Save/Preview pushes this one.
     setStatus(
       preset.background
         ? `Loaded preset "${name}" (layout + background) -- Save layout / Save background to apply.`
@@ -1167,28 +1209,28 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   // whole gesture (a plain drag on one gauge lit up the image/media
   // elements' borders too), which read as those other elements getting
   // highlighted for no reason.
-  // `&& !presetPreviewUrl` carves out the one case where forcing every
-  // mockup on would be actively wrong instead of just unnecessary: right
-  // after loading a preset (dirty, nothing selected -- exactly what this
-  // would otherwise trigger on), presetPreviewUrl is *already* an
-  // accurate render of every element in its new position, so forcing
-  // the SVG copies on top too would double-draw the same content a
-  // second time -- the same kind of ghosting the showMockup gates
-  // elsewhere exist to prevent, just against an accurate backdrop
-  // instead of a stale one this time. It clears itself (see its own
-  // comment) the moment anything actually needs forceAllMockups again --
-  // a drag, Reset to defaults, undo/redo -- so this only narrows the
-  // "just loaded, nothing touched yet" window.
-  const forceAllMockups = dirty && !selectedId && !presetPreviewUrl;
+  // `&& !editingPreviewUrl` carves out the one case where forcing every
+  // mockup on would be actively wrong instead of just unnecessary: with
+  // a fresh live-rendered backdrop already showing every element in its
+  // current position (updated on its own polling interval -- see
+  // editingPreviewUrl's own comment), forcing the SVG copies on top too
+  // would double-draw the same content a second time -- the same kind
+  // of ghosting the showMockup gates elsewhere exist to prevent, just
+  // against an accurate backdrop instead of a stale one this time.
+  // There's a brief window right after a change lands, before the next
+  // poll tick resolves, where this still falls back to forcing mockups
+  // on over the stale real frame (self-heals within one
+  // EDITING_PREVIEW_POLL_MS once editingPreviewUrl catches up).
+  const forceAllMockups = dirty && !selectedId && !editingPreviewUrl;
   // Whatever's currently showing as .canvas-frame -- the real live
-  // panel photo, or presetPreviewUrl standing in for it -- is an
+  // panel photo, or editingPreviewUrl standing in for it -- is an
   // accurate backdrop for the element mockups to defer to. Every
   // showMockup/showClockMockup gate below used to compute its own local
   // `connected && !!frameUrl` for this; kept as one shared value now
   // that there are two possible accurate backdrops instead of one, so
   // every gate treats them the same way rather than only some of them
-  // learning about presetPreviewUrl.
-  const hasAccurateBackdrop = !!presetPreviewUrl || (connected && !!frameUrl);
+  // learning about editingPreviewUrl.
+  const hasAccurateBackdrop = !!editingPreviewUrl || (connected && !!frameUrl);
 
   return (
     <section className="panel">
@@ -1291,19 +1333,20 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
             defaults -- instead of this image doing it by
             disappearing.)
 
-            `presetPreviewUrl` overrides it right after loading a preset
-            (see its own comment): the live photo above is still showing
-            the *previous* theme at that point -- both its background
-            and whatever it had baked into it -- and layering the new
-            preset's forceAllMockups-driven overlay on top of that used
-            to look like two designs smashed together, not "preset
-            loaded". The preset's own pre-rendered thumbnail is an
-            accurate stand-in for both halves (background + elements)
-            until an actual Save/Preview makes the live photo itself
-            accurate, at which point presetPreviewUrl clears and this
-            goes back to that photo. */}
-        {presetPreviewUrl ? (
-          <img className="canvas-frame" src={presetPreviewUrl} alt="Preset preview" />
+            `editingPreviewUrl` overrides it whenever there's an edit
+            (see its own comment) the live photo above doesn't reflect
+            yet -- freshly loaded preset, drag, property change,
+            whatever: the live photo would still be showing the
+            *previous* design at that point, and layering the new
+            design's forceAllMockups-driven overlay on top of that used
+            to look like two designs smashed together, not "here's what
+            I'm editing". A polled live render of the current design is
+            an accurate, genuinely moving stand-in for both halves
+            (background + elements) until an actual Save/Preview makes
+            the live photo itself accurate, at which point
+            editingPreviewUrl clears and this goes back to that photo. */}
+        {editingPreviewUrl ? (
+          <img className="canvas-frame" src={editingPreviewUrl} alt="Live preview of the current edit" />
         ) : (
           frameUrl && connected && (
             <img className="canvas-frame" src={frameUrl} alt="Live panel frame" />
@@ -1567,8 +1610,8 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               const color = el.color ? `rgb(${el.color[0]}, ${el.color[1]}, ${el.color[2]})` : "#fff";
               const face = el.face || "digital";
               // When this canvas is overlaid on an accurate backdrop
-              // (the real live frame, or presetPreviewUrl standing in
-              // for it right after loading a preset -- see
+              // (the real live frame, or editingPreviewUrl standing in
+              // for it while there's an unsaved edit -- see
               // hasAccurateBackdrop's own comment), that backdrop
               // already shows the panel's actual, real, ticking clock
               // at this exact spot -- drawing a mockup on top of it

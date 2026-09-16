@@ -4668,6 +4668,82 @@ def render_preset_thumbnail(elements, background, width=480, height=240):
     return img
 
 
+def render_live_preview(elements, background, width=REFERENCE_WIDTH, height=REFERENCE_HEIGHT):
+    """Same render_frame() pipeline as render_preset_thumbnail() just
+    above, but with this machine's actual CURRENT stats (the same
+    psutil/SystemInfos.exe/pynvml/winsdk calls run()'s own render loop
+    makes every frame) in place of _THUMBNAIL_STATS' fixed illustrative
+    numbers.
+
+    This is what backs the design canvas's "preview what I'm currently
+    editing" backdrop (controller.py's render_dashboard_live_preview())
+    for whenever there's an unsaved edit the real live panel photo
+    doesn't reflect yet: a static thumbnail rendered once when a preset
+    is first loaded was a genuine improvement over the broken double-
+    exposure it replaced (see ROADMAP.md), but it's still a frozen
+    picture -- needles that don't move and a live network/CPU reading
+    that's visibly wrong within a second reads as "this is broken", not
+    "this hasn't been saved yet". Called repeatedly (the canvas polls
+    it on an interval, same idea as the real live frame's own polling)
+    with genuinely fresh numbers each time is what makes gauges/graphs
+    actually move again while still showing the *new* design instead of
+    the old one.
+
+    Deliberately does NOT touch history.py-style persistent state for a
+    graph element's trend line -- each call is a one-shot render with no
+    memory of the last one (this function has no session/request
+    concept to hang that state off safely), so a graph here shows a
+    synthetic wave *around the current live value*, the same technique
+    render_preset_thumbnail() uses around its fixed one, rather than a
+    real accumulating trend. It still visibly shifts level from poll to
+    poll as the real stat changes -- just not a continuous line the way
+    the actual running panel's own graph (which does keep real
+    history) does.
+
+    start_systeminfos()/start_media_polling() are idempotent (safe to
+    call even if the dashboard theme -- or a different one entirely --
+    already has them running) and are called here so GPU/media stats
+    are actually available even when this is invoked while nothing (or
+    some other theme) is running; the first call or two right after the
+    design canvas opens may still come back with a None GPU/media
+    reading until SystemInfos.exe's helper process has written its
+    first frame, same cold-start gap the real panel has."""
+    start_systeminfos()
+    start_media_polling()
+    fonts = _thumbnail_fonts()
+    bg_image, layout = build_static_background(width, height, fonts, elements, background)
+    sysinfo_frame = read_systeminfos()
+    media = get_media_info()
+    gpu = get_gpu_stats(sysinfo_frame)
+    stats = {
+        "cpu_load": get_cpu_stats()["util"],
+        "gpu_load": gpu["util"] if gpu else None,
+        "gpu_temp": gpu["temp"] if gpu else None,
+        "ram": get_ram_percent(),
+        "network": get_network_rate_mb_s(),
+        "cpu_freq": get_cpu_freq_ghz(),
+        "disk_usage": get_disk_usage_percent(),
+        "vram_usage": get_vram_percent(),
+        "swap": get_swap_percent(),
+        "disk_io": get_disk_io_mb_s(),
+        "gpu_power": get_gpu_power_w(),
+        "process_count": get_process_count(),
+        "cpu_load_peak": get_cpu_load_peak_core(),
+        "battery": get_battery_percent(),
+    }
+    history = {}
+    for el in elements:
+        if el.get("type") != "graph":
+            continue
+        n = 12
+        base_val = stats.get(el.get("stat")) or 50
+        history[el["id"]] = deque(
+            (max(0.0, min(100.0, base_val + 15 * math.sin(i / 2))) for i in range(n)),
+            maxlen=n,
+        )
+    return render_frame(bg_image, layout, width, height, fonts, stats, media, history)
+
+
 def apply_weather_from_elements(elements):
     """Points weather.py's background poll at whichever `weather`
     element is on the canvas (the first one, if more than one -- the

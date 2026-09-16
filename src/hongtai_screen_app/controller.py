@@ -683,6 +683,39 @@ class AppController:
                 self._log(f"(dashboard: couldn't render a thumbnail for preset {name!r}: {e})")
         return thumbnails
 
+    def render_dashboard_live_preview(self, elements, background=None):
+        """Renders `elements`/`background` right now, using this
+        machine's actual current stats (dashboard_theme.render_live_
+        preview()) -- backs the design canvas's polling "what am I
+        currently editing" backdrop, so a freshly-loaded preset (or any
+        unsaved edit) shows genuinely moving gauges/graphs instead of a
+        frozen thumbnail or, worse, the *previous* theme's own real
+        live frame with the new design's mockups smeared on top of it.
+
+        `background` is optional the same way _dashboard_preset_
+        thumbnails()' own `default_background` is -- None means "use
+        whatever's actually configured right now" rather than requiring
+        the caller (the design canvas always has a background draft of
+        its own, staged or not, so this mainly matters for a stray
+        elements-only call) to always pass one explicitly.
+
+        No lock held here on purpose: this doesn't touch self.cfg or
+        config_store at all, purely a read of current stats + a CPU-
+        bound render, so there's nothing for a lock to protect and
+        holding one would only block an unrelated save/preview/etc.
+        landing on another thread for the render's duration."""
+        if not isinstance(elements, list):
+            raise ValueError("elements must be a list")
+        if background is not None and not isinstance(background, dict):
+            raise ValueError("background must be an object")
+        if background is None:
+            dashboard_cfg = self.cfg.get("dashboard") or {}
+            background = dict(dashboard_theme.DEFAULT_BACKGROUND, **(dashboard_cfg.get("background") or {}))
+        img = dashboard_theme.render_live_preview(elements, background)
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, format="JPEG", quality=82)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
     def list_ports(self):
         """Scans for Hongtai-family panels right now (driver.
         find_hongtai_ports() -- matches on USB VID, so it finds any
