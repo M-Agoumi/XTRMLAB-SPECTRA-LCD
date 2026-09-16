@@ -540,7 +540,14 @@ button:disabled {
   background: #101216;
   border: 1px solid #33383f;
   border-radius: 8px;
-  overflow: hidden;
+  /* Used to be `overflow: hidden` here (to round off the thumbnail
+     image's top corners to match the card) -- but that also clipped
+     the "..." action menu's popover, which is deliberately absolutely
+     positioned *outside* the footer's own box so it can float over
+     the thumbnail above it (see .preset-card-menu below). Clipping
+     moved onto .preset-card-thumb itself instead, which is the only
+     part that actually needs it. */
+  position: relative;
 }
 
 .preset-card-thumb {
@@ -550,7 +557,8 @@ button:disabled {
   padding: 0;
   margin: 0;
   border: none;
-  border-radius: 0;
+  border-radius: 7px 7px 0 0;
+  overflow: hidden;
   background: #05060a;
   cursor: pointer;
 }
