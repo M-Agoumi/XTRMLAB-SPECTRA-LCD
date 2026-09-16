@@ -2336,6 +2336,61 @@ in place immediately, with no mashup and no clipping -- the same
 picker/preview path the 3 fixes right above this one had just gone
 through.
 
+Next request, right after: "create two app presets, that uses text
+field stats, like the image i sent u, something girly" -- a photo of a
+pastel floral fan-controller readout (a title, soft ornate corner
+flourishes, CPU/GPU stats as plain label+value text rows, no gauges),
+asking for two built-ins in that style. Two things from the reference
+photo weren't reproduced: its own illustrated artwork isn't copied,
+and neither is its exact field list -- it showed CPU Temp/CPU Power/
+GPU Freq, none of which this app has a live sensor reading for
+(`STAT_DEFS` has no `cpu_temp`, `cpu_power`, or `gpu_freq` -- only
+`gpu_temp`/`gpu_power` exist, and only on the GPU side). What carried
+over was the *style*: text-only stat rows, no gauges at all -- a first
+for this preset set -- laid out in two labeled columns, over a new
+pastel floral photo background.
+
+Two new bundled backgrounds first (`cherry_blossom.jpg`, `lavender_
+bloom.jpg`, alongside the existing aurora/nebula/synthwave/bokeh/
+circuit ones), built with the same plain-PIL layered-blob approach
+`scripts/generate_backgrounds.py` already used for those, not an
+external image model. A new `_draw_petal_flower()` helper composites
+5 soft-edged ellipse "petals" in a ring (each just another `soft_
+blob()` call, the same primitive every existing background already
+leans on) around a brighter center, scattered across a rose-to-blush
+gradient for one and a lilac-to-steel-blue gradient for the other,
+plus a couple of loose single-petal blobs drifting between the
+flowers and two soft corner glows standing in for an ornate frame
+without actually drawing line art. Registered as `"cherry"`/
+`"lavender"` in `BUNDLED_BACKGROUND_IMAGES`/`BACKGROUND_PRESETS`, same
+as every other bundled photo -- goes through the identical cover-fit +
+45%-black-blend darken path, so no renderer changes needed; checked
+both post-darken renders directly (`Image.blend(img, black, 0.45)`,
+what `_build_background_image()` actually does) before committing to
+the palette, since a background this pastel could plausibly wash out
+under that blend -- it doesn't, both land as a legible dusty-rose/
+steel-lilac mid-tone.
+
+Then the two preset entries themselves: "Cherry Blossom" (CPU column:
+Load/Freq/Peak/RAM; GPU column: Load/Temp/Power/VRAM) and "Petal
+Dream" ("System" column: Load/RAM/Disk/Swap; "Graphics" column:
+Load/Temp/Power/VRAM; plus a centered Network reading) -- deliberately
+different stat selections from each other so they don't read as a
+recolor of the same field list, and between them covering every stat
+this app can actually read for CPU/GPU/RAM/VRAM/disk/swap/network.
+Every stat row is the existing `"stat"` + `"template"` text mechanism
+(Northern Lights/City Nights introduced it, "LABEL {value}" -- e.g.
+`"LOAD {value}"`, `"TEMP {value}"`), just used far more heavily here
+than anywhere else: 8 and 9 stat rows respectively, vs. at most 1 in
+any earlier preset. 13 built-ins total now. Verified the same way as
+Circuit Bloom right above: `render_live_preview()` on each preset's
+own elements/background renders correctly standalone (checked
+visually -- title, column headers, all stat rows, clock+date all in
+place, no overlap); the real `AppController.dashboard_meta()` (not a
+mock) surfaces both as distinct 12th/13th picker cards with correct
+thumbnails; loading either in a headless browser shows every row live
+and in place immediately, no clipping, no console errors.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

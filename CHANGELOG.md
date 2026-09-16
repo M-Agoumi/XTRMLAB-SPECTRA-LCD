@@ -1749,6 +1749,44 @@ dashboard designer) this is laying groundwork for.
   appears as the 11th card in the preset picker with a correct
   thumbnail, and loads cleanly (no mashup, no clipping) showing all 8
   gauges live over the full background.
+- **Two more built-ins, "Cherry Blossom" and "Petal Dream"** —
+  requested as a pair: "two app presets, that uses text field stats
+  ... something girly", modeled after a photo of a pastel floral
+  fan-controller readout (a title, soft corner flourishes, CPU/GPU
+  stats laid out as plain label+value text rows, no gauges at all).
+  Two things from that reference photo don't carry over as-is: its
+  specific artwork (an illustrated character) isn't reproduced, and
+  neither is its exact field list -- "CPU Temp"/"CPU Power"/"GPU Freq"
+  have no matching `STAT_DEFS` entry in this app (no CPU-side temp or
+  power sensor reading, no GPU frequency one wired up), so each preset
+  draws from whichever of the 14 real stats fit its column instead.
+  What *does* carry over is the style: both are the first two built-
+  ins with zero gauges -- every stat is a `"stat"` + `"template"` text
+  row (the mechanism Northern Lights/City Nights introduced), arranged
+  in two labeled columns over a new pastel floral photo background.
+  Two new bundled backgrounds (`assets/backgrounds/cherry_blossom.jpg`,
+  `lavender_bloom.jpg`, both 1920×960 JPEG quality 90, same convention
+  as the other bundled photos) were generated with the same plain-PIL
+  layered-blob technique `scripts/generate_backgrounds.py` already
+  used for aurora/nebula/synthwave/bokeh -- new `_draw_petal_flower()`
+  helper composites several soft-edged ellipse "petals" in a ring
+  around a brighter center via the existing `soft_blob()` primitive,
+  scattered across a rose or lilac gradient -- original generated art,
+  not a copy of the reference photo's own illustration. Registered as
+  `"cherry"`/`"lavender"` entries in `BUNDLED_BACKGROUND_IMAGES`/
+  `BACKGROUND_PRESETS`, same as every other bundled photo -- no
+  renderer or packaging changes needed. "Cherry Blossom": CPU column
+  (Load/Freq/Peak/RAM) and GPU column (Load/Temp/Power/VRAM) in a soft
+  pink-on-rose palette. "Petal Dream": "System" column (Load/RAM/Disk/
+  Swap) and "Graphics" column (Load/Temp/Power/VRAM) plus a centered
+  Network reading, in a lilac-on-steel-blue palette -- deliberately a
+  different stat selection than Cherry Blossom so the two don't read
+  as re-skins of the same field list. 13 built-ins total now. Verified:
+  both render correctly standalone; the real `AppController.
+  dashboard_meta()` surfaces both as distinct picker cards with correct
+  thumbnails; loading either in a headless browser shows every label/
+  value row and the clock+date live and in place, no overlap or
+  clipping.
 
 ## [1.0.0] — 2026-08-29
 
