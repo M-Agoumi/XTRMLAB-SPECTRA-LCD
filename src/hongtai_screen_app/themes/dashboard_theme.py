@@ -1201,6 +1201,12 @@ DEFAULT_ELEMENTS = slots_to_elements()
 #                        star of the show.
 #   City Nights       -- the bokeh background, just a big minimal
 #                        analog clock and two live text readings.
+#
+# Circuit Bloom is different from all 10 above: it isn't an original
+# design, it's a real user's own saved layout ("my preset") plus their
+# own uploaded background photo, shipped as a built-in at their request
+# so it ships with every install instead of staying local to their
+# machine. See its own comment just above its entry below.
 BUILTIN_DASHBOARD_PRESETS = {
     "Neon Horizon": {
         "background": {
@@ -2276,6 +2282,121 @@ BUILTIN_DASHBOARD_PRESETS = {
             },
         ],
     },
+    # "Circuit Bloom" -- shipped at the user's own request: it's their
+    # personal "my preset" layout (an 8-gauge full-stats board they'd
+    # built and saved themselves) plus the magenta/teal circuit-board
+    # photo they'd set as their background at the time, bundled here as
+    # a built-in so a fresh install starts with it as an option too.
+    # Every gauge below is a verbatim copy of their saved layout (same
+    # ids, stats, positions, radii, z-order); none of them set an
+    # explicit "color", so they fall back to the standard left-half/
+    # right-half cyan/magenta split via _element_accent(), same as in
+    # their own config.
+    "Circuit Bloom": {
+        "background": {
+            "mode": "circuit",
+            "scheme": "blue",
+            "image_path": None,
+        },
+        "elements": [
+            {
+                "id": "top_left",
+                "type": "gauge",
+                "stat": "cpu_load",
+                "x": 0.14635416666666667,
+                "y": 0.2765625,
+                "radius": 0.17040625,
+                "rotation": 0.0,
+                "color": None,
+                "opacity": 1.0,
+                "z": 0,
+            },
+            {
+                "id": "bottom_left",
+                "type": "gauge",
+                "stat": "ram",
+                "x": 0.14635416666666667,
+                "y": 0.7213541666666666,
+                "radius": 0.17040625,
+                "rotation": 0.0,
+                "color": None,
+                "opacity": 1.0,
+                "z": 1,
+            },
+            {
+                "id": "top_right",
+                "type": "gauge",
+                "stat": "gpu_load",
+                "x": 0.8536458333333333,
+                "y": 0.2765625,
+                "radius": 0.17040625,
+                "rotation": 0.0,
+                "color": None,
+                "opacity": 1.0,
+                "z": 2,
+            },
+            {
+                "id": "bottom_right",
+                "type": "gauge",
+                "stat": "network",
+                "x": 0.8536458333333333,
+                "y": 0.7213541666666666,
+                "radius": 0.17040625,
+                "rotation": 0.0,
+                "color": None,
+                "opacity": 1.0,
+                "z": 3,
+            },
+            {
+                "id": "right_secondary",
+                "type": "gauge",
+                "stat": "gpu_temp",
+                "x": 0.6951461114583334,
+                "y": 0.49895833333333334,
+                "radius": 0.08861125,
+                "rotation": 0.0,
+                "color": None,
+                "opacity": 1.0,
+                "z": 4,
+            },
+            {
+                "id": "left_secondary",
+                "type": "gauge",
+                "stat": "cpu_freq",
+                "x": 0.3048538885416667,
+                "y": 0.49895833333333334,
+                "radius": 0.08861125,
+                "rotation": 0.0,
+                "color": None,
+                "opacity": 1.0,
+                "z": 5,
+            },
+            {
+                "id": "left_mini",
+                "type": "gauge",
+                "stat": "disk_usage",
+                "x": 0.384625,
+                "y": 0.8833333333333333,
+                "radius": 0.0753195625,
+                "rotation": 0.0,
+                "color": None,
+                "opacity": 1.0,
+                "z": 6,
+            },
+            {
+                "id": "right_mini",
+                "type": "gauge",
+                "stat": "vram_usage",
+                "x": 0.615375,
+                "y": 0.8833333333333333,
+                "radius": 0.0753195625,
+                "rotation": 0.0,
+                "color": None,
+                "opacity": 1.0,
+                "z": 7,
+            },
+        ],
+    },
 }
 
 
@@ -3076,6 +3197,7 @@ BACKGROUND_PRESETS = {
     "nebula": "Deep Nebula (image)",
     "synthwave": "Synthwave Sunset (image)",
     "bokeh": "Bokeh Night (image)",
+    "circuit": "Circuit Bloom (image)",
     "image": "Custom image",
 }
 # The four "(image)" entries above aren't a user's own photo (that's
@@ -3097,6 +3219,7 @@ BUNDLED_BACKGROUND_IMAGES = {
     "nebula": "nebula.jpg",
     "synthwave": "synthwave.jpg",
     "bokeh": "bokeh.jpg",
+    "circuit": "circuit_bloom.jpg",
 }
 # Applies to every mode above except "image" and the bundled-image
 # modes (which are the photo itself) -- "default"'s hex grid and

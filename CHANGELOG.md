@@ -1725,6 +1725,30 @@ dashboard designer) this is laying groundwork for.
   numbers (this sandbox's own real CPU/RAM/network readings, not fixed
   placeholder values) across repeated polls, and Save layout correctly
   stops the polling and hands back to the real live frame.
+- **A new built-in preset, "Circuit Bloom"** — requested by name: ship
+  a user's own saved "my preset" layout (an 8-gauge full-stats board:
+  CPU load/RAM/GPU load/network in the four corners, GPU temp/CPU freq
+  as two smaller side gauges, disk/VRAM as two mini gauges along the
+  bottom) together with the magenta-to-teal circuit-board photo they'd
+  set as their background, as an 11th built-in so it ships with every
+  install instead of staying local to their one machine. The photo
+  (`75e1317d_background.png`, a custom upload, not one of the existing
+  4 bundled backgrounds) was center-cropped and resized to the
+  standard 1920×960 JPEG-quality-90 convention the other bundled
+  backgrounds already use (`assets/backgrounds/circuit_bloom.jpg`),
+  and added as a new `"circuit"` entry in both `BUNDLED_BACKGROUND_
+  IMAGES` and `BACKGROUND_PRESETS` — no renderer changes needed, same
+  cover-fit + darken code path every bundled/uploaded photo background
+  already goes through. Every gauge is a verbatim copy of the saved
+  layout's own ids/stats/positions/radii/z-order; none of them set an
+  explicit color, so they pick up the standard left-half/right-half
+  cyan/magenta accent split, same as in the original. Already matched
+  by the existing `assets/backgrounds/*.jpg` glob in `packaging/
+  hongtai_screen.spec`, so no packaging changes needed either.
+  Verified: renders correctly standalone (`render_live_preview()`),
+  appears as the 11th card in the preset picker with a correct
+  thumbnail, and loads cleanly (no mashup, no clipping) showing all 8
+  gauges live over the full background.
 
 ## [1.0.0] — 2026-08-29
 
