@@ -2297,6 +2297,45 @@ outright and hands back to the real (mocked) live frame -- verified
 both by the frame's `src` switching back to `/frame.jpg` and by the
 poll counter staying flat afterward instead of continuing to climb.
 
+Next request, once all three of the above shipped: "save 'my preset'
+and its wallpaper as a default theme that ship with the app, and name
+it what u see fit" -- take the user's own custom-saved preset (an
+8-gauge full-stats layout: CPU load/RAM/GPU load/network in the four
+corners, GPU temp/CPU freq as smaller side gauges, disk/VRAM as mini
+gauges along the bottom) and the custom photo they'd set as their
+background at the time, and ship both together as an 11th built-in
+(`BUILTIN_DASHBOARD_PRESETS`), naming it since they explicitly
+delegated that. Read their live `app_config.json` off the device to
+get the preset's exact element definitions (its own `background` was
+`None`, so what it actually renders with is the app's global
+`dashboard.background`, an `"image"`-mode entry pointing at a custom
+upload) and requested access to the folder those uploaded images live
+in (`...\HongtaiScreen\images`) to get at the actual file, which the
+user granted. The photo itself: a circuit-board render, magenta/purple
+fading into teal/cyan hexagonal traces -- named it "Circuit Bloom".
+Center-cropped and resized it to the same 1920x960 JPEG-quality-90
+convention the other 4 bundled photo backgrounds already use
+(`assets/backgrounds/circuit_bloom.jpg`), and added it as a genuinely
+new mode (`"circuit"`) in both `BUNDLED_BACKGROUND_IMAGES` and
+`BACKGROUND_PRESETS` -- it goes through the exact same cover-fit +
+darken code path every bundled or user-uploaded photo background
+already does, so nothing in the renderer needed to change, and
+`packaging/hongtai_screen.spec`'s existing `assets/backgrounds/*.jpg`
+glob already covers it with no spec edit needed. The 8 gauges in the
+new preset entry are a verbatim copy of the saved layout's own ids,
+stats, positions, radii and z-order; like the original, none of them
+set an explicit `color`, so they fall back to the standard left-half-
+cyan/right-half-magenta accent split rather than needing one hardcoded
+in. 11 built-ins total now. Verified: `render_live_preview()` on the
+new preset's own elements/background renders correctly standalone;
+regenerating the design-canvas meta through the real `AppController.
+dashboard_meta()` (not a hand-built mock) shows "Circuit Bloom" as an
+11th distinct picture card with a correct thumbnail; loading it in a
+headless browser shows the full background and all 8 gauges live and
+in place immediately, with no mashup and no clipping -- the same
+picker/preview path the 3 fixes right above this one had just gone
+through.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit
