@@ -144,7 +144,8 @@ def _make_handler(controller: AppController):
                     self._send_json(200, controller.save_dashboard_elements(body.get("elements")))
                 elif path == "/api/dashboard/preview":
                     body = self._read_json_body()
-                    controller.preview_dashboard_elements(body.get("elements"), body.get("duration", 5.0))
+                    controller.preview_dashboard_elements(
+                        body.get("elements"), body.get("background"), body.get("duration", 5.0))
                     self._send_json(200, {"ok": True})
                 elif path == "/api/dashboard/background":
                     body = self._read_json_body()

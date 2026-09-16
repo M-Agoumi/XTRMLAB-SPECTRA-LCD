@@ -402,19 +402,29 @@ class AppController:
             dashboard_theme.apply_weather_from_elements(elements)
             return dict(self.cfg["dashboard"])
 
-    def preview_dashboard_elements(self, elements, duration=5.0):
-        """Shows `elements` live on the running dashboard theme for
-        `duration` seconds, then reverts to whatever's actually saved --
-        the design canvas's "Preview on screen" button, for trying an
-        edit on the real panel without committing to it the way Save
-        layout does. Reuses the exact same live-apply path
-        save_dashboard_elements() uses (set_pending_dashboard_layout(),
-        picked up by the render loop's next frame), just without ever
-        touching self.cfg or config_store -- so if nothing else happens,
-        the running theme quietly goes back to the last real Save on its
-        own, and a page reload (which reads self.cfg, never the pending
-        layout) was never showing anything different in the first
-        place.
+    def preview_dashboard_elements(self, elements, background=None, duration=5.0):
+        """Shows `elements` (and, if given, `background`) live on the
+        running dashboard theme for `duration` seconds, then reverts
+        both to whatever's actually saved -- the design canvas's
+        "Preview on screen" button, for trying an edit on the real panel
+        without committing to it the way Save layout/Save background
+        does. Reuses the exact same live-apply path
+        save_dashboard_elements()/save_dashboard_background() use
+        (set_pending_dashboard_layout(), picked up by the render loop's
+        next frame), just without ever touching self.cfg or
+        config_store -- so if nothing else happens, the running theme
+        quietly goes back to the last real Save on its own, and a page
+        reload (which reads self.cfg, never the pending layout) was
+        never showing anything different in the first place.
+
+        `background` used to not be a parameter at all -- previewing
+        only ever pushed elements, so previewing a freshly-loaded preset
+        (or any unsaved background edit) showed the new layout over
+        whatever background was still actually saved, not the one being
+        tried. It's optional (None) rather than required because the
+        design canvas also uses this for an elements-only preview (e.g.
+        just nudging a gauge) where re-sending an unchanged background
+        would be harmless but pointless.
 
         A no-op-looking call when the dashboard theme isn't actually
         running is intentional, not an error: set_pending_dashboard_layout()
@@ -431,39 +441,57 @@ class AppController:
         either one back to a stale "saved" snapshot taken before it."""
         if not isinstance(elements, list):
             raise ValueError("elements must be a list")
+        if background is not None and not isinstance(background, dict):
+            raise ValueError("background must be an object")
         with self._lock:
             if self._preview_revert_timer is not None:
                 self._preview_revert_timer.cancel()
                 self._preview_revert_timer = None
-            dashboard_theme.set_pending_dashboard_layout(elements=elements)
+            dashboard_theme.set_pending_dashboard_layout(elements=elements, background=background)
             # Snapshotted now (not re-read from self.cfg inside the
             # timer callback) so a Save that lands *during* the preview
             # window still reverts to what was saved before THIS
             # preview started, not whatever the save changed it to --
-            # save_dashboard_elements() already cancels this timer
-            # outright in that case, but keeping the snapshot self-
-            # contained means this method's behavior doesn't depend on
-            # that ordering to stay correct.
+            # save_dashboard_elements()/save_dashboard_background()
+            # already cancel this timer outright in that case, but
+            # keeping the snapshot self-contained means this method's
+            # behavior doesn't depend on that ordering to stay correct.
             saved_elements = list(
                 (self.cfg.get("dashboard") or {}).get("elements") or dashboard_theme.DEFAULT_ELEMENTS
             )
-            timer = threading.Timer(max(0.5, float(duration)), self._revert_dashboard_preview, args=(saved_elements,))
+            # Only snapshotted (and only reverted) when a background was
+            # actually previewed -- an elements-only preview has no
+            # reason to touch the background either on the way in or
+            # the way back out.
+            saved_background = (
+                dict((self.cfg.get("dashboard") or {}).get("background") or {})
+                if background is not None
+                else None
+            )
+            timer = threading.Timer(
+                max(0.5, float(duration)),
+                self._revert_dashboard_preview,
+                args=(saved_elements, saved_background),
+            )
             timer.daemon = True
             self._preview_revert_timer = timer
             timer.start()
 
-    def _revert_dashboard_preview(self, saved_elements):
+    def _revert_dashboard_preview(self, saved_elements, saved_background=None):
         """Timer callback for preview_dashboard_elements() above --
         hands the running theme back whatever was actually saved before
-        the preview started. Clears self._preview_revert_timer first so
-        a save/preview racing this exact moment doesn't cancel a timer
-        object that's already done firing (Timer.cancel() on an already-
-        fired timer is harmless, but leaving the stale reference around
-        would make a later check think a revert is still pending when
-        it's not)."""
+        the preview started (elements always; background too, but only
+        when this preview actually touched it -- see
+        preview_dashboard_elements()'s own comment on `saved_background`
+        being None otherwise). Clears self._preview_revert_timer first
+        so a save/preview racing this exact moment doesn't cancel a
+        timer object that's already done firing (Timer.cancel() on an
+        already-fired timer is harmless, but leaving the stale reference
+        around would make a later check think a revert is still pending
+        when it's not)."""
         with self._lock:
             self._preview_revert_timer = None
-            dashboard_theme.set_pending_dashboard_layout(elements=saved_elements)
+            dashboard_theme.set_pending_dashboard_layout(elements=saved_elements, background=saved_background)
 
     def save_dashboard_background(self, background):
         """Persists the panel background (preset mode, color scheme,
@@ -479,6 +507,14 @@ class AppController:
         if not isinstance(background, dict):
             raise ValueError("background must be an object")
         with self._lock:
+            # Same reasoning as save_dashboard_elements()'s own timer
+            # cancel: a real Save here makes `background` the new source
+            # of truth, so a still-pending preview revert (see
+            # preview_dashboard_elements()) firing later would otherwise
+            # stomp this save back to whatever was saved *before* it.
+            if self._preview_revert_timer is not None:
+                self._preview_revert_timer.cancel()
+                self._preview_revert_timer = None
             dashboard_cfg = dict(self.cfg.get("dashboard") or {})
             existing = dict(dashboard_cfg.get("background") or {})
             existing.update(background)

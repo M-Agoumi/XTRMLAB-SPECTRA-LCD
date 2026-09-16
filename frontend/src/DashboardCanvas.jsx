@@ -525,6 +525,33 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   // button's own countdown label so it's obvious when the live panel is
   // about to revert back to whatever's actually saved.
   const [previewSecondsLeft, setPreviewSecondsLeft] = useState(null);
+  // A just-loaded preset's own pre-rendered thumbnail (meta.
+  // presetThumbnails[name] -- the exact same image the preset picker's
+  // own card shows, so it's already an accurate render of that
+  // preset's layout *and* background together), shown as the canvas's
+  // backdrop in place of the live panel photo until something makes it
+  // stale (see loadedPresetElementsRef's effect below, and
+  // clearPresetPreview() at every point that also stops it being
+  // accurate: an edit, Save, or Preview). Loading a preset used to
+  // leave the *old* live photo showing underneath the new preset's SVG
+  // mockups -- since nothing had actually been pushed to the panel yet
+  // -- which combined two unrelated designs into one broken-looking
+  // mess (the old theme's own baked-in text/gauges bleeding through
+  // the new one's mockup overlay). This stands in for "what will
+  // actually be on the panel" during that in-between window instead.
+  const [presetPreviewUrl, setPresetPreviewUrl] = useState(null);
+  // The `elements` reference `presetPreviewUrl` was captured for --
+  // once `elements` changes to anything else (a drag, a property edit,
+  // undo/redo, Reset to defaults, ...) the thumbnail no longer matches
+  // what's on the canvas, so the effect below clears it. Loading
+  // *another* preset updates this ref again in the same tick it sets
+  // a new presetPreviewUrl, so that doesn't trip the "went stale"
+  // effect on itself.
+  const loadedPresetElementsRef = useRef(null);
+  const clearPresetPreview = () => {
+    loadedPresetElementsRef.current = null;
+    setPresetPreviewUrl(null);
+  };
 
   const historyRef = useRef([]);
   const futureRef = useRef([]);
@@ -559,6 +586,18 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Drops the just-loaded-preset preview the moment `elements` moves on
+  // to something that thumbnail no longer represents -- any further
+  // edit (drag, resize, property change, Reset to defaults, undo/redo).
+  // Loading a preset sets loadedPresetElementsRef.current to that exact
+  // same array reference it just committed, so this only fires on a
+  // *later*, different commit -- not on the load itself.
+  useEffect(() => {
+    if (loadedPresetElementsRef.current && elements !== loadedPresetElementsRef.current) {
+      clearPresetPreview();
+    }
+  }, [elements]);
 
   // A preset card's Delete button arms on the first click and only
   // actually deletes on a second (see deletePreset()); auto-disarming
@@ -881,6 +920,11 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     api.saveDashboardElements(elements).then(
       () => {
         savedElementsRef.current = elements;
+        // The live panel photo is about to actually match this layout
+        // (its next frame rebakes with it), so the stand-in preset
+        // thumbnail -- if one was still showing -- has done its job and
+        // can step aside for the real thing.
+        clearPresetPreview();
         setStatus("Layout saved -- applies live, even while the dashboard is already running.");
       },
       (e) => setError(e.message)
@@ -904,9 +948,19 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   // unsaved preview forever.
   const previewLayout = () => {
     if (previewSecondsLeft !== null) return; // one preview at a time from this tab
-    api.previewDashboardElements(elements, PREVIEW_SECONDS).then(
+    // Sends bgDraft along with elements -- previewing a freshly-loaded
+    // preset used to only push its *elements* live, leaving the panel's
+    // actual background untouched until a separate "Save background"
+    // click, so "Preview on screen" right after loading a preset showed
+    // its layout over the *previous* preset's background. See
+    // preview_dashboard_elements()'s own updated comment on the backend
+    // side for how the revert now covers both.
+    api.previewDashboardElements(elements, bgDraft, PREVIEW_SECONDS).then(
       () => {
         setPreviewSecondsLeft(PREVIEW_SECONDS);
+        // Same reasoning as saveLayout()'s clearPresetPreview() call --
+        // the real live photo is about to catch up to this preview.
+        clearPresetPreview();
         const started = Date.now();
         const tick = () => {
           const remaining = PREVIEW_SECONDS - (Date.now() - started) / 1000;
@@ -961,6 +1015,10 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     api.saveDashboardBackground(bgDraft).then(
       (bg) => {
         setBgDraft(bg);
+        // Same reasoning as saveLayout()'s clearPresetPreview() call --
+        // the live panel photo is about to actually show this
+        // background, so any stand-in preset thumbnail can step aside.
+        clearPresetPreview();
         setBgStatus("Background saved -- applies live, even while the dashboard is already running.");
       },
       (e) => setBgError(e.message)
@@ -1019,6 +1077,14 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     // (every preset saved before this existed) leaves the current
     // background draft alone rather than clearing it to something.
     if (preset.background) setBgDraft(preset.background);
+    // Show this preset's own pre-rendered thumbnail (layout + background
+    // together, exactly what the picker card itself shows) as the
+    // canvas backdrop instead of the live panel photo, which still
+    // shows whatever the *previous* theme looked like until an actual
+    // Save/Preview pushes this one -- see presetPreviewUrl's own
+    // comment for why that mismatch used to look broken.
+    loadedPresetElementsRef.current = preset.elements;
+    setPresetPreviewUrl(meta?.presetThumbnails?.[name] || null);
     setStatus(
       preset.background
         ? `Loaded preset "${name}" (layout + background) -- Save layout / Save background to apply.`
@@ -1101,7 +1167,28 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   // whole gesture (a plain drag on one gauge lit up the image/media
   // elements' borders too), which read as those other elements getting
   // highlighted for no reason.
-  const forceAllMockups = dirty && !selectedId;
+  // `&& !presetPreviewUrl` carves out the one case where forcing every
+  // mockup on would be actively wrong instead of just unnecessary: right
+  // after loading a preset (dirty, nothing selected -- exactly what this
+  // would otherwise trigger on), presetPreviewUrl is *already* an
+  // accurate render of every element in its new position, so forcing
+  // the SVG copies on top too would double-draw the same content a
+  // second time -- the same kind of ghosting the showMockup gates
+  // elsewhere exist to prevent, just against an accurate backdrop
+  // instead of a stale one this time. It clears itself (see its own
+  // comment) the moment anything actually needs forceAllMockups again --
+  // a drag, Reset to defaults, undo/redo -- so this only narrows the
+  // "just loaded, nothing touched yet" window.
+  const forceAllMockups = dirty && !selectedId && !presetPreviewUrl;
+  // Whatever's currently showing as .canvas-frame -- the real live
+  // panel photo, or presetPreviewUrl standing in for it -- is an
+  // accurate backdrop for the element mockups to defer to. Every
+  // showMockup/showClockMockup gate below used to compute its own local
+  // `connected && !!frameUrl` for this; kept as one shared value now
+  // that there are two possible accurate backdrops instead of one, so
+  // every gate treats them the same way rather than only some of them
+  // learning about presetPreviewUrl.
+  const hasAccurateBackdrop = !!presetPreviewUrl || (connected && !!frameUrl);
 
   return (
     <section className="panel">
@@ -1187,23 +1274,40 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
             onPointerUp={endDrag}
             onPointerLeave={endDrag}
           >
-        {/* This <img> is a snapshot of what the physical panel is
-            showing *right now* -- kept visible and continuously
-            refreshing regardless of `dirty`, so the canvas never drops
-            to a plain black background just because there's an
-            unsaved edit in progress. (An earlier version hid this
-            photo while dirty, to stop it from reading as a stale
-            preview after Reset to defaults -- but "stale photo behind
-            live mockups" is a much smaller problem than "background
-            goes black/disappears the moment you touch anything", so
-            that trade got reversed. The mockups below now carry the
-            "does this reflect my unsaved edit" job on their own -- via
-            plain `isSelected` for the element actually being edited,
-            and `forceAllMockups` (dirty with nothing selected) for a
-            mass change like Reset to defaults -- instead of this image
-            doing it by disappearing.) */}
-        {frameUrl && connected && (
-          <img className="canvas-frame" src={frameUrl} alt="Live panel frame" />
+        {/* Backdrop for the SVG mockups below: normally this <img> is a
+            snapshot of what the physical panel is showing *right now*
+            -- kept visible and continuously refreshing regardless of
+            `dirty`, so the canvas never drops to a plain black
+            background just because there's an unsaved edit in
+            progress. (An earlier version hid this photo while dirty, to
+            stop it from reading as a stale preview after Reset to
+            defaults -- but "stale photo behind live mockups" is a much
+            smaller problem than "background goes black/disappears the
+            moment you touch anything", so that trade got reversed. The
+            mockups below now carry the "does this reflect my unsaved
+            edit" job on their own -- via plain `isSelected` for the
+            element actually being edited, and `forceAllMockups` (dirty
+            with nothing selected) for a mass change like Reset to
+            defaults -- instead of this image doing it by
+            disappearing.)
+
+            `presetPreviewUrl` overrides it right after loading a preset
+            (see its own comment): the live photo above is still showing
+            the *previous* theme at that point -- both its background
+            and whatever it had baked into it -- and layering the new
+            preset's forceAllMockups-driven overlay on top of that used
+            to look like two designs smashed together, not "preset
+            loaded". The preset's own pre-rendered thumbnail is an
+            accurate stand-in for both halves (background + elements)
+            until an actual Save/Preview makes the live photo itself
+            accurate, at which point presetPreviewUrl clears and this
+            goes back to that photo. */}
+        {presetPreviewUrl ? (
+          <img className="canvas-frame" src={presetPreviewUrl} alt="Preset preview" />
+        ) : (
+          frameUrl && connected && (
+            <img className="canvas-frame" src={frameUrl} alt="Live panel frame" />
+          )
         )}
         <svg
           ref={svgRef}
@@ -1251,7 +1355,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               // there's no "always show" exception for one sub-type here,
               // since text has nothing like graph's need for history data
               // the editor doesn't have).
-              const overLiveFrame = connected && !!frameUrl;
+              const overLiveFrame = hasAccurateBackdrop;
               const showMockup = isSelected || !overLiveFrame || forceAllMockups;
               return (
                 <g key={el.id}>
@@ -1381,7 +1485,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               // layout is clicked, `dirty` (and so `forceAllMockups`)
               // goes false again and the mockup goes back to deferring
               // to the real frame.
-              const overLiveFrame = connected && !!frameUrl;
+              const overLiveFrame = hasAccurateBackdrop;
               const showMockup = el.type === "graph" || isSelected || !overLiveFrame || forceAllMockups;
               return (
                 <g key={el.id}>
@@ -1462,20 +1566,22 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               const y = el.y * REF_H;
               const color = el.color ? `rgb(${el.color[0]}, ${el.color[1]}, ${el.color[2]})` : "#fff";
               const face = el.face || "digital";
-              // When this canvas is overlaid on the real live frame
-              // (connected && frameUrl, see canvas-frame below), that
-              // live frame already shows the panel's actual, real,
-              // ticking clock at this exact spot -- drawing a mockup on
-              // top of it reads as two different clocks fighting each
-              // other, not as an editor overlay. So every face below
-              // only draws its visible mockup when there's no live
-              // frame under it to collide with; an invisible hit-shape
-              // the same size/position keeps it clickable/draggable
-              // either way, and the selection outline/handle are
-              // unaffected -- you can still always tell it's there and
-              // where it is once it's selected. Same reasoning/pattern
-              // for all three faces, just a different hit-shape each.
-              const overLiveFrame = connected && !!frameUrl;
+              // When this canvas is overlaid on an accurate backdrop
+              // (the real live frame, or presetPreviewUrl standing in
+              // for it right after loading a preset -- see
+              // hasAccurateBackdrop's own comment), that backdrop
+              // already shows the panel's actual, real, ticking clock
+              // at this exact spot -- drawing a mockup on top of it
+              // reads as two different clocks fighting each other, not
+              // as an editor overlay. So every face below only draws
+              // its visible mockup when there's no accurate backdrop
+              // under it to collide with; an invisible hit-shape the
+              // same size/position keeps it clickable/draggable either
+              // way, and the selection outline/handle are unaffected --
+              // you can still always tell it's there and where it is
+              // once it's selected. Same reasoning/pattern for all
+              // three faces, just a different hit-shape each.
+              const overLiveFrame = hasAccurateBackdrop;
               // `|| forceAllMockups` below (see the box-rendering branch
               // above for the full reasoning) makes the mockup keep
               // showing even while connected right after a mass change
@@ -1657,7 +1763,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
             const accent = accentFor(el);
             const { fill: ringFill, defs: ringGradDefs } = gradientFill(el, "gaugegrad", accent);
             const title = meta.stats[el.stat]?.title || el.stat;
-            const overLiveFrame = connected && !!frameUrl;
+            const overLiveFrame = hasAccurateBackdrop;
             const showMockup = isSelected || !overLiveFrame || forceAllMockups;
             return (
               <g key={el.id}>
