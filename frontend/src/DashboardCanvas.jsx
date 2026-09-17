@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api.js";
 import Collapsible from "./Collapsible.jsx";
+import { StyledGaugePreview, StyledBoxPreview, resolveWidgetStyle, widgetFont } from "./StyledWidgets.jsx";
 
 // The dashboard design canvas (ROADMAP.md Phase 5) -- drag/resize gauge
 // elements over the live panel frame, edit their stat/color/opacity in a
@@ -386,8 +387,9 @@ function FontFamilyControl({ selected, updateSelected, meta }) {
     <div className="row">
       <label className="grow">
         Font
-        <select value={selected.font || "default"}
-                onChange={(e) => updateSelected({ font: e.target.value === "default" ? null : e.target.value })}>
+        <select value={selected.font || ""}
+                onChange={(e) => updateSelected({ font: e.target.value || null })}>
+          <option value="">Use theme font</option>
           {Object.entries(families).map(([key, f]) => (
             <option key={key} value={key}>{f.label}</option>
           ))}
@@ -1021,6 +1023,12 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     if (!elements || !meta) return;
     const el = makeElement(type, elements, meta);
     if (!el) return;
+    if (meta.widgetStyles?.[bgDraft?.widget_style]) {
+      el.color = null;
+      el.color2 = null;
+      el.font = null;
+      el.gradient = false;
+    }
     commit([...elements, el]);
     setSelectedId(el.id);
   };
@@ -1461,7 +1469,10 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   }
 
   const selected = elements.find((el) => el.id === selectedId) || null;
-  const ordered = [...elements].sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+  const styledSelected = selected ? resolveWidgetStyle(selected, bgDraft, meta.widgetStyles) : null;
+  const usesWidgetStyle = !!meta.widgetStyles?.[styledSelected?.widget_style];
+  const ordered = elements.map((el) => resolveWidgetStyle(el, bgDraft, meta.widgetStyles))
+    .sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
   // Includes a staged-but-unsaved background now too, not just
   // elements -- Save layout persists both together (see its own
   // comment), so the button's enabled/attention state needs to reflect
@@ -1681,7 +1692,8 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                   )}
                   {showMockup ? (
                     <text x={x} y={y} textAnchor={anchor} dominantBaseline="middle"
-                          fontSize={fontSize} fill={color} opacity={el.opacity ?? 1}
+                          fontSize={fontSize} fontFamily={widgetFont(el)} fontWeight={widgetFont(el) ? (el.bold ? 650 : 450) : undefined}
+                          fill={color} opacity={el.opacity ?? 1}
                           onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move", userSelect: "none" }}>
                       {previewText}
                     </text>
@@ -1719,7 +1731,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               const h = (el.height ?? (el.type === "media" ? 0.52 : el.type === "weather" ? 0.46 : el.type === "bar" ? 0.12 : 0.14)) * REF_H;
               const x0 = el.x * REF_W - w / 2;
               const y0 = el.y * REF_H - h / 2;
-              const accent = el.type === "graph" || el.type === "bar" ? accentFor(el)
+              const accent = meta.widgetStyles?.[el.widget_style] || el.type === "graph" || el.type === "bar" ? accentFor(el)
                 : el.type === "media" ? ACCENT_GPU : el.type === "weather" ? "rgb(255, 200, 60)" : "rgb(150, 170, 200)";
               const label = el.type === "graph" || el.type === "bar" ? (meta.stats[el.stat]?.title || el.stat)
                 : el.type === "media" ? "NOW PLAYING" : el.type === "weather" ? "WEATHER" : "PICK AN IMAGE BELOW";
@@ -1817,6 +1829,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               // `!overLiveFrame` still brings it back whenever there's
               // no accurate backdrop to defer to.
               const showMockup = isSelected || !overLiveFrame || forceAllMockups;
+              const styledBox = !!meta.widgetStyles?.[el.widget_style] && ["bar", "media"].includes(el.type);
               return (
                 <g key={el.id}>
                   {imageUrl && (
@@ -1836,6 +1849,13 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                            preserveAspectRatio={preserveAspectRatio} clipPath={`url(#${clipId})`}
                            opacity={el.opacity ?? 1}
                            onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                  ) : showMockup && styledBox ? (
+                    <g>
+                      <StyledBoxPreview el={el} x={x0} y={y0} w={w} h={h} title={label} />
+                      <rect x={x0} y={y0} width={w} height={h} fill="transparent"
+                            stroke={isSelected ? "#ffd85e" : "none"} strokeDasharray="6 3"
+                            onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                    </g>
                   ) : showMockup ? (
                     <rect x={x0} y={y0} width={w} height={h}
                           fill={boxFill}
@@ -1856,7 +1876,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                           strokeDasharray={isSelected ? "6 3" : undefined}
                           style={{ pointerEvents: "none" }} />
                   )}
-                  {!imageUrl && showMockup && (
+                  {!imageUrl && showMockup && !styledBox && (
                     <text x={x0 + w / 2} y={y0 + h / 2} textAnchor="middle" dominantBaseline="middle"
                           fill="#fff" fontSize={12} style={{ pointerEvents: "none" }}>
                       {label}
@@ -2060,7 +2080,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                     </rect>
                   ) : (
                     <text x={x} y={y} textAnchor="middle" dominantBaseline="middle"
-                          fontSize={fontSize} fill={clockColor} opacity={el.opacity ?? 1}
+                          fontSize={fontSize} fontFamily={widgetFont(el)} fill={clockColor} opacity={el.opacity ?? 1}
                           onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move", userSelect: "none" }}>
                       {sample}
                     </text>
@@ -2098,7 +2118,14 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
             return (
               <g key={el.id}>
                 {ringGradDefs && <defs>{ringGradDefs}</defs>}
-                {showMockup ? (
+                {showMockup && !!meta.widgetStyles?.[el.widget_style] ? (
+                  <g>
+                    <StyledGaugePreview el={el} title={title} cx={cx} cy={cy} r={r} />
+                    <circle cx={cx} cy={cy} r={r+6} fill="transparent"
+                            stroke={isSelected ? "#ffd85e" : "none"} strokeDasharray="6 3"
+                            onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
+                  </g>
+                ) : showMockup ? (
                   <circle
                     cx={cx}
                     cy={cy}
@@ -2116,7 +2143,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                   <circle cx={cx} cy={cy} r={r} fill="transparent"
                           onPointerDown={onPointerDownGauge(el)} style={{ cursor: "move" }} />
                 )}
-                {showMockup && (
+                {showMockup && !meta.widgetStyles?.[el.widget_style] && (
                   <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
                         fill="#fff" fontSize={Math.max(10, r * 0.28)} style={{ pointerEvents: "none" }}>
                     {title}
@@ -2164,6 +2191,37 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
 
           {selected && (
         <div className="canvas-props">
+          {["text", "clock", "gauge", "bar", "media", "graph"].includes(selected.type) && (
+            <div className="row">
+              <label>
+                Widget appearance
+                <select value={selected.widget_style || ""}
+                        onChange={(e) => updateSelected({ widget_style: e.target.value || null })}>
+                  <option value="">Use theme style</option>
+                  <option value="default">Default</option>
+                  {Object.entries(meta.widgetStyles || {}).map(([key, spec]) => (
+                    <option key={key} value={key}>{spec.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+          {!!meta.widgetStyles?.[styledSelected.widget_style] && ["gauge", "bar", "media"].includes(selected.type) && (
+            <>
+              <FontFamilyControl selected={selected} updateSelected={updateSelected} meta={meta} />
+              <div className="row">
+                {[["color", "Accent"], ["ornament_color", "Metal"], ["text_color", "Text"]].map(([key, label]) => (
+                  <label key={key}>{label}
+                    <input type="color" value={rgbToHex(styledSelected[key])}
+                           onChange={(e) => updateSelected({ [key]: hexToRgb(e.target.value) })} />
+                  </label>
+                ))}
+                <button onClick={() => updateSelected({color: null, ornament_color: null, text_color: null, font: null})}>
+                  Use theme colors and font
+                </button>
+              </div>
+            </>
+          )}
           {selected.type === "text" && (
             <>
               <div className="row">
@@ -2344,11 +2402,11 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                        value={Math.round((selected.opacity ?? 1) * 100)}
                        onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
               </label>
-              <label className="row-inline">
+              {!usesWidgetStyle && <label className="row-inline">
                 <input type="checkbox" checked={!!selected.show_knob}
                        onChange={(e) => updateSelected({ show_knob: e.target.checked })} />
                 Show knob
-              </label>
+              </label>}
               {/* Turn both off to use the bar as a bare meter and put
                   the label/reading in your own text elements instead
                   -- how the card-based presets lay out a "LOAD ... 42%"
@@ -2366,11 +2424,11 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
             </div>
           )}
 
-          {selected.type === "bar" && (
+          {selected.type === "bar" && !usesWidgetStyle && (
             <GradientFillControl selected={selected} updateSelected={updateSelected} />
           )}
 
-          {selected.type === "bar" && selected.gradient && (
+          {selected.type === "bar" && selected.gradient && !usesWidgetStyle && (
             <div className="row">
               <span className="hint">
                 The color at any point on the bar stays put as the value changes, only how
@@ -2523,7 +2581,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                         type="text"
                         value={npDraft.not_playing_message || ""}
                         onChange={(e) => updateNpDraft({ not_playing_message: e.target.value })}
-                        placeholder={npDraft.default_message}
+                        placeholder={meta.widgetStyles?.[styledSelected.widget_style] ? "Awaiting Spotify" : npDraft.default_message}
                       />
                     </label>
                   </div>
@@ -2790,23 +2848,23 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                   Show title
                 </label>
               </div>
-              <div className="row">
+              {!usesWidgetStyle && <div className="row">
                 <label className="row-inline">
                   <input
                     type="checkbox"
-                    checked={selected.color !== null}
+                    checked={selected.color != null}
                     onChange={(e) => updateSelected({ color: e.target.checked ? hexToRgb("#ffffff") : null })}
                   />
                   Custom color
                 </label>
-                {selected.color !== null && (
+                {selected.color != null && (
                   <input
                     type="color"
                     value={rgbToHex(selected.color)}
                     onChange={(e) => updateSelected({ color: hexToRgb(e.target.value) })}
                   />
                 )}
-              </div>
+              </div>}
               {/* Gauge used to only ever offer exactly one extra color
                   (the old `color2` field, ROADMAP.md Phase 6) sweeping
                   the ring corner-to-corner -- upgraded to the same
@@ -2821,13 +2879,13 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                   case, including its "derive from left/right position"
                   default when left unchecked, which this component's
                   own plain `color` fallback doesn't know how to do. */}
-              <GradientFillControl selected={selected} updateSelected={updateSelected}
+              {!usesWidgetStyle && <GradientFillControl selected={selected} updateSelected={updateSelected}
                                     defaultColor={[0, 220, 255]} showSolidColorWhenOff={false}
                                     directionOptions={[
                                       ["diagonal", "Diagonal"],
                                       ["horizontal", "Left → Right"],
                                       ["vertical", "Top → Bottom"],
-                                    ]} />
+                                    ]} />}
               <div className="row">
                 <label>
                   X %
@@ -2876,9 +2934,9 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                   </label>
                   <label>
                     Height %
-                    <input type="number" min={4} max={90} style={{ width: "5em" }}
+                    <input type="number" min={selected.type === "bar" ? 1 : 4} max={90} style={{ width: "5em" }}
                            value={Math.round((selected.height ?? (selected.type === "media" ? 0.52 : selected.type === "weather" ? 0.46 : selected.type === "bar" ? 0.12 : selected.type === "clock" ? 0.22 : 0.14)) * 100)}
-                           onChange={(e) => updateSelected({ height: clamp(Number(e.target.value) / 100, 0.04, 0.9) })} />
+                           onChange={(e) => updateSelected({ height: clamp(Number(e.target.value) / 100, selected.type === "bar" ? 0.01 : 0.04, 0.9) })} />
                   </label>
                 </>
               )}
@@ -2902,6 +2960,16 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
       {bgDraft && (
         <Collapsible id="dashboard-background" title="Background" defaultOpen={false} as="div" className="canvas-props">
           <div className="row">
+            <label>
+              Widget style
+              <select value={bgDraft.widget_style || "default"}
+                      onChange={(e) => updateBgDraft({ widget_style: e.target.value })}>
+                <option value="default">Default</option>
+                {Object.entries(meta.widgetStyles || {}).map(([key, spec]) => (
+                  <option key={key} value={key}>{spec.label}</option>
+                ))}
+              </select>
+            </label>
             <label>
               Style
               <select

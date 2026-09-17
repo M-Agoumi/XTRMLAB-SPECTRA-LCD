@@ -345,6 +345,7 @@ class AppController:
             },
             "background": dict(dashboard_theme.DEFAULT_BACKGROUND, **(d.get("background") or {})),
             "backgroundPresets": dict(dashboard_theme.BACKGROUND_PRESETS),
+            "widgetStyles": dashboard_theme.widget_styles.STYLES,
             # Modes that are a photo, not a tinted procedural draw --
             # "image" (a user's own upload) plus every bundled one
             # (BUNDLED_BACKGROUND_IMAGES) -- so the frontend knows when
