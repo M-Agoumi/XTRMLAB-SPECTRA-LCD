@@ -2133,6 +2133,35 @@ dashboard designer) this is laying groundwork for.
   theme title. First theme built from art commissioned *for* a layout
   rather than a layout fitted around existing art.
 
+- **Three more new themes: Molten Forge, Abyssal and Sakura Ink**, each
+  built against art generated from its own prompt.
+  - **Molten Forge** — a foundry, in gothic widget geometry repainted
+    ember. The furnace mouths in the art are genuinely bright (mean
+    luminance ~58/255 at the outer edges against ~12 through the
+    middle), so nothing sits in the outermost tenth of the panel: the
+    dials go beside the furnaces, and the six readings run along the
+    cooled floor as one row, the widest quiet band the picture has.
+  - **Abyssal** — no dials at all. The art is two trench walls with
+    bioluminescent growth running down them, so CPU and GPU are drawn
+    *as* that: full-height vertical meters against the outer edges,
+    filling upward, teal into violet. Everything else is plain type,
+    because at this depth the picture is black enough to carry text
+    anywhere.
+  - **Sakura Ink** — the app's first light theme. Ink on rice paper, so
+    the colours invert: near-black readings, vermilion hairline meters,
+    pale tracks, and `dim: 0` (the standard 45% darkening exists to
+    make pale text legible over a photo — applied here it would turn
+    paper into mud). No album tile: a dark square dropped on rice paper
+    is the one thing that would break it, so the player is the track
+    line and a vermilion progress hairline.
+- **The now-playing widget's accent is themeable.** The glow framing
+  the album art and the progress bar were hard-coded to the app's
+  default violet, which is fine on the presets that grew up around it
+  and jarring anywhere else — a violet-pink frame in the middle of a
+  deep-sea theme, or on rice paper. An element `color` now drives both;
+  without one, the old constant, so nothing that never set a colour
+  changes.
+
 ## [1.0.0] — 2026-08-29
 
 First tagged release. Everything below shipped before this tag existed

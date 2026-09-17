@@ -2990,8 +2990,40 @@ Verified by rendering the full 960x480 panel and the picker thumbnail
 and looking at both, which is how every preset here has been built
 since the first one clipped its own gauge titles.
 
-Still outstanding: Molten Forge, Abyssal and Sakura Ink have prompts
-and layouts but no art yet.
+Molten Forge, Abyssal and Sakura Ink followed, and the interesting
+part is that each one's art changed its layout rather than being
+dropped into a shared one.
+
+Before placing anything, each image was measured -- mean luminance on a
+12x6 grid -- instead of eyeballed. Molten Forge came back with furnace
+mouths at ~58/255 against ~12 through the middle, so the outermost
+tenth of that panel is off limits: the dials moved inboard to sit on
+the dark ironwork beside the furnaces, and the six readings became a
+single row along the cooled floor, which the grid showed as the widest
+quiet band in the picture. Abyssal measured under 12 almost everywhere,
+so it can carry text anywhere -- and its walls suggested throwing the
+dials out entirely and drawing CPU and GPU as full-height vertical
+meters against the rock, filling upward like the growth on it. Sakura
+Ink measured 216-231 across its lower two thirds, which is the whole
+story: it is the first light theme in the app, so the palette inverts
+(near-black readings, vermilion hairlines, pale tracks) and `dim` is 0,
+because the standard 45% darkening exists to make pale text readable
+over a photo and would turn rice paper into mud.
+
+One renderer change fell out of Sakura Ink and Abyssal both: the
+now-playing widget's album-art glow and progress bar were hard-coded to
+ACCENT_MID, the app's default violet. That is invisible on the presets
+that grew up around it and impossible to ignore on a deep-sea theme or
+on paper. Both now read an element `color`, defaulting to the old
+constant, so nothing that never set one moves. Sakura Ink also turns
+the album tile off entirely -- a dark square on rice paper is the one
+thing that would break that theme, and sumi-e is space.
+
+Verified by rendering each at full panel size and at picker-thumbnail
+size and looking at both; Molten Forge went back for a second pass
+after the first render put its bottom row across the lava seams
+(raised to the dark floor, plate opacity up) and left two readings
+unlabelled.
 
 ### Phase 7 — Packaging and cutover
 

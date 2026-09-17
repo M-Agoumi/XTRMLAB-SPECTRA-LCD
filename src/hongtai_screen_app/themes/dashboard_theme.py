@@ -3956,6 +3956,205 @@ BUILTIN_DASHBOARD_PRESETS["Command Terminal"] = {
 }
 
 
+# Molten Forge -- the second commissioned-art theme. Where the art was
+# measured before placing anything: the furnace mouths are genuinely
+# bright (mean luminance ~58/255 at the very left and right edges,
+# against ~12 through the middle), so nothing sits in the outermost
+# tenth of the panel; the dials go at 0.19/0.81, which is the dark
+# ironwork *beside* the furnaces, and the readings run along the cooled
+# floor as one row rather than two side columns, because that floor is
+# the widest quiet band the picture has.
+#
+# Gothic geometry, repainted ember: engraved serif, spear needles and
+# pointed meters already read as forged rather than printed, which is
+# the whole reason not to invent a fourth style for this.
+_FORGE_PALETTE = {
+    "color": [255, 138, 48],
+    "text_color": [255, 226, 198],
+    "ornament_color": [132, 74, 36],
+    "muted_color": [188, 136, 100],
+    "track_color": [42, 18, 10],
+    "face_color": [18, 9, 6],
+    "alert_color": [255, 238, 150],
+}
+_FORGE_PLATE = {"plate": [18, 9, 6], "plate_opacity": 0.86, "plate_pad": 0.38}
+
+
+def _forge_reading(key, stat, label, x, z):
+    return {"id": f"forge_{key}_reading", "type": "text", "stat": stat,
+            "template": f"{label} {{value}}", "x": x, "y": 0.865,
+            "font_size": 0.027, "align": "center", "bold": True,
+            **_FORGE_PLATE, **_FORGE_PALETTE, "opacity": 1.0, "z": z}
+
+
+BUILTIN_DASHBOARD_PRESETS["Molten Forge"] = {
+    "background": {"mode": "forge", "scheme": "crimson", "border": [122, 54, 24],
+                   "dim": 0.22, "widget_style": "gothic", "image_path": None},
+    "elements": [
+        {"id": "forge_clock", "type": "clock", "x": 0.5, "y": 0.09,
+         "font_size": 0.052, "show_seconds": False, "show_date": True,
+         "face": "digital", "hour_format": "24h", **_FORGE_PALETTE,
+         "opacity": 1.0, "z": 1},
+        {"id": "forge_cpu_dial", "type": "gauge", "stat": "cpu_load",
+         "x": 0.19, "y": 0.35, "radius": 0.145, **_FORGE_PALETTE,
+         "opacity": 1.0, "z": 3},
+        {"id": "forge_gpu_dial", "type": "gauge", "stat": "gpu_load",
+         "x": 0.81, "y": 0.35, "radius": 0.145, **_FORGE_PALETTE,
+         "opacity": 1.0, "z": 4},
+        # Heat either side of the player -- the two stats this theme is
+        # actually about, given the picture.
+        {"id": "forge_cpu_freq_reading", "type": "text", "stat": "cpu_freq",
+         "template": "CLOCK  {value}", "x": 0.19, "y": 0.665, "font_size": 0.034,
+         "align": "center", "bold": True, **_FORGE_PLATE, **_FORGE_PALETTE,
+         "opacity": 1.0, "z": 5},
+        {"id": "forge_gpu_temp_reading", "type": "text", "stat": "gpu_temp",
+         "template": "HEAT  {value}", "x": 0.81, "y": 0.665, "font_size": 0.034,
+         "align": "center", "bold": True, **_FORGE_PLATE, **_FORGE_PALETTE,
+         "opacity": 1.0, "z": 6},
+        _forge_reading("ram", "ram", "RAM", 0.135, 20),
+        _forge_reading("dsk", "disk_usage", "DISK", 0.29, 21),
+        _forge_reading("net", "network", "NET", 0.425, 22),
+        _forge_reading("vrm", "vram_usage", "VRAM", 0.575, 23),
+        _forge_reading("vol", "volume", "VOL", 0.715, 24),
+        _forge_reading("prc", "process_count", "PROC", 0.865, 25),
+        {"id": "forge_spotify", "type": "media", "x": 0.5, "y": 0.45,
+         "width": 0.30, "height": 0.54, "show_art": True, "show_name": True,
+         "show_time": True, **_FORGE_PALETTE, "opacity": 1.0, "z": 50},
+    ],
+}
+
+
+# Abyssal -- no dials at all. The art is two trench walls with
+# bioluminescent growth running down them, so the two headline stats
+# are drawn *as* that: full-height vertical meters hard against the
+# outer edges, filling upward like the glow on the rock. Everything
+# else is a plain reading, because at this depth the picture is mostly
+# black (measured mean luminance under 12/255 across the whole middle
+# and bottom) and can carry text anywhere.
+#
+# Default widget renderer rather than a style: the styles are all
+# architectural -- bezels, engraving, tracery -- and this theme's whole
+# idea is that nothing is built, it's just light in water.
+_ABYSS_TEAL = [64, 224, 224]
+_ABYSS_VIOLET = [150, 122, 245]
+_ABYSS_TEXT = [198, 240, 246]
+
+
+def _abyss_reading(key, stat, label, x, y, z):
+    return {"id": f"abyss_{key}", "type": "text", "stat": stat,
+            "template": f"{label}   {{value}}", "x": x, "y": y,
+            "font_size": 0.032, "align": "center", "bold": True,
+            "font": "chakra", "color": _ABYSS_TEXT, "opacity": 1.0, "z": z}
+
+
+BUILTIN_DASHBOARD_PRESETS["Abyssal"] = {
+    "background": {"mode": "abyss", "scheme": "blue", "border": "none",
+                   "dim": 0.12, "widget_style": "default", "image_path": None},
+    "elements": [
+        {"id": "abyss_clock", "type": "clock", "x": 0.5, "y": 0.095,
+         "font_size": 0.056, "show_seconds": False, "show_date": True,
+         "face": "digital", "hour_format": "24h", "font": "chakra",
+         "color": _ABYSS_TEXT, "opacity": 1.0, "z": 1},
+        {"id": "abyss_cpu_column", "type": "bar", "stat": "cpu_load",
+         "x": 0.062, "y": 0.52, "width": 0.026, "height": 0.56,
+         "orientation": "vertical", "show_knob": False, "show_title": False,
+         "show_value": False, "color": _ABYSS_TEAL, "gradient": True,
+         "gradient_direction": "vertical",
+         "gradient_colors": [_ABYSS_VIOLET, _ABYSS_TEAL],
+         "track_color": [10, 26, 34], "opacity": 1.0, "z": 3},
+        {"id": "abyss_gpu_column", "type": "bar", "stat": "gpu_load",
+         "x": 0.938, "y": 0.52, "width": 0.026, "height": 0.56,
+         "orientation": "vertical", "show_knob": False, "show_title": False,
+         "show_value": False, "color": _ABYSS_TEAL, "gradient": True,
+         "gradient_direction": "vertical",
+         "gradient_colors": [_ABYSS_VIOLET, _ABYSS_TEAL],
+         "track_color": [10, 26, 34], "opacity": 1.0, "z": 4},
+        {"id": "abyss_cpu_value", "type": "text", "stat": "cpu_load",
+         "template": "CPU  {value}", "x": 0.185, "y": 0.30,
+         "font_size": 0.036, "align": "center", "bold": True, "font": "chakra",
+         "color": _ABYSS_TEAL, "opacity": 1.0, "z": 5},
+        {"id": "abyss_gpu_value", "type": "text", "stat": "gpu_load",
+         "template": "GPU  {value}", "x": 0.815, "y": 0.30,
+         "font_size": 0.036, "align": "center", "bold": True, "font": "chakra",
+         "color": _ABYSS_TEAL, "opacity": 1.0, "z": 6},
+        _abyss_reading("ram", "ram", "RAM", 0.185, 0.44, 20),
+        _abyss_reading("clk", "cpu_freq", "CLK", 0.185, 0.56, 21),
+        _abyss_reading("dsk", "disk_usage", "DSK", 0.185, 0.68, 22),
+        _abyss_reading("tmp", "gpu_temp", "TMP", 0.815, 0.44, 23),
+        _abyss_reading("vrm", "vram_usage", "VRM", 0.815, 0.56, 24),
+        _abyss_reading("net", "network", "NET", 0.815, 0.68, 25),
+        _abyss_reading("vol", "volume", "VOL", 0.185, 0.83, 26),
+        _abyss_reading("prc", "process_count", "PROC", 0.815, 0.83, 27),
+        {"id": "abyss_spotify", "type": "media", "x": 0.5, "y": 0.47,
+         "width": 0.30, "height": 0.54, "show_art": True, "show_name": True,
+         "show_time": True, "color": _ABYSS_TEAL, "opacity": 1.0, "z": 50},
+    ],
+}
+
+
+# Sakura Ink -- the first light theme in the app. Everything else here
+# is pale text on a dark panel; this is ink on paper (measured mean
+# luminance 216-231/255 across the whole lower two thirds), so the
+# colors invert: near-black ink for the readings, one vermilion accent
+# borrowed from the seal in the corner, and pale grey meter tracks.
+#
+# `dim: 0` matters more here than anywhere else -- the standard 45%
+# darkening exists to make pale text legible over a photo, and applying
+# it to this would turn rice paper into mud. No dials and no styled
+# widgets: sumi-e is brush strokes and empty space, so the layout is
+# rows of type with hairline meters, the same shape Cherry Blossom
+# introduced, and the ink stays off the mountains in the upper third.
+_INK_DARK = [46, 40, 36]
+_INK_SEAL = [178, 52, 44]
+_INK_TRACK = [214, 203, 186]
+
+
+def _ink_row(key, stat, label, x, y, z):
+    return [
+        {"id": f"ink_{key}_label", "type": "text", "text": label, "x": x - 0.098,
+         "y": y, "font_size": 0.03, "align": "left", "bold": False,
+         "font": "poppins", "color": [122, 110, 98], "opacity": 1.0, "z": z},
+        {"id": f"ink_{key}_value", "type": "text", "stat": stat,
+         "template": "{value}", "x": x + 0.098, "y": y, "font_size": 0.038,
+         "align": "right", "bold": True, "font": "poppins_bold",
+         "color": _INK_DARK, "opacity": 1.0, "z": z + 1},
+        {"id": f"ink_{key}_meter", "type": "bar", "stat": stat, "x": x,
+         "y": y + 0.055, "width": 0.196, "height": 0.012,
+         "orientation": "horizontal", "show_knob": False, "show_title": False,
+         "show_value": False, "color": _INK_SEAL, "track_color": _INK_TRACK,
+         "opacity": 1.0, "z": z + 2},
+    ]
+
+
+BUILTIN_DASHBOARD_PRESETS["Sakura Ink"] = {
+    "background": {"mode": "sakura", "scheme": "mono", "border": "none",
+                   "dim": 0, "widget_style": "default", "image_path": None},
+    "elements": [
+        *_ink_row("cpu", "cpu_load", "CPU", 0.16, 0.40, 10),
+        *_ink_row("ram", "ram", "RAM", 0.16, 0.56, 13),
+        *_ink_row("dsk", "disk_usage", "DISK", 0.16, 0.72, 16),
+        *_ink_row("gpu", "gpu_load", "GPU", 0.84, 0.40, 19),
+        *_ink_row("tmp", "gpu_temp", "TEMP", 0.84, 0.56, 22),
+        *_ink_row("net", "network", "NET", 0.84, 0.72, 25),
+        {"id": "ink_vol", "type": "text", "stat": "volume",
+         "template": "VOL  {value}", "x": 0.5, "y": 0.90, "font_size": 0.03,
+         "align": "center", "bold": False, "font": "poppins",
+         "color": [122, 110, 98], "opacity": 1.0, "z": 30},
+        {"id": "ink_clock", "type": "clock", "x": 0.5, "y": 0.135,
+         "font_size": 0.05, "show_seconds": False, "show_date": True,
+         "face": "digital", "hour_format": "24h", "font": "poppins",
+         "color": _INK_DARK, "opacity": 1.0, "z": 1},
+        # No album tile: a dark square dropped on rice paper is the
+        # one thing that would break this theme, and sumi-e is space,
+        # so the player is the track line and a vermilion progress
+        # hairline.
+        {"id": "ink_spotify", "type": "media", "x": 0.5, "y": 0.50,
+         "width": 0.30, "height": 0.30, "show_art": False, "show_name": True,
+         "show_time": True, "color": _INK_SEAL, "opacity": 1.0, "z": 50},
+    ],
+}
+
+
 
 def _element_accent(el):
     """An element's gauge color: an explicit `color` (r, g, b) tuple if
@@ -4858,6 +5057,9 @@ BACKGROUND_PRESETS = {
     "ronin": "Neon Ronin (image)",
     "arcane": "Arcane Observatory (image)",
     "terminal": "Command Terminal (image)",
+    "forge": "Molten Forge (image)",
+    "abyss": "Abyssal (image)",
+    "sakura": "Sakura Ink (image)",
     "image": "Custom image",
 }
 # The four "(image)" entries above aren't a user's own photo (that's
@@ -4886,6 +5088,9 @@ BUNDLED_BACKGROUND_IMAGES = {
     "ronin": "neon_ronin.jpg",
     "arcane": "arcane_observatory.jpg",
     "terminal": "command_terminal.jpg",
+    "forge": "molten_forge.jpg",
+    "abyss": "abyssal.jpg",
+    "sakura": "sakura_ink.jpg",
     # The three "chassis" backgrounds -- not pictures the layout sits
     # on but the cards/panels it sits *in*, drawn at the same
     # fraction-of-panel coordinates as their presets' elements (see
@@ -6336,6 +6541,15 @@ def _draw_media_element(img, el, box, media, fonts):
     show_name = el.get("show_name", True)
     show_time = el.get("show_time", True)
 
+    # The frame glowing around the album art and the progress bar used
+    # to be hard-coded to ACCENT_MID (the app's default violet), which
+    # is fine on the presets that grew up around it and jarring on a
+    # theme with a palette of its own -- a violet-pink frame in the
+    # middle of a deep-sea theme, or on rice paper. An element `color`
+    # now drives both; without one, the old constant, so nothing that
+    # never set a color changes.
+    accent = _element_color(el, default=ACCENT_MID)
+
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
 
@@ -6380,7 +6594,7 @@ def _draw_media_element(img, el, box, media, fonts):
 
         art_x = int(mid_cx - art_size / 2)
         art_y = int(y)
-        glow_tile, glow_pad = art_glow_frame(art_size, 14, ACCENT_MID)
+        glow_tile, glow_pad = art_glow_frame(art_size, 14, accent)
         glow_paste(layer, glow_tile, (art_x - glow_pad, art_y - glow_pad), blur=8, glow_alpha=0.55)
         # `art` comes back as plain RGB (fit_album_art()/default_art()),
         # so -- unlike the fixed-column version, which pastes straight
@@ -6414,7 +6628,7 @@ def _draw_media_element(img, el, box, media, fonts):
         bar_x = int(mid_cx - bar_w / 2)
         bar_y = y + 4
         fraction = max(0.0, min(1.0, (position or 0.0) / duration))
-        progress_bar_glow(layer, bar_x, bar_y, bar_w, bar_h, fraction, ACCENT_MID)
+        progress_bar_glow(layer, bar_x, bar_y, bar_w, bar_h, fraction, accent)
         y = bar_y + bar_h + 16
         if y <= bottom:
             draw.text((bar_x, y), fmt_mmss(position), font=fonts.progress,

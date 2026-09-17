@@ -47,7 +47,11 @@ Constraints: no text, no lettering or numbers, no logos, no UI, no gauges, no pe
 
 # Requested backgrounds — four new themes
 
-These four have layouts designed but no artwork yet. Generate each image
+All four are done -- generated from these prompts and shipped. The
+notes below are kept as the record of what was asked for, and as the
+template for the next one.
+
+Originally: Generate each image
 from the prompt below (ChatGPT, or any image model that takes a long
 prompt), save it as PNG or JPEG at the given name, and drop all four in
 `C:\Users\agoum\Downloads\theme-backgrounds\`. They get converted to
@@ -86,8 +90,9 @@ Color palette: near-black, deep green-black, phosphor green, rare amber warning 
 Constraints: no text, no lettering, no numbers, no country labels, no logos, no UI panels, no gauges, no people, no watermark. Lines must stay thin and dim enough that pale green text reads clearly on top.
 ```
 
-## Molten Forge — `molten_forge.jpg`
-Widget style: gothic, recoloured to ember and black iron.
+## Molten Forge — `molten_forge.jpg` — **done**
+Generated from the prompt below at 1774×887 and bundled as
+`assets/backgrounds/molten_forge.jpg`; the theme ships as the "Molten Forge" preset.
 
 ```text
 Use case: stylized-concept
@@ -101,8 +106,9 @@ Color palette: near-black charcoal, black iron grey, ember orange, dull brass, r
 Constraints: no text, no lettering, no logos, no UI, no gauges, no people, no anvil in the centre, no watermark. The middle and lower thirds must stay dark enough for pale amber text to read cleanly.
 ```
 
-## Abyssal — `abyssal.jpg`
-Widget style: default renderer, gradient gauges in teal and violet.
+## Abyssal — `abyssal.jpg` — **done**
+Generated from the prompt below at 1774×887 and bundled as
+`assets/backgrounds/abyssal.jpg`; the theme ships as the "Abyssal" preset.
 
 ```text
 Use case: stylized-concept
@@ -116,8 +122,9 @@ Color palette: near-black navy, abyssal teal, cyan glow, muted violet, pale bone
 Constraints: no text, no lettering, no logos, no UI, no gauges, no divers, no boats, no large fish or whale in the centre, no watermark. Keep excellent contrast for pale cyan text over the middle and lower areas.
 ```
 
-## Sakura Ink — `sakura_ink.jpg`
-Widget style: default renderer, stat text rows, engraved serif.
+## Sakura Ink — `sakura_ink.jpg` — **done**
+Generated from the prompt below at 1774×887 and bundled as
+`assets/backgrounds/sakura_ink.jpg`; the theme ships as the "Sakura Ink" preset.
 
 ```text
 Use case: stylized-concept

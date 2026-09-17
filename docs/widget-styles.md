@@ -8,6 +8,9 @@ Load a preset from the Dashboard preset picker, then choose **Save layout** to a
 | Neon Ronin | Cyberpunk | Rain-soaked futuristic city backdrop, Orbitron lettering, angular bezels and corner brackets, segmented cyan meters, and an angular media frame. |
 | Arcane Observatory | High Fantasy | An elven observatory and enchanted forest backdrop, gold astrolabe ornament, carved serif lettering, floral dial tracery, jewel accents, and a gilt album frame. |
 | Command Terminal | Cyberpunk, phosphor green | A CRT situation display backdrop whose two wireframe hemispheres sit under the CPU and GPU dials, angular bezels and segmented meters in phosphor green, amber alerts, and a date-showing clock where the screen is blackest. No theme title. |
+| Molten Forge | Gothic, ember | A foundry backdrop, engraved serif, spear needles and iron dials in ember orange, a six-reading row along the cooled floor, and heat and clock readings flanking the player. |
+| Abyssal | Default | A deep-sea trench backdrop with no dials at all: CPU and GPU are full-height vertical meters against the trench walls, everything else is plain teal type. |
+| Sakura Ink | Default, light | The app's only light theme -- sumi-e ink on rice paper, near-black readings, vermilion hairline meters, no album tile. |
 
 Each preset includes Spotify album art, title, artist, elapsed time and progress; CPU and GPU load gauges; RAM, CPU frequency, disk usage, GPU temperature, VRAM and network readings; and a clock with the date. Spotify uses the existing Windows media-session integration and requires `winsdk`; no Spotify API key is needed. Missing sensor readings display `--`, and unavailable media shows a styled placeholder.
 
