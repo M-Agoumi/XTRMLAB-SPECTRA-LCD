@@ -774,6 +774,81 @@ def _sensor_value(frame, section_key, list_key):
     return sensors[0].get("value")
 
 
+_cpu_temp_state = {"value": None, "sampled_at": 0.0}
+CPU_TEMP_REFRESH = 1.0
+
+# Where a CPU package temperature hides in a SystemInfos frame. The
+# vendor's helper groups sensors by hardware section, and the GPU one
+# ("graphics") was the only section this app had ever needed, so the
+# CPU side is matched by trying the names that section plausibly goes
+# by rather than by hard-coding one -- if a machine spells it
+# differently the reading degrades to "--" instead of raising, and
+# scripts/check_sensors.py prints the frame's real section names so it
+# takes one run to find out.
+_CPU_TEMP_SECTIONS = ("cpu", "processor", "central", "mainboard")
+
+
+def _psutil_cpu_temp():
+    """psutil's own sensor reading, which is Linux-only in practice --
+    Windows doesn't expose CPU temperature through the API psutil uses
+    at all. Kept as the fallback so this stat is real on Linux and so
+    a Windows machine degrades to "--" rather than to an exception."""
+    getter = getattr(psutil, "sensors_temperatures", None)
+    if getter is None:
+        return None
+    try:
+        readings = getter()
+    except Exception:  # noqa: BLE001
+        return None
+    # Prefer a package/die sensor, then anything the platform offers.
+    for name in ("coretemp", "k10temp", "zenpower", "cpu_thermal", "acpitz"):
+        for entry in readings.get(name, ()):
+            if entry.current:
+                return float(entry.current)
+    for entries in readings.values():
+        for entry in entries:
+            if entry.current:
+                return float(entry.current)
+    return None
+
+
+def get_cpu_temp_c(sysinfo_frame=None):
+    """CPU package temperature in °C, or None if this machine won't say.
+
+    On Windows this comes from the vendor's own SystemInfos.exe helper
+    (the same feed GPU temp already used) rather than from Windows,
+    which doesn't offer the number -- see the module docstring. That
+    helper needs to load a sensor driver, which needs Administrator:
+    without it, it writes one frame and exits, read_systeminfos()'s
+    freshness check drops the stale frame, and this reads None. So on
+    a non-elevated run this stat is "--" by design, not by accident,
+    and no amount of retrying here changes that.
+
+    `sysinfo_frame` is the frame the render loop already read this
+    tick, passed in so a frame isn't parsed twice per stat -- same
+    arrangement get_gpu_stats() has. Cached for CPU_TEMP_REFRESH
+    otherwise."""
+    now = time.time()
+    state = _cpu_temp_state
+    if sysinfo_frame is None and now - state["sampled_at"] < CPU_TEMP_REFRESH:
+        return state["value"]
+    state["sampled_at"] = now
+
+    frame = sysinfo_frame if sysinfo_frame is not None else read_systeminfos()
+    value = None
+    for section in _CPU_TEMP_SECTIONS:
+        value = _sensor_value(frame, section, "temperature")
+        if value is not None:
+            break
+    if value is None:
+        value = _psutil_cpu_temp()
+    try:
+        state["value"] = None if value is None else float(value)
+    except (TypeError, ValueError):
+        state["value"] = None
+    return state["value"]
+
+
 # ----------------------------------------------------------------- pynvml --
 
 try:
@@ -1137,6 +1212,8 @@ STAT_DEFS = {
     "network": {"label": "Network", "title": "NETWORK", "min": 0, "max": NETWORK_GAUGE_MAX_MB_S,
                 "fmt": lambda v: f"{v:.1f}M/s"},
     "gpu_temp": {"label": "GPU Temp", "title": "GPU TEMP", "min": 0, "max": 100,
+                 "fmt": lambda v: f"{v:.0f}°"},
+    "cpu_temp": {"label": "CPU Temp", "title": "CPU TEMP", "min": 0, "max": 100,
                  "fmt": lambda v: f"{v:.0f}°"},
     "cpu_freq": {"label": "CPU Freq", "title": "CPU FREQ", "min": 0, "max": CPU_FREQ_GAUGE_MAX_GHZ,
                  "fmt": lambda v: f"{v:.1f}G"},
@@ -6940,7 +7017,7 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
 # (not randomized) so the same preset always renders the same
 # thumbnail rather than jittering on every page load.
 _THUMBNAIL_STATS = {
-    "cpu_load": 42, "gpu_load": 55, "gpu_temp": 58, "ram": 61,
+    "cpu_load": 42, "gpu_load": 55, "gpu_temp": 58, "cpu_temp": 52, "ram": 61,
     "network": 12.4, "cpu_freq": 3.6, "disk_usage": 47, "vram_usage": 38,
     "swap": 5, "disk_io": 8.2, "gpu_power": 95, "process_count": 210,
     "cpu_load_peak": 68, "battery": 80, "volume": 45,
@@ -7066,6 +7143,7 @@ def render_live_preview(elements, background, width=REFERENCE_WIDTH, height=REFE
         "cpu_load": get_cpu_stats()["util"],
         "gpu_load": gpu["util"] if gpu else None,
         "gpu_temp": gpu["temp"] if gpu else None,
+        "cpu_temp": get_cpu_temp_c(sysinfo_frame),
         "ram": get_ram_percent(),
         "network": get_network_rate_mb_s(),
         "cpu_freq": get_cpu_freq_ghz(),
@@ -7196,7 +7274,21 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     start_systeminfos()
     start_media_polling()
     if not os.path.exists(SYSTEMINFOS_EXE):
-        log(f"  (SystemInfos.exe not found at {SYSTEMINFOS_DIR} -- GPU temp may be limited)")
+        log(f"  (SystemInfos.exe not found at {SYSTEMINFOS_DIR} -- CPU/GPU temp may be limited)")
+    else:
+        # The helper needs Administrator to load its sensor driver. On
+        # a normal run it writes one frame and quietly exits, which
+        # reads back as "no sensors" -- worth saying out loud, because
+        # the symptom (CPU Temp showing "--") looks like a bug in this
+        # app rather than a missing privilege. Checked a moment after
+        # start_systeminfos() so the helper has had a chance to write.
+        def _warn_if_sensors_silent():
+            time.sleep(4.0)
+            if read_systeminfos() is None:
+                log("  (no sensor frames from SystemInfos.exe -- CPU temp will read '--'."
+                    " Its driver needs Administrator: run this app as administrator once"
+                    " to get hardware temperatures.)")
+        threading.Thread(target=_warn_if_sensors_silent, daemon=True).start()
     if not _GPU_OK:
         log("  (no NVIDIA GPU / nvidia-ml-py not available -- falling back to SystemInfos.exe for GPU stats)")
     if not _MEDIA_OK:
@@ -7300,6 +7392,7 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
                     "cpu_load": get_cpu_stats()["util"],
                     "gpu_load": gpu["util"] if gpu else None,
                     "gpu_temp": gpu["temp"] if gpu else None,
+        "cpu_temp": get_cpu_temp_c(sysinfo_frame),
                     "ram": get_ram_percent(),
                     "network": get_network_rate_mb_s(),
                     "cpu_freq": get_cpu_freq_ghz(),

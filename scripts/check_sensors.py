@@ -71,6 +71,38 @@ def main():
         print("pycaw:                       NOT installed -- the Volume stat will read '--'.")
         print("                             Install it with:  py -m pip install pycaw")
 
+    # --- CPU temperature ------------------------------------------
+    print()
+    print("--- CPU temperature ---------------------------------------")
+    try:
+        import ctypes
+        elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:  # noqa: BLE001 -- not Windows
+        elevated = None
+    print(f"running as administrator:    {elevated}")
+    print(f"SystemInfos.exe present:     {os.path.exists(dt.SYSTEMINFOS_EXE)}")
+    dt.start_systeminfos()
+    time.sleep(3.0)
+    frame = dt.read_systeminfos()
+    if frame is None:
+        print("sensor frame:                none (helper not running, or it exited)")
+        print("                             Its driver needs Administrator -- run this")
+        print("                             script (and the app) elevated to get CPU temp.")
+    else:
+        print("sensor frame sections:      ", ", ".join(sorted(frame)))
+        for section, body in sorted(frame.items()):
+            if not isinstance(body, dict):
+                continue
+            lists = [k for k in body if k.endswith("_list")]
+            if lists:
+                print(f"    {section}: {', '.join(sorted(lists))}")
+    temp = dt.get_cpu_temp_c(frame)
+    print("get_cpu_temp_c():           ", "unavailable" if temp is None else f"{temp:.0f} C")
+    if frame is not None and temp is None:
+        print("                             The frame is live but no CPU temperature was found")
+        print("                             in it -- send the section names above and the")
+        print("                             lookup can be pointed at the right one.")
+
     # Every active playback device, with what each one actually
     # reports -- the answer to "volume always shows zero" is usually
     # visible right here: the device Windows nominates as default is

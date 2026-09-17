@@ -3071,6 +3071,48 @@ can't be verified from here, as with the CPU clock, is the pycaw
 enumeration against real hardware, so `scripts/check_sensors.py` now
 prints every playback device with its id and current level.
 
+**CPU temperature, finally.** "As now we do request administrator
+right, can you add state for CPU temp?"
+
+This was the one reading the app deliberately didn't have. The module
+docstring has explained why since the first version: Windows doesn't
+expose CPU temperature through the API psutil reads, which is why it
+showed N/A, and the only source on this machine is the vendor's own
+`SystemInfos.exe` -- CPUID's SDK plus a licensed HWiNFO sensor DLL --
+whose driver needs Administrator to load. GPU temperature already came
+from that feed, so the plumbing existed; the stat didn't, because
+without elevation the helper writes a single frame and exits, and a
+stat that reads "--" on most runs is worse than no stat.
+
+So the reading itself is small: `get_cpu_temp_c()` pulls a temperature
+out of the CPU section of the same frame `get_gpu_stats()` reads, with
+psutil's sensors_temperatures() behind it (real on Linux, absent on
+Windows, so the fallback costs nothing and keeps the function honest
+everywhere). The section name is the one unknown -- "graphics" is the
+only section this app had ever needed -- so it tries the plausible
+spellings rather than hard-coding one, and degrades to "--" instead of
+raising if a machine spells it differently.
+
+The elevation half is the part worth being careful about, because the
+request's premise isn't quite right: what the app requests Administrator
+for today is *creating the startup task* (schtasks, via a one-off UAC
+prompt), and the task itself is registered `/rl limited` deliberately.
+Nothing about that makes the running app elevated, so CPU temp will
+read "--" on an ordinary launch. Rather than quietly changing the
+startup task to run everything elevated -- a real security decision,
+not an implementation detail -- the app now says what is happening: a
+few seconds after the dashboard starts, if no sensor frames are
+arriving, it logs that the driver needs Administrator and that running
+the app elevated once gets hardware temperatures.
+`scripts/check_sensors.py` reports the same three facts directly
+(elevated or not, frames arriving or not, and the frame's real section
+names), so a machine that files the sensor somewhere unexpected takes
+one run to identify.
+
+Verified by rendering all four element types bound to the new stat --
+gauge, bar, stat-bound text and graph -- and reading the numbers off
+the result.
+
 
 ### Phase 7 — Packaging and cutover
 

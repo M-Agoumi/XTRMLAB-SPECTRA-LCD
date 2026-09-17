@@ -2195,6 +2195,21 @@ dashboard designer) this is laying groundwork for.
   id and what each one reads, which is usually enough to see the
   problem directly.
 
+- **A CPU Temp stat**, available to every element type like any other.
+  Windows doesn't expose CPU temperature through the API psutil uses,
+  so this reads the vendor's own `SystemInfos.exe` helper — the same
+  sensor feed GPU temp already used — with psutil as the fallback,
+  which keeps it real on Linux.
+  - **It needs the app running as administrator.** That helper loads a
+    sensor driver, and without elevation it writes one frame and exits;
+    the stat then reads "--", which is the honest answer rather than a
+    frozen number. The app now says so in its log a few seconds after
+    the dashboard starts, instead of leaving "--" to look like a bug.
+  - `scripts/check_sensors.py` reports whether it's elevated, whether a
+    sensor frame is arriving, and the frame's section names — so if a
+    machine files CPU temperature under a section name this doesn't
+    recognise, one run identifies it.
+
 ## [1.0.0] — 2026-08-29
 
 First tagged release. Everything below shipped before this tag existed
