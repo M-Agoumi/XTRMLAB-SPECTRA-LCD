@@ -1830,6 +1830,76 @@ dashboard designer) this is laying groundwork for.
   Verified: `render_live_preview()` on both shows the ribbon-framed
   title, ruled column headers, corner swirls, and the bouquet sitting
   cleanly in the gap with no divider line cutting through it.
+- **Every built-in preset's title is gone.** Requested directly, and
+  right: a theme spending its best real estate writing its own name
+  ("NORTHERN LIGHTS", "DEEP SPACE", "SYSTEM MONITOR", "Doing great
+  today!", ...) is the one thing none of the commercial LCD themes
+  people actually run does. 15 title/greeting elements removed across
+  11 presets. Stat captions ("CPU FREQ", "BRAIN USAGE") stay -- those
+  label a reading, they aren't a banner.
+- **Bundled display fonts, and a per-element font picker.** Until now
+  this theme could only draw in whatever generic UI sans the OS had
+  (DejaVu Sans on Linux, Arial on Windows), which is most of why every
+  preset read as "system readout" no matter how its colors or layout
+  were arranged -- typography is where the look of the reference
+  themes actually lives. Six families now ship with the app under
+  `assets/fonts/` (Poppins, Orbitron, Chakra Petch, Bebas Neue, Anton,
+  Archivo Black -- all SIL OFL 1.1, see `assets/fonts/LICENSES.md`),
+  registered in `dashboard_theme.FONT_FAMILIES`, selectable per text
+  and clock element via a new "Font" picker in the property panel, and
+  bundled into frozen builds by `packaging/hongtai_screen.spec`. An
+  element with no font set resolves to exactly the old system-font
+  list, so nothing that already exists re-renders differently.
+- **Label chips for text elements.** A new `plate` color (plus
+  `plate_radius`/`plate_pad`) draws a filled rounded tag behind a text
+  element, auto-sized to the string -- the "TEMP" / "USAGE" / "POWER"
+  label-tag look the reference themes use everywhere. Sized from the
+  measured text rather than a fixed box, so a chip always fits its
+  label at any font or size. Exposed as a "Label chip" control.
+- **Themeable panel frame, meter tracks, and title toggles.** The
+  panel border was a fixed purple rounded rect drawn on *every* theme,
+  which fought any palette that wasn't purple-ish; `background
+  ["border"]` now recolors it or turns it off. `background["dim"]`
+  controls how far a background photo is blended toward black before
+  anything is drawn on it (still 0.45 by default, which is what an
+  arbitrary photo needs; the new card-based themes ship 0 since
+  they're drawn at final contrast already). Bars take a `track_color`
+  so a light theme's empty meter reads as a pale channel instead of a
+  near-black slab. Gauge, bar and graph elements gained `show_title`
+  (and bar `show_value`, graph `show_frame`) so a layout can label and
+  frame things in its own typography instead of getting a second,
+  differently-styled label drawn on top -- all exposed as checkboxes.
+- **Three new flagship presets, and the floral pair rebuilt to match**
+  — the rest of the same feedback ("we need the super hero fire
+  spitter"), measured against the commercial LCD themes the user had
+  in hand. All five are built the same way: the cards/panels each stat
+  block sits in are drawn into the background art at the *same*
+  fraction-of-panel coordinates as the elements themselves (see
+  `scripts/generate_backgrounds.py`), the type is set in the bundled
+  display faces, labels sit in chips, and meters carry the theme's
+  gradient.
+  - **Fusion Core** — dark card dashboard: a teal→violet→magenta→amber
+    sweep behind matte panels with accent edges, rings with their
+    readings inside, slim gradient meters, and history graphs drawn
+    into recessed wells. 37 elements.
+  - **Neon Pulse** — acid yellow / magenta / cyan, hard diagonals,
+    halftone, glitch slivers, Anton headers and chip labels.
+  - **Crimson Strike** — red / black / bone, comic halftone, torn
+    white slash, outlined readout panels.
+  - **Cherry Blossom / Petal Dream** — rebuilt on the same card system
+    in a light register (the only light themes in the set): two
+    translucent cards, chip labels, pale meter tracks, floral
+    scrollwork and bouquets in the margins. Their old title banner is
+    gone with the titles it framed.
+  Every character, logo and wordmark from the reference images was
+  left out -- what's taken is the composition and palette language,
+  drawn from scratch.
+  Verified: all 16 presets render correctly through
+  `render_live_preview()` and were reviewed as images; the design
+  canvas shows 16 picker cards; loading a flagship preset and clicking
+  Save layout persists both its elements and its background (including
+  the new border/dim keys); the new Font and Label chip controls
+  render for a selected text element; no console errors.
 
 ## [1.0.0] — 2026-08-29
 

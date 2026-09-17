@@ -373,6 +373,70 @@ const PREVIEW_SECONDS = 5;
 // element-type-specific belongs in here beyond which direction options
 // make sense to offer (`directionOptions`) and what to seed a first-time
 // gradient with (`defaultColor` -- the same fallback the plain solid
+// The font-family picker shown for text and clock elements. The list
+// itself comes from the backend (meta.fontFamilies -- dashboard_theme
+// .FONT_FAMILIES), so adding a bundled face is a one-line change there
+// and shows up here with no frontend edit at all. "default" is the
+// OS's own sans, which is what every element saved before the bundled
+// faces existed resolves to.
+function FontFamilyControl({ selected, updateSelected, meta }) {
+  const families = meta?.fontFamilies;
+  if (!families) return null;
+  return (
+    <div className="row">
+      <label className="grow">
+        Font
+        <select value={selected.font || "default"}
+                onChange={(e) => updateSelected({ font: e.target.value === "default" ? null : e.target.value })}>
+          {Object.entries(families).map(([key, f]) => (
+            <option key={key} value={key}>{f.label}</option>
+          ))}
+        </select>
+      </label>
+      <label className="row-inline">
+        <input type="checkbox" checked={!!selected.bold}
+               onChange={(e) => updateSelected({ bold: e.target.checked })} />
+        Bold
+      </label>
+    </div>
+  );
+}
+
+// The "chip" (plate) behind a text element -- a filled rounded tag
+// auto-sized to the string, the label style the card-based built-in
+// presets use ("TEMP" in a solid tag next to its value). Off unless a
+// plate color is set, so an ordinary text element is unaffected.
+function TextPlateControl({ selected, updateSelected }) {
+  const on = !!selected.plate;
+  return (
+    <div className="row">
+      <label className="row-inline">
+        <input type="checkbox" checked={on}
+               onChange={(e) => updateSelected(
+                 e.target.checked
+                   ? { plate: selected.plate || [236, 72, 153], plate_radius: selected.plate_radius ?? 0.3 }
+                   : { plate: null })} />
+        Label chip
+      </label>
+      {on && (
+        <>
+          <label>
+            Chip color
+            <input type="color" value={rgbToHex(selected.plate || [236, 72, 153])}
+                   onChange={(e) => updateSelected({ plate: hexToRgb(e.target.value) })} />
+          </label>
+          <label>
+            Roundness
+            <input type="range" min={0} max={50}
+                   value={Math.round((selected.plate_radius ?? 0.3) * 100)}
+                   onChange={(e) => updateSelected({ plate_radius: Number(e.target.value) / 100 })} />
+          </label>
+        </>
+      )}
+    </div>
+  );
+}
+
 // Color picker next to this one already uses for that element type).
 function GradientFillControl({ selected, updateSelected, defaultColor = [0, 220, 255],
                                  secondColor = "#ff2ee0", showSolidColorWhenOff = true,
@@ -1598,7 +1662,18 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               // goes false again and the mockup goes back to deferring
               // to the real frame.
               const overLiveFrame = hasAccurateBackdrop;
-              const showMockup = el.type === "graph" || isSelected || !overLiveFrame || forceAllMockups;
+              // A graph normally keeps its mockup box visible even over
+              // an accurate backdrop -- the SVG overlay can't draw the
+              // plotted line itself, so the box is the only thing
+              // making an otherwise-empty region locatable/draggable.
+              // A graph explicitly set frameless (show_frame: false, as
+              // the card-based presets do, since their background art
+              // already draws the plot well) is the exception: forcing
+              // a frame and a title label on top of a backdrop that
+              // deliberately has neither is the same double-render the
+              // other mockup gates exist to avoid.
+              const graphNeedsBox = el.type === "graph" && el.show_frame !== false;
+              const showMockup = graphNeedsBox || isSelected || !overLiveFrame || forceAllMockups;
               return (
                 <g key={el.id}>
                   {imageUrl && (
@@ -2021,6 +2096,8 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                          onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
                 </label>
               </div>
+              <FontFamilyControl selected={selected} updateSelected={updateSelected} meta={meta} />
+              <TextPlateControl selected={selected} updateSelected={updateSelected} />
               <GradientFillControl selected={selected} updateSelected={updateSelected}
                                     defaultColor={[255, 255, 255]} />
             </>
@@ -2057,6 +2134,20 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                   <input type="range" min={20} max={100}
                          value={Math.round((selected.opacity ?? 1) * 100)}
                          onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })} />
+                </label>
+                {/* Both default on -- off is for a layout that labels
+                    and frames the graph itself (the card-based presets
+                    draw the heading and the plot well into their own
+                    background art). */}
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_title !== false}
+                         onChange={(e) => updateSelected({ show_title: e.target.checked })} />
+                  Show title
+                </label>
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_frame !== false}
+                         onChange={(e) => updateSelected({ show_frame: e.target.checked })} />
+                  Show frame
                 </label>
               </div>
               <GradientFillControl selected={selected} updateSelected={updateSelected} />
@@ -2114,6 +2205,20 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                 <input type="checkbox" checked={!!selected.show_knob}
                        onChange={(e) => updateSelected({ show_knob: e.target.checked })} />
                 Show knob
+              </label>
+              {/* Turn both off to use the bar as a bare meter and put
+                  the label/reading in your own text elements instead
+                  -- how the card-based presets lay out a "LOAD ... 42%"
+                  row above a slim meter, in their own font. */}
+              <label className="row-inline">
+                <input type="checkbox" checked={selected.show_title !== false}
+                       onChange={(e) => updateSelected({ show_title: e.target.checked })} />
+                Show title
+              </label>
+              <label className="row-inline">
+                <input type="checkbox" checked={selected.show_value !== false}
+                       onChange={(e) => updateSelected({ show_value: e.target.checked })} />
+                Show value
               </label>
             </div>
           )}
@@ -2429,8 +2534,11 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               )}
 
               {(!selected.face || selected.face === "digital") && (
-                <GradientFillControl selected={selected} updateSelected={updateSelected}
-                                      defaultColor={[235, 235, 242]} />
+                <>
+                  <FontFamilyControl selected={selected} updateSelected={updateSelected} meta={meta} />
+                  <GradientFillControl selected={selected} updateSelected={updateSelected}
+                                        defaultColor={[235, 235, 242]} />
+                </>
               )}
 
               {selected.face === "analog" && (
@@ -2528,6 +2636,15 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                     value={Math.round((selected.opacity ?? 1) * 100)}
                     onChange={(e) => updateSelected({ opacity: Number(e.target.value) / 100 })}
                   />
+                </label>
+                {/* Off for a layout whose own heading already says
+                    what the ring is -- see the card-based presets,
+                    where the card is titled and the ring just shows
+                    the reading. */}
+                <label className="row-inline">
+                  <input type="checkbox" checked={selected.show_title !== false}
+                         onChange={(e) => updateSelected({ show_title: e.target.checked })} />
+                  Show title
                 </label>
               </div>
               <div className="row">
