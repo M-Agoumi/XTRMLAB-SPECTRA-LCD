@@ -52,6 +52,10 @@ class AppController:
         migrated = config_store.migrate_dashboard_elements(self.cfg)
         migrated = config_store.migrate_dashboard_weather_element(self.cfg) or migrated
         migrated = config_store.migrate_strip_redundant_builtin_presets(self.cfg) or migrated
+        # Runs after the strip above: that one removes untouched copies
+        # of built-ins, so whatever's still colliding by the time this
+        # runs is a real customization to rename aside rather than drop.
+        migrated = config_store.migrate_unshadow_builtin_presets(self.cfg) or migrated
         migrated = config_store.migrate_dashboard_preset_shape(self.cfg) or migrated
         if migrated:
             config_store.save_config(self.cfg)
@@ -326,6 +330,13 @@ class AppController:
             "defaults": dashboard_theme.DEFAULT_ELEMENTS,
             "presets": presets,
             "presetThumbnails": self._dashboard_preset_thumbnails(presets),
+            # Which of those names are the app's own read-only presets,
+            # and which built-ins are currently deleted -- the picker
+            # marks the first as built-in (and warns that saving over
+            # one saves a copy instead, see save_dashboard_preset()),
+            # and offers to restore the second.
+            "builtinPresets": list(dashboard_theme.BUILTIN_DASHBOARD_PRESETS),
+            "dismissedBuiltinPresets": list(d.get("dismissed_builtin_presets") or []),
             "stats": {
                 key: {"label": meta["label"], "title": meta["title"]}
                 for key, meta in dashboard_theme.STAT_DEFS.items()
@@ -582,16 +593,31 @@ class AppController:
         loadPreset() both fall back to the currently configured global
         background in that case, same as before this existed.
 
-        Always writes into `dashboard.presets`, whether `name` is
-        brand new, an existing saved preset, or one of the app's own
-        built-ins (dashboard_theme.BUILTIN_DASHBOARD_PRESETS) -- saving
-        under a built-in's exact name is how it gets customized: from
-        this point on config_store.resolve_dashboard_presets() prefers
-        this saved copy over the code-defined one of the same name. If
-        that name had previously been deleted (dismissed_builtin_
-        presets), it's un-dismissed here too -- explicitly saving a
-        preset by that name is as clear a signal as a person can give
-        that they want something there again."""
+        Writes into `dashboard.presets`, which holds a person's own
+        presets only. The app's own built-ins (dashboard_theme.
+        BUILTIN_DASHBOARD_PRESETS) are read-only: saving under a
+        built-in's exact name does NOT overwrite it, it saves a copy
+        under a free derived name ("Fusion Core" -> "Fusion Core
+        (custom)", see config_store.free_preset_name()), and the
+        returned "name" says which one it actually used so the caller
+        can report it rather than claiming a save that didn't happen
+        where it said.
+
+        That used to be the opposite: a same-named save shadowed the
+        built-in from then on (config_store.resolve_dashboard_presets()
+        preferred the saved copy), which is a strange bargain -- the
+        only way to tweak a built-in also permanently destroyed your
+        access to the original, and froze that slot against any future
+        app update to it. Requested directly: "default themes shouldn't
+        be modified, like if a user tries to modify them, we create a
+        duplicate of it where the user does his modifications".
+
+        A built-in that was previously deleted stays deleted through
+        this (restore_dismissed_dashboard_presets() is what brings
+        dismissed built-ins back now) -- saving a *copy* of one says
+        nothing about wanting the original back in the picker, unlike
+        the old overwrite, which by definition put something there
+        under that exact name."""
         name = (name or "").strip()
         if not name:
             raise ValueError("preset name can't be empty")
@@ -602,16 +628,16 @@ class AppController:
         with self._lock:
             dashboard_cfg = dict(self.cfg.get("dashboard") or {})
             presets = dict(dashboard_cfg.get("presets") or {})
+            if name in dashboard_theme.BUILTIN_DASHBOARD_PRESETS:
+                name = config_store.free_preset_name(
+                    name, set(presets) | set(dashboard_theme.BUILTIN_DASHBOARD_PRESETS))
             presets[name] = {"elements": elements, "background": background}
             dashboard_cfg["presets"] = presets
-            dismissed = list(dashboard_cfg.get("dismissed_builtin_presets") or [])
-            if name in dismissed:
-                dismissed.remove(name)
-                dashboard_cfg["dismissed_builtin_presets"] = dismissed
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
             merged = config_store.resolve_dashboard_presets(self.cfg)
-            return {"presets": merged, "thumbnails": self._dashboard_preset_thumbnails(merged)}
+            return {"name": name, "presets": merged,
+                    "thumbnails": self._dashboard_preset_thumbnails(merged)}
 
     def delete_dashboard_preset(self, name):
         """Removes `name` from whatever's actually saved in this
@@ -638,7 +664,37 @@ class AppController:
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
             presets = config_store.resolve_dashboard_presets(self.cfg)
-            return {"presets": presets, "thumbnails": self._dashboard_preset_thumbnails(presets)}
+            # The dismissed list rides along so the picker can offer
+            # "restore built-ins" the moment one is deleted, without a
+            # second round trip for the whole meta blob.
+            return {"presets": presets, "thumbnails": self._dashboard_preset_thumbnails(presets),
+                    "dismissed": list(dashboard_cfg.get("dismissed_builtin_presets") or [])}
+
+    def restore_dismissed_dashboard_presets(self):
+        """Puts every deleted built-in back in the picker by clearing
+        `dashboard.dismissed_builtin_presets` -- the undo for deleting
+        one.
+
+        This exists because built-ins became read-only: deleting one is
+        now the only thing a person can do TO a built-in (everything
+        else copies), and an action with no way back isn't a choice,
+        it's a trap. It used to have an accidental undo -- saving any
+        preset under that exact name un-dismissed it -- which stopped
+        being a thing when that save started creating a copy instead.
+
+        Only touches the dismissed list: a person's own saved presets
+        aren't involved, including one named "<built-in> (custom)" that
+        came from customizing the built-in in the first place."""
+        with self._lock:
+            dashboard_cfg = dict(self.cfg.get("dashboard") or {})
+            restored = list(dashboard_cfg.get("dismissed_builtin_presets") or [])
+            if restored:
+                dashboard_cfg["dismissed_builtin_presets"] = []
+                self.cfg["dashboard"] = dashboard_cfg
+                config_store.save_config(self.cfg)
+            presets = config_store.resolve_dashboard_presets(self.cfg)
+            return {"restored": restored, "presets": presets,
+                    "thumbnails": self._dashboard_preset_thumbnails(presets)}
 
     def _dashboard_preset_thumbnails(self, presets, default_background=None):
         """Renders every saved preset's small preview picture (a

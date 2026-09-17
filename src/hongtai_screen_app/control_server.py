@@ -166,6 +166,11 @@ def _make_handler(controller: AppController):
                     body = self._read_json_body()
                     result = controller.delete_dashboard_preset(body.get("name"))
                     self._send_json(200, result)
+                elif path == "/api/dashboard/presets/restore_builtins":
+                    # No body: it's the one-shot undo for deleting
+                    # built-in presets (which are read-only otherwise),
+                    # so there's nothing to parameterize.
+                    self._send_json(200, controller.restore_dismissed_dashboard_presets())
                 else:
                     self._send_error_json(404, f"no such endpoint: {path}")
             except (ValueError, RuntimeError) as e:

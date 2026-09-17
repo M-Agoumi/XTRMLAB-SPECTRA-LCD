@@ -603,6 +603,18 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
+/* Marks one of the app's own read-only presets. Deliberately a small
+   dim glyph rather than a "BUILT-IN" pill: the footer's width is
+   already the scarce thing here (see .preset-card-actions' comment
+   below), and this only has to answer "can I overwrite this?" at a
+   glance, with the full explanation in the name's tooltip. */
+.preset-card-badge {
+  margin-left: 5px;
+  font-size: 0.62rem;
+  color: #8b93a7;
+  vertical-align: 1px;
+}
+
 /* Duplicate/Delete used to sit here as two always-visible, full-label
    buttons -- wide enough on a long preset name to squeeze
    preset-card-name down to "N...", "B...", etc. Collapsing both behind

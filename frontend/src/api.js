@@ -193,6 +193,17 @@ export function saveDashboardPreset(name, elements, background) {
   }).then(asJson);
 }
 
+export function restoreBuiltinDashboardPresets() {
+  // Puts every deleted built-in preset back (controller.py's
+  // restore_dismissed_dashboard_presets()). No arguments: built-ins
+  // are read-only, so deleting one is the only state there is to undo.
+  return fetch("/api/dashboard/presets/restore_builtins", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  }).then(asJson);
+}
+
 export function deleteDashboardPreset(name) {
   return fetch("/api/dashboard/presets/delete", {
     method: "POST",
