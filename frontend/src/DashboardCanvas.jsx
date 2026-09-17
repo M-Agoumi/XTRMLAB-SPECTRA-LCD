@@ -664,6 +664,8 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   const savedBackgroundRef = useRef(null);
   const dragRef = useRef(null); // {id, mode: 'move'|'resize', beforeElements}
   const svgRef = useRef(null);
+  // The hidden <input type="file"> behind the "Import theme" button.
+  const importInputRef = useRef(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -1225,6 +1227,13 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     );
   };
 
+  // The app's own presets (dashboard_theme.BUILTIN_DASHBOARD_PRESETS,
+  // sent along in meta) are read-only: they can be loaded, duplicated
+  // and hidden, but never written over -- saving under one of their
+  // names saves a copy instead. Used for the card badge, the
+  // save-name warning, and the wording of a delete.
+  const isBuiltinPreset = (name) => (meta?.builtinPresets || []).includes(name);
+
   const saveAsPreset = () => {
     const name = presetName.trim();
     if (!name) return;
@@ -1237,7 +1246,27 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
       (r) => {
         setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
         setPresetName("");
-        setStatus(`Saved preset "${name}".`);
+        // The backend decides the final name: saving under a built-in's
+        // name saves a copy ("Fusion Core (custom)") rather than
+        // overwriting a read-only preset, so report what it actually
+        // did instead of echoing what was typed.
+        const saved = r.name || name;
+        setStatus(saved === name
+          ? `Saved preset "${saved}".`
+          : `"${name}" is a built-in preset and can't be overwritten -- saved your version as "${saved}".`);
+      },
+      (e) => setError(e.message)
+    );
+  };
+
+  const restoreBuiltins = () => {
+    api.restoreBuiltinDashboardPresets().then(
+      (r) => {
+        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails,
+                           dismissedBuiltinPresets: [] }));
+        setStatus(r.restored?.length
+          ? `Restored ${r.restored.length} built-in preset${r.restored.length === 1 ? "" : "s"}.`
+          : "No deleted built-in presets to restore.");
       },
       (e) => setError(e.message)
     );
@@ -1268,6 +1297,112 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     // used to need a second, separate "Save background" click too,
     // which this message wrongly implied was required either way.
     setStatus(`Loaded preset "${name}" -- Save layout to apply.`);
+  };
+
+  // Starts a theme from nothing: saves an empty preset and drops the
+  // canvas straight into editing it. Until this existed, every preset
+  // was necessarily derived from another one -- Duplicate copies a
+  // card, and "Save current layout as preset" bottles up whatever
+  // happens to be on the canvas -- so "I want to build one of my own"
+  // meant first dismantling somebody else's layout element by element.
+  //
+  // Deliberately empty rather than seeded with the default 8 gauges:
+  // "Reset to defaults" in the toolbar above already puts that layout
+  // on the canvas for anyone who wants to start from it, so seeding it
+  // here would just make this a second, worse Duplicate. The one thing
+  // it does carry over is the background draft currently in effect --
+  // starting on a black rectangle would be a strange definition of
+  // "blank", and the Background section right below changes it.
+  const createNewTheme = () => {
+    const existing = new Set(Object.keys(meta.presets || {}));
+    let name = "New theme";
+    let n = 2;
+    while (existing.has(name)) {
+      name = `New theme ${n}`;
+      n += 1;
+    }
+    api.saveDashboardPreset(name, [], bgDraft).then(
+      (r) => {
+        const saved = r.name || name;
+        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
+        // Same two moves loadPreset() makes, minus the lookup: this
+        // preset's elements are empty by construction and its
+        // background is the draft that's already staged.
+        commit([]);
+        setSelectedId(null);
+        // Prefilled so "Save as preset" updates this card rather than
+        // spawning another one -- saving over your own preset
+        // overwrites in place (built-ins are the ones that copy).
+        setPresetName(saved);
+        setStatus(`Started "${saved}" -- an empty theme. Add elements above, then Save layout to put it on the panel, or Save as preset to update this card.`);
+      },
+      (e) => setError(e.message)
+    );
+  };
+
+  // Export writes the preset out as a .json the user can send to
+  // someone else; the backend inlines its images first so the file
+  // stands on its own (see export_dashboard_preset()). Downloading is
+  // done the only way a browser can -- a Blob URL behind a synthetic
+  // <a download> click.
+  const exportPreset = (name) => {
+    setPresetMenuOpen(null);
+    api.exportDashboardPreset(name).then(
+      (r) => {
+        const blob = new Blob([JSON.stringify(r.preset, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${name.replace(/[^\w.-]+/g, "_").replace(/^_|_$/g, "") || "theme"}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // Revoked on the next tick rather than immediately -- some
+        // browsers cancel an in-flight download if the URL dies first.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setStatus(`Exported "${name}" -- the file includes its background image, so it works as-is on another machine.`);
+      },
+      (e) => setError(e.message)
+    );
+  };
+
+  // Import reads the picked .json here (a file input is the only way a
+  // browser hands over file contents) and posts it; the backend
+  // validates the shape, writes any inlined images into its own image
+  // store, and ignores image paths that didn't travel with the file.
+  const importPresetFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onerror = () => setError(`Couldn't read "${file.name}".`);
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch (err) {
+        setError(`"${file.name}" isn't valid JSON: ${err.message}`);
+        return;
+      }
+      // Name it after the file, since a preset file carries a layout,
+      // not a name -- the backend uniquifies it if that's taken.
+      // "nocturne_cathedral.json" reads better in the picker as
+      // "Nocturne Cathedral", so separators become spaces and an
+      // all-lowercase name gets title-cased. A name that already has
+      // capitals ("GPU Monitor") is left exactly as the sender wrote
+      // it rather than being "helpfully" mangled into "Gpu Monitor".
+      let base = file.name.replace(/\.json$/i, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+      if (base && base === base.toLowerCase()) {
+        base = base.replace(/\b\w/g, (ch) => ch.toUpperCase());
+      }
+      base = base || "Imported theme";
+      api.importDashboardPreset(base, parsed).then(
+        (r) => {
+          setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
+          setStatus(`Imported "${r.name || base}". Click its card to load it.`);
+        },
+        (e) => setError(`Couldn't import "${file.name}": ${e.message}`)
+      );
+    };
+    reader.readAsText(file);
   };
 
   const duplicatePreset = (name) => {
@@ -1314,8 +1449,11 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     setPresetMenuOpen(null);
     api.deleteDashboardPreset(name).then(
       (r) => {
-        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
-        setStatus(`Deleted preset "${name}".`);
+        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails,
+                           dismissedBuiltinPresets: r.dismissed ?? m.dismissedBuiltinPresets }));
+        setStatus(isBuiltinPreset(name)
+          ? `Hid built-in preset "${name}" -- "Restore built-ins" below brings it back.`
+          : `Deleted preset "${name}".`);
       },
       (e) => setError(e.message)
     );
@@ -1674,18 +1812,23 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               // goes false again and the mockup goes back to deferring
               // to the real frame.
               const overLiveFrame = hasAccurateBackdrop;
-              // A graph normally keeps its mockup box visible even over
-              // an accurate backdrop -- the SVG overlay can't draw the
-              // plotted line itself, so the box is the only thing
-              // making an otherwise-empty region locatable/draggable.
-              // A graph explicitly set frameless (show_frame: false, as
-              // the card-based presets do, since their background art
-              // already draws the plot well) is the exception: forcing
-              // a frame and a title label on top of a backdrop that
-              // deliberately has neither is the same double-render the
-              // other mockup gates exist to avoid.
-              const graphNeedsBox = el.type === "graph" && el.show_frame !== false;
-              const showMockup = graphNeedsBox || isSelected || !overLiveFrame || forceAllMockups;
+              // Graphs used to be exempt from all of this and draw their
+              // mockup unconditionally, on the theory that the SVG
+              // overlay can't plot the line itself so the box was the
+              // only thing making the region locatable. That was wrong
+              // twice over: the backdrop this defers to (the panel's
+              // live frame, or the live-rendered preview of an unsaved
+              // edit) draws the graph in full -- frame, title AND line
+              // -- so there's nothing to locate that isn't already
+              // there; and the mockup isn't a faint outline, it's a
+              // gradient-filled box with the element's name across the
+              // middle, so forcing it on top of that real render read
+              // as the graph highlighting itself at random. Reported
+              // exactly that way. The transparent hit rect below still
+              // covers dragging when the mockup is hidden, and
+              // `!overLiveFrame` still brings it back whenever there's
+              // no accurate backdrop to defer to.
+              const showMockup = isSelected || !overLiveFrame || forceAllMockups;
               const styledBox = !!meta.widgetStyles?.[el.widget_style] && ["bar", "media"].includes(el.type);
               return (
                 <g key={el.id}>
@@ -2888,14 +3031,39 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
       )}
 
       <div className="preset-picker">
-        <span className="preset-picker-label">Presets</span>
+        <div className="preset-picker-head">
+          <span className="preset-picker-label">Presets</span>
+          <div className="preset-head-actions">
+            {/* A file input is the only way a browser will hand over a
+                file's contents, so the visible button just forwards to
+                a hidden one. */}
+            <input type="file" accept="application/json,.json" ref={importInputRef}
+                   style={{ display: "none" }}
+                   onChange={(e) => {
+                     importPresetFile(e.target.files?.[0]);
+                     e.target.value = "";  // so picking the same file twice still fires
+                   }} />
+            <button className="preset-new" onClick={() => importInputRef.current?.click()}
+                    title="Import a theme someone shared with you (.json)">
+              Import theme
+            </button>
+            <button className="preset-new" onClick={createNewTheme}
+                    title="Start an empty theme and edit it here">
+              + New theme
+            </button>
+          </div>
+        </div>
         {Object.keys(meta.presets || {}).length === 0 ? (
-          <p className="hint">No saved presets yet -- save the current layout below to create one.</p>
+          <p className="hint">
+            No saved presets yet -- "+ New theme" starts an empty one, or build a layout
+            above and save it below.
+          </p>
         ) : (
           <div className="preset-grid">
             {Object.keys(meta.presets || {}).map((name) => {
               const thumb = meta.presetThumbnails?.[name];
               const armed = presetPendingDelete === name;
+              const builtin = isBuiltinPreset(name);
               return (
                 <div key={name} className="preset-card">
                   <button
@@ -2915,7 +3083,17 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                     )}
                   </button>
                   <div className="preset-card-footer">
-                    <span className="preset-card-name" title={name}>{name}</span>
+                    <span className="preset-card-name"
+                          title={builtin
+                            ? `${name} -- built in, read-only. Editing it saves a copy.`
+                            : name}>
+                      {name}
+                      {/* Marks a preset that belongs to the app rather
+                          than to this config: it can be loaded,
+                          duplicated and hidden, but never written
+                          over. */}
+                      {builtin && <span className="preset-card-badge" title="Built-in preset (read-only)">◆</span>}
+                    </span>
                     <div className="preset-card-actions" data-preset-menu>
                       <button
                         className="preset-card-menu-toggle"
@@ -2938,12 +3116,24 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                             Duplicate
                           </button>
                           <button
+                            className="preset-card-duplicate"
+                            data-preset-menu
+                            onClick={() => exportPreset(name)}
+                            title={`Save "${name}" as a .json file you can share`}
+                          >
+                            Export
+                          </button>
+                          <button
                             className={`preset-card-delete${armed ? " confirm" : ""}`}
                             data-preset-menu
                             onClick={() => deletePreset(name)}
-                            title={armed ? "Click again to confirm" : `Delete "${name}"`}
+                            title={armed
+                              ? "Click again to confirm"
+                              : builtin
+                                ? `Hide "${name}" -- it's built in, so this can be undone with "Restore built-ins"`
+                                : `Delete "${name}"`}
                           >
-                            {armed ? "Confirm?" : "Delete"}
+                            {armed ? "Confirm?" : builtin ? "Hide" : "Delete"}
                           </button>
                         </div>
                       )}
@@ -2955,6 +3145,15 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
           </div>
         )}
       </div>
+      {(meta.dismissedBuiltinPresets || []).length > 0 && (
+        <div className="row">
+          <span className="hint grow">
+            {(meta.dismissedBuiltinPresets || []).length} built-in preset
+            {(meta.dismissedBuiltinPresets || []).length === 1 ? " is" : "s are"} hidden.
+          </span>
+          <button onClick={restoreBuiltins}>Restore built-ins</button>
+        </div>
+      )}
       <div className="row">
         <label className="grow">
           Save current layout as preset
@@ -2963,6 +3162,15 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
         </label>
         <button onClick={saveAsPreset} disabled={!presetName.trim()}>Save as preset</button>
       </div>
+      {/* Says so before the save rather than after: a built-in can't be
+          overwritten, so this name will come back as a copy. */}
+      {isBuiltinPreset(presetName.trim()) && (
+        <p className="hint">
+          "{presetName.trim()}" is a built-in preset -- built-ins are read-only, so this
+          saves your version as a separate copy ("{presetName.trim()} (custom)") and leaves
+          the original alone.
+        </p>
+      )}
 
       {status && <p className="hint settings-saved">{status}</p>}
       {error && <p className="error">{error}</p>}
