@@ -229,25 +229,45 @@ def migrate_unshadow_builtin_presets(cfg):
     a stale duplicate of the same thing.
 
     Mutates `cfg` in place and returns True if it changed anything --
-    same caller contract as the other migrate_* functions here. Flagged
-    via `dashboard._unshadowed_builtin_presets_v1` so it runs exactly
-    once: a person is free to hand-edit a colliding name back in
-    afterwards, and this shouldn't keep undoing that on every load."""
+    same caller contract as the other migrate_* functions here.
+
+    Runs once *per built-in name*, recorded in
+    `dashboard._unshadowed_builtin_presets`: a person is free to
+    hand-edit a colliding name back in afterwards and this won't keep
+    undoing it, but a preset that becomes a built-in *later* still gets
+    reconciled when that version first loads. That second half was
+    missing while the flag was a single boolean, and it showed: a theme
+    imported by hand (Nocturne Cathedral) and then shipped as a
+    built-in in a later version stayed shadowed by the older imported
+    copy, so the picker kept loading the import -- same name, same
+    picture, but none of the built-in's widget styling, which reads as
+    "this theme doesn't apply its style" rather than "you're looking at
+    your own older copy of it"."""
     d = cfg.get("dashboard")
     if not isinstance(d, dict):
         return False
-    if d.get("_unshadowed_builtin_presets_v1"):
+
+    from .themes import dashboard_theme  # lazy: keep load_config() light for callers that don't need it
+
+    builtins = dashboard_theme.BUILTIN_DASHBOARD_PRESETS
+    seen = d.get("_unshadowed_builtin_presets")
+    if not isinstance(seen, list):
+        # First load under the per-name scheme. The old boolean flag
+        # didn't record which built-ins it had already reconciled, so
+        # there's nothing to carry over -- reconcile whatever collides
+        # now, then start recording.
+        seen = []
+    pending = [name for name in builtins if name not in seen]
+    if not pending:
         return False
-    d["_unshadowed_builtin_presets_v1"] = True
+    d["_unshadowed_builtin_presets"] = sorted(set(seen) | set(builtins))
+    d.pop("_unshadowed_builtin_presets_v1", None)
 
     presets = d.get("presets")
     if not isinstance(presets, dict) or not presets:
         return True
 
-    from .themes import dashboard_theme  # lazy: keep load_config() light for callers that don't need it
-
-    builtins = dashboard_theme.BUILTIN_DASHBOARD_PRESETS
-    collisions = [name for name in presets if name in builtins]
+    collisions = [name for name in presets if name in pending]
     if not collisions:
         return True
 

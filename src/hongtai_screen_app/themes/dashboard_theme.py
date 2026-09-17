@@ -4821,7 +4821,20 @@ BACKGROUND_COLOR_SCHEMES = {
     "mono": {"label": "Monochrome", "top": (34, 34, 36), "bottom": (6, 6, 7)},
 }
 DEFAULT_SCHEME = "purple"
-DEFAULT_BACKGROUND = {"mode": "default", "scheme": DEFAULT_SCHEME, "image_path": None}
+# Every key the background half of a design can carry, each set to the
+# value the renderer assumes when it's missing -- `border` is read as
+# `.get("border", "default")`, `dim` as `.get("dim")` (None meaning
+# "use the standard 45%"), `widget_style` as "no style, draw the plain
+# widgets". Spelling them out here rather than leaving them implicit
+# matters because backgrounds are *merged*, not replaced, on save
+# (save_dashboard_background()), and a preset that simply omits a key
+# would otherwise inherit whatever the previously-loaded theme set --
+# which is exactly how loading a plain theme after a gothic one used
+# to leave the gothic widgets on the panel. The frontend fills a
+# loaded preset's background from this dict (dashboard_meta()'s
+# "backgroundDefaults") so "unset" is stated rather than left blank.
+DEFAULT_BACKGROUND = {"mode": "default", "scheme": DEFAULT_SCHEME, "image_path": None,
+                      "widget_style": "default", "border": "default", "dim": None}
 
 
 def dim_color(color, factor):

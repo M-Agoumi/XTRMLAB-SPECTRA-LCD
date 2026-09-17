@@ -2894,6 +2894,69 @@ was also rendered through `render_preset_thumbnail()` directly, and
 `tests/test_widget_styles.py` (which pinned its legacy-render
 comparison to Neon Horizon) was repointed at Deep Space and passes.
 
+**A theme that wouldn't bring its own widget style.** "When i press a
+theme to activate it, it doesn't pick with it widget style, so when i
+try to apply the exact theme as soon as i press save layout, it shows
+the previous widget, so it creates a copy for it."
+
+One sentence, three unrelated bugs stacked into one experience -- which
+is worth writing down, because the first two both produce "the style
+didn't come with the theme" and fixing either alone would have looked
+like the fix while the symptom stayed.
+
+*The merge that made "unset" mean "inherit".* `save_dashboard_
+background()` merges the incoming background into the saved one rather
+than replacing it, which is right for a partial edit (the background
+panel sends one changed key at a time) and quietly wrong for a whole
+theme: the nine older presets have no `widget_style` key at all, so
+loading one after a gothic/cyberpunk/high-fantasy theme left the
+previous style in place, and the canvas would then be handed it back
+from the save response -- "it shows the previous widget", exactly. The
+fix is to stop treating absence as silence: `DEFAULT_BACKGROUND` now
+spells out every key the renderer reads, including the three (`widget_
+style`, `border`, `dim`) that were previously implicit `.get()`
+fallbacks, `dashboard_meta()` publishes it as `backgroundDefaults`, and
+`loadPreset()` stages `{...defaults, ...preset.background}` so an
+unset key is stated rather than left for the merge to fill from
+history. `backgroundsEqual()` got key-order normalization at the same
+time, since the two sides being compared are now built in different
+places.
+
+*The import that outranked the built-in.* Nocturne Cathedral was
+imported by hand before it shipped as a built-in, and a saved preset of
+the same name wins the merge in `resolve_dashboard_presets()`. So the
+card labelled Nocturne Cathedral was loading a copy that predates
+widget styles entirely -- same name, same picture, no style. There was
+already a migration for exactly this ("move the colliding copy aside,
+let the built-in show"), but it was flagged by a single boolean and so
+ran once per config, forever; a preset that *becomes* a built-in in a
+later version was permanently invisible to it. It now records which
+built-in names it has reconciled (`_unshadowed_builtin_presets`) and
+handles newly-shipped ones as they arrive, while still leaving a name a
+person deliberately re-collides alone. The old boolean is dropped on
+the way past.
+
+*Applying counted as editing.* Save layout lights up whenever the
+canvas differs from what's on the panel, which a freshly loaded theme
+always does -- and since the previous round taught it to write back
+into the preset being edited, putting a built-in on the panel now
+copied it every single time. The distinction that was missing is that
+"differs from the panel" and "differs from the preset" are different
+questions: `matchesPreset()` asks the second one, and the preset write
+is skipped when the canvas still *is* the theme. Editing it first still
+copies, which is the read-only rule from two rounds ago, unchanged.
+
+Verified in the harness (`shot23.py`, `shot24.py`): a gothic theme
+loads gothic and a plain theme loaded after it saves `widget_style:
+"default"` rather than inheriting gothic; the same holds for
+cyberpunk; applying a built-in untouched makes no copy and re-loading
+it afterwards leaves nothing to save; editing it still produces
+exactly one "(custom)" copy. The shadowing case was tested directly
+against the migration (an old config with the v1 flag and a colliding
+copy is reconciled, running again is a no-op, a hand-recreated
+collision is left alone, a newly-shipped built-in is reconciled), and
+the earlier preset suites still pass.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

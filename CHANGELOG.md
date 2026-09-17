@@ -2090,6 +2090,37 @@ dashboard designer) this is laying groundwork for.
     Otherwise it would have claimed to be editing a card you couldn't
     see, and the next Save layout would have recreated that theme as a
     new preset of your own.
+- **Fixed: loading a theme didn't bring its widget style with it**, and
+  applying a built-in made a copy of it. Reported as "when I press a
+  theme to activate it, it doesn't pick with it widget style, so when I
+  try to apply the exact theme as soon as I press save layout, it shows
+  the previous widget, so it creates a copy for it." Three separate
+  causes, all fixed:
+  - **The style came from a key the theme didn't set.** A background is
+    *merged* into the saved one when you save, not swapped for it, so a
+    theme with no `widget_style` of its own didn't mean "plain", it
+    meant "keep whatever the last theme set" — load Nocturne Cathedral,
+    then load Cherry Blossom, and the panel kept drawing gothic
+    widgets. Every background key now has a stated default
+    (`DEFAULT_BACKGROUND`), reported to the canvas, and loading a theme
+    fills in the ones it doesn't set instead of leaving them blank.
+    Same class of bug covered `border` and `dim`.
+  - **Your hand-imported Nocturne Cathedral was shadowing the built-in
+    one.** You imported that theme before it shipped as a built-in, and
+    a saved preset wins over a built-in of the same name — so the card
+    loaded your older import, which predates widget styles entirely.
+    The one-time "move a colliding copy aside" migration only ever ran
+    once in a config's life, so a preset that *becomes* a built-in
+    later was never reconciled; it now tracks which built-ins it has
+    seen and handles new ones as they ship. Your copy is kept, renamed
+    to "Nocturne Cathedral (custom)", and the built-in gothic version
+    is now visible next to it.
+  - **Applying a theme counted as editing it.** Save layout is enabled
+    whenever the canvas differs from what's on the panel, and a freshly
+    loaded theme always does — so simply putting a built-in on the
+    panel spawned a "(custom)" copy of it. Save layout now writes the
+    preset only when the canvas actually differs from it. Change
+    something first and it still copies, as built-ins are read-only.
 
 ## [1.0.0] — 2026-08-29
 

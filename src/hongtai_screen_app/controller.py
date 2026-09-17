@@ -354,6 +354,12 @@ class AppController:
             },
             "background": dict(dashboard_theme.DEFAULT_BACKGROUND, **(d.get("background") or {})),
             "backgroundPresets": dict(dashboard_theme.BACKGROUND_PRESETS),
+            # What an unset background key means, so the canvas can
+            # fill in a loaded preset's blanks explicitly instead of
+            # letting the save-time merge carry the last theme's
+            # settings over into it -- see DEFAULT_BACKGROUND's own
+            # comment for why that merge makes this necessary.
+            "backgroundDefaults": dict(dashboard_theme.DEFAULT_BACKGROUND),
             "widgetStyles": dashboard_theme.widget_styles.STYLES,
             # Modes that are a photo, not a tinted procedural draw --
             # "image" (a user's own upload) plus every bundled one

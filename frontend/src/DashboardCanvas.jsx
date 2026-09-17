@@ -91,10 +91,16 @@ function basename(path) {
 // layout's own "has anything actually changed" check needs. Treats
 // null/undefined as equal to each other (both "no background staged
 // yet") without treating either as equal to a real object.
+// Key order is normalized before stringifying, because the two sides
+// are built in different places -- one comes back from the backend,
+// the other from spreading meta.backgroundDefaults under a preset's
+// own background -- and two objects with the same settings in a
+// different order would otherwise read as an unsaved change.
 function backgroundsEqual(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
-  return JSON.stringify(a) === JSON.stringify(b);
+  const norm = (o) => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
+  return norm(a) === norm(b);
 }
 
 // A short human-readable label for the element list panel -- "what is
@@ -1086,6 +1092,18 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   // Save layout just never got the matching fix at the time. A
   // background-only edit (no element touched) now saves correctly too,
   // instead of silently needing its own separate button press.
+  // Is the canvas still exactly the preset it was loaded from? The
+  // preset's background is compared in the same defaults-filled shape
+  // loadPreset() stages, so a preset that simply omits a key doesn't
+  // read as an edit against a draft that spells that key out.
+  const matchesPreset = (name, els, bg) => {
+    const preset = meta?.presets?.[name];
+    if (!preset) return false;
+    if (JSON.stringify(preset.elements) !== JSON.stringify(els)) return false;
+    if (!preset.background) return true;
+    return backgroundsEqual({ ...(meta.backgroundDefaults || {}), ...preset.background }, bg);
+  };
+
   const saveLayout = () => {
     const backgroundNeedsSaving = bgDraft && !backgroundsEqual(bgDraft, savedBackgroundRef.current);
     const saveElements = api.saveDashboardElements(elements, activePreset);
@@ -1105,7 +1123,17 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     // modifications. Nothing is written when there's no preset behind
     // the canvas (after "Reset to defaults", say): then Save layout
     // means only what it always did.
-    const savePreset = activePreset
+    //
+    // Nothing is written either when the canvas still *is* the preset,
+    // untouched -- loading a theme and pressing Save layout to put it
+    // on the panel is applying it, not editing it, and that used to
+    // spawn a "(custom)" copy of every built-in the moment you applied
+    // it ("when i press save layout ... it creates a copy for it").
+    // Save layout is enabled by "differs from what's on the panel", so
+    // a freshly loaded preset always counts as unsaved work; whether
+    // it's a *change to the preset* is a different question, and this
+    // is where it's asked.
+    const savePreset = activePreset && !matchesPreset(activePreset, elements, bgDraft)
       ? api.saveDashboardPreset(activePreset, elements, bgDraft)
       : Promise.resolve(null);
     return Promise.all([saveElements, saveBg, savePreset]).then(
@@ -1332,7 +1360,17 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     // the physical panel. A preset with no background of its own
     // (every preset saved before this existed) leaves the current
     // background draft alone rather than clearing it to something.
-    if (preset.background) setBgDraft(preset.background);
+    //
+    // Any key the preset *doesn't* set is filled from the backend's
+    // stated defaults (meta.backgroundDefaults) rather than left out.
+    // Saving a background merges into the saved one server-side, so an
+    // omitted key doesn't mean "default", it means "keep whatever the
+    // last theme put there" -- which is how loading a plain theme
+    // after a styled one (gothic, cyberpunk, high fantasy) used to
+    // save the layout and still draw the *previous* theme's widgets:
+    // its background simply had no widget_style of its own to
+    // overwrite the old one with.
+    if (preset.background) setBgDraft({ ...(meta.backgroundDefaults || {}), ...preset.background });
     setActivePreset(name);
     // No explicit "show a preview" step needed beyond the commit()/
     // setBgDraft() above -- both just landed `elements`/`bgDraft` in a
