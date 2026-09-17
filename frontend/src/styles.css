@@ -521,11 +521,28 @@ button:disabled {
   margin-bottom: 14px;
 }
 
+/* The label and the "+ New theme" button share a row so the button
+   sits with the presets it adds to, rather than down in the save row
+   (which is about the layout currently on the canvas, a different
+   thing). */
+.preset-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
 .preset-picker-label {
   display: block;
   font-size: 0.8rem;
   color: #9aa1ab;
-  margin-bottom: 8px;
+}
+
+.preset-new {
+  flex: none;
+  padding: 3px 10px;
+  font-size: 0.78rem;
 }
 
 .preset-grid {
