@@ -141,7 +141,15 @@ def _make_handler(controller: AppController):
                         body.get("filename"), body.get("data_base64")))
                 elif path == "/api/dashboard/elements":
                     body = self._read_json_body()
-                    self._send_json(200, controller.save_dashboard_elements(body.get("elements")))
+                    # "active_preset" is optional and distinguishes
+                    # "not mentioned" from "cleared": only forwarded
+                    # when the client actually sent the key, so an
+                    # older client's save doesn't wipe the link between
+                    # the live layout and the preset it came from.
+                    kwargs = ({"active_preset": body.get("active_preset")}
+                              if "active_preset" in body else {})
+                    self._send_json(200, controller.save_dashboard_elements(
+                        body.get("elements"), **kwargs))
                 elif path == "/api/dashboard/preview":
                     body = self._read_json_body()
                     controller.preview_dashboard_elements(

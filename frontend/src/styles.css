@@ -710,3 +710,16 @@ button:disabled {
   border-color: #ff8080;
   color: #ffb3b3;
 }
+
+/* The preset the canvas is currently editing: Save layout writes back
+   into this one (see DashboardCanvas's activePreset), which is
+   invisible state otherwise -- you'd have no way to tell which card is
+   about to change. */
+.preset-card.editing {
+  border-color: #5b8cff;
+  box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.45);
+}
+
+.preset-card-badge.editing {
+  color: #5b8cff;
+}

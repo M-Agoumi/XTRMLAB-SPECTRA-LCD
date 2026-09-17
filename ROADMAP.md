@@ -2802,6 +2802,57 @@ frontend's stat picker is built from `dashboard_meta()["stats"]`, so
 gauge/bar/graph/text and the picker all got it with no further wiring.
 Verified by rendering all four element types bound to it.
 
+**The canvas remembers which preset it's editing.** "Picking a theme,
+and modifying it, doesn't save to the preset, like i can restart the
+app and it will keep where i left, but the image representing it keeps
+looking the old way unless i save it as a new preset."
+
+The description is precise, and it names both halves of the bug. The
+layout persisted because Save layout has always written
+`dashboard.elements` (and, since the background fix earlier this
+round, `dashboard.background`). The card kept looking old because a
+preset is a *separate* stored copy, and nothing connected the two: the
+canvas loaded a preset's elements and immediately forgot which preset
+they came from, so there was no name to write back into and no
+thumbnail to regenerate. The only way to fold an edit back into a card
+was Save as preset, i.e. naming it again yourself.
+
+So the missing thing was identity, not a save call. The canvas now
+carries `activePreset`, and — this is the part that matters for the
+"restart the app" half of the complaint — it's persisted rather than
+being React state that dies with the page: `save_dashboard_elements()`
+takes an `active_preset` keyword defaulting to a private `_UNSET`
+sentinel, because "don't touch it" and "clear it" both have to be
+expressible and `None` already means the second. `control_server.py`
+mirrors that distinction by forwarding the key only when the request
+actually carried it, and `dashboard_meta()` reports it back, so a
+reopened window resumes editing the same preset it was on.
+
+Save layout then does the obvious thing: layout, background if it
+changed, and the preset, in one request batch. The read-only rule for
+built-ins survives intact by reusing the machinery already built for
+it -- the backend renames the save to `"X (custom)"` and *returns the
+name it used*, and the canvas adopts that name instead of assuming its
+own. That single move is what makes the second save update the copy
+rather than spawn `"X (custom 2)"`, which is what a naive
+implementation would do and what the user would have reported next.
+The status line has three forms for the three real outcomes (no preset
+/ preset updated / built-in copied), since "Layout saved" alone would
+be actively misleading in the third case.
+
+The link is also visible, which the old UI had no way to show: the
+edited card gets a blue border and a ● badge next to the ◆ built-in
+one. Reset to defaults sets it to null (that layout belongs to no
+preset), and deleting the preset being edited clears it.
+
+Verified in the harness (`shot21.py`, 11 checks): nothing is marked as
+edited at load; loading a preset marks it; editing a built-in and
+saving leaves the built-in intact, creates exactly one copy, and moves
+the editing mark to the copy; a second save grows that same copy and
+adds no third card; reset clears the link and a save after it writes
+no preset at all; the link survives a page reload; deleting the edited
+preset clears it. No console errors.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

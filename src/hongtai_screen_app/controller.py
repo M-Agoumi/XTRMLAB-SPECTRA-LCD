@@ -338,6 +338,10 @@ class AppController:
             # one saves a copy instead, see save_dashboard_preset()),
             # and offers to restore the second.
             "builtinPresets": list(dashboard_theme.BUILTIN_DASHBOARD_PRESETS),
+            # The preset the live layout was last saved from, so the
+            # canvas reopens still editing it instead of treating a
+            # restart as a fresh start unrelated to any card.
+            "activePreset": d.get("active_preset") or None,
             "dismissedBuiltinPresets": list(d.get("dismissed_builtin_presets") or []),
             "stats": {
                 key: {"label": meta["label"], "title": meta["title"]}
@@ -381,7 +385,9 @@ class AppController:
             "weatherUnitOptions": dict(weather.UNIT_OPTIONS),
         }
 
-    def save_dashboard_elements(self, elements):
+    _UNSET = object()
+
+    def save_dashboard_elements(self, elements, active_preset=_UNSET):
         """Persists a new gauge layout and, if the dashboard theme is
         currently running, applies it live -- same "no Stop/Start
         needed" deal as save_dashboard_now_playing() (see
@@ -410,6 +416,8 @@ class AppController:
                 self._preview_revert_timer = None
             dashboard_cfg = dict(self.cfg.get("dashboard") or {})
             dashboard_cfg["elements"] = elements
+            if active_preset is not self._UNSET:
+                dashboard_cfg["active_preset"] = active_preset or None
             self.cfg["dashboard"] = dashboard_cfg
             config_store.save_config(self.cfg)
             dashboard_theme.set_pending_dashboard_layout(elements=elements)

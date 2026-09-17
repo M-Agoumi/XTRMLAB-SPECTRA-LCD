@@ -2046,6 +2046,33 @@ dashboard designer) this is laying groundwork for.
   counter, and the resulting frequency five times a second apart (to
   compare against Task Manager), plus whether pycaw is present and
   whether the volume reading follows the slider.
+- **The canvas now remembers which preset it's editing.** Reported as
+  "picking a theme, and modifying it, doesn't save to the preset —
+  I can restart the app and it will keep where I left, but the image
+  representing it keeps looking the old way unless I save it as a new
+  preset." Exactly right, and the reason was that loading a preset
+  copied its layout onto the canvas and then forgot where that layout
+  came from: Save layout wrote `dashboard.elements`/`background` (hence
+  the layout surviving a restart) but had no idea any preset was
+  involved, so the preset's own stored copy — and the thumbnail drawn
+  from it — stayed at the old version. The link is now real state,
+  saved alongside the layout (`dashboard.active_preset`), so it also
+  survives a restart:
+  - Loading a preset starts editing it; its card gets a blue outline
+    and a ● badge so which one you're changing is visible at a glance.
+  - Save layout writes the layout *and* that preset, thumbnail
+    included. Editing a built-in still can't modify it (built-ins are
+    read-only) — the save lands in a `"X (custom)"` copy, and the
+    canvas then follows that copy, so the next Save layout updates it
+    rather than making a second one. The status line says which of the
+    three happened.
+  - Reset to defaults, or deleting the preset being edited, ends the
+    link: Save layout then only saves the layout, as before.
+  Verified in the harness across the whole cycle: load a built-in →
+  edit → save makes one copy and the original is untouched; a second
+  save updates that copy and adds no third card; reset clears the link
+  and writes no preset; the link is still there after a page reload;
+  deleting the edited preset clears it.
 
 ## [1.0.0] — 2026-08-29
 

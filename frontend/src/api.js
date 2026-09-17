@@ -126,11 +126,18 @@ export function dashboardImageUrl(path) {
   return `/api/dashboard/image?path=${encodeURIComponent(path)}`;
 }
 
-export function saveDashboardElements(elements) {
+export function saveDashboardElements(elements, activePreset = undefined) {
+  // `activePreset` (a name, or null for "none") records which preset
+  // this layout came from, so the canvas reopens editing that same
+  // preset after a restart. Omitted entirely when undefined -- the
+  // backend treats a missing key as "leave it alone", which is
+  // different from null.
+  const body = { elements };
+  if (activePreset !== undefined) body.active_preset = activePreset;
   return fetch("/api/dashboard/elements", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ elements }),
+    body: JSON.stringify(body),
   }).then(asJson);
 }
 

@@ -589,6 +589,13 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
   const [presetName, setPresetName] = useState("");
+  // Which preset the canvas is currently editing, if any -- set by
+  // loading one, creating one, or saving one under a new name, and
+  // cleared by Reset to defaults (which is no longer any preset) or
+  // by deleting the one being edited. Save layout writes back into it
+  // so its card keeps up with the design; persisted across restarts
+  // as `dashboard.active_preset` (see save_dashboard_elements()).
+  const [activePreset, setActivePreset] = useState(null);
   // Which preset card's Delete button is armed, waiting for a second
   // click to confirm -- see the presets grid's render for why (a card
   // click loads it immediately, so a plain Delete button with no
@@ -676,6 +683,10 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
         savedElementsRef.current = m.elements;
         setBgDraft(m.background);
         savedBackgroundRef.current = m.background;
+        // Reopen editing the preset this layout was saved from, so a
+        // restart continues the same piece of work instead of losing
+        // the connection to its card.
+        setActivePreset(m.activePreset || null);
         setNpDraft(m.nowPlaying);
         historyRef.current = [];
         futureRef.current = [];
@@ -1058,6 +1069,9 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     if (!meta) return;
     commit(meta.defaults);
     setSelectedId(null);
+    // The default layout belongs to no preset, so a later Save layout
+    // shouldn't write itself into whichever card happened to be open.
+    setActivePreset(null);
   };
 
   // Save layout now saves the *whole canvas* -- elements and, if it's
@@ -1074,15 +1088,44 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   // instead of silently needing its own separate button press.
   const saveLayout = () => {
     const backgroundNeedsSaving = bgDraft && !backgroundsEqual(bgDraft, savedBackgroundRef.current);
-    const saveElements = api.saveDashboardElements(elements);
+    const saveElements = api.saveDashboardElements(elements, activePreset);
     const saveBg = backgroundNeedsSaving ? api.saveDashboardBackground(bgDraft) : Promise.resolve(null);
-    return Promise.all([saveElements, saveBg]).then(
-      ([, savedBg]) => {
+    // Saving also writes the edit back into the preset the canvas is
+    // editing, so its card stops showing a picture of how the theme
+    // used to look. Without this, a preset was a one-way snapshot: you
+    // loaded it, changed it, saved, and the panel kept the change
+    // while the card it came from never moved -- reported as "picking
+    // a theme, and modifying it, doesn't save to the preset ... unless
+    // i save it as a new preset".
+    //
+    // A built-in can't be written to, so this lands as a copy (the
+    // backend renames it, see save_dashboard_preset()) and the canvas
+    // switches to editing that copy -- which is the rule already
+    // asked for: modifying a default makes a duplicate that holds the
+    // modifications. Nothing is written when there's no preset behind
+    // the canvas (after "Reset to defaults", say): then Save layout
+    // means only what it always did.
+    const savePreset = activePreset
+      ? api.saveDashboardPreset(activePreset, elements, bgDraft)
+      : Promise.resolve(null);
+    return Promise.all([saveElements, saveBg, savePreset]).then(
+      ([, savedBg, presetResult]) => {
         savedElementsRef.current = elements;
         if (backgroundNeedsSaving) {
           savedBackgroundRef.current = savedBg;
           setBgDraft(savedBg);
           setBgStatus(null);
+        }
+        if (presetResult) {
+          setMeta((m) => ({ ...m, presets: presetResult.presets,
+                             presetThumbnails: presetResult.thumbnails }));
+          // Follow the name the backend actually used: editing a
+          // built-in lands in "<name> (custom)", and from here on
+          // that's what's being edited.
+          if (presetResult.name && presetResult.name !== activePreset) {
+            setActivePreset(presetResult.name);
+            api.saveDashboardElements(elements, presetResult.name).catch(() => {});
+          }
         }
         // Retriggers the live-preview polling effect (see its own
         // comment on why a plain ref mutation above isn't enough on its
@@ -1091,10 +1134,14 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
         // is about to actually match this layout (and background) on
         // its own next frame.
         setSavedVersion((v) => v + 1);
+        const what = backgroundNeedsSaving ? "Layout and background saved" : "Layout saved";
+        const savedTo = presetResult?.name;
         setStatus(
-          backgroundNeedsSaving
-            ? "Layout and background saved -- applies live, even while the dashboard is already running."
-            : "Layout saved -- applies live, even while the dashboard is already running."
+          !savedTo
+            ? `${what} -- applies live, even while the dashboard is already running.`
+            : savedTo === activePreset
+              ? `${what}, and the "${savedTo}" preset updated to match.`
+              : `${what}. "${activePreset}" is built in and can't be changed, so your version is now the "${savedTo}" preset -- that's what you're editing from here.`
         );
       },
       (e) => setError(e.message)
@@ -1251,6 +1298,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
         // overwriting a read-only preset, so report what it actually
         // did instead of echoing what was typed.
         const saved = r.name || name;
+        setActivePreset(saved);
         setStatus(saved === name
           ? `Saved preset "${saved}".`
           : `"${name}" is a built-in preset and can't be overwritten -- saved your version as "${saved}".`);
@@ -1285,6 +1333,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     // (every preset saved before this existed) leaves the current
     // background draft alone rather than clearing it to something.
     if (preset.background) setBgDraft(preset.background);
+    setActivePreset(name);
     // No explicit "show a preview" step needed beyond the commit()/
     // setBgDraft() above -- both just landed `elements`/`bgDraft` in a
     // state that differs from what's actually saved, and the
@@ -1330,6 +1379,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
         // background is the draft that's already staged.
         commit([]);
         setSelectedId(null);
+        setActivePreset(saved);
         // Prefilled so "Save as preset" updates this card rather than
         // spawning another one -- saving over your own preset
         // overwrites in place (built-ins are the ones that copy).
@@ -1451,6 +1501,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
       (r) => {
         setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails,
                            dismissedBuiltinPresets: r.dismissed ?? m.dismissedBuiltinPresets }));
+        if (name === activePreset) setActivePreset(null);
         setStatus(isBuiltinPreset(name)
           ? `Hid built-in preset "${name}" -- "Restore built-ins" below brings it back.`
           : `Deleted preset "${name}".`);
@@ -3064,8 +3115,9 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               const thumb = meta.presetThumbnails?.[name];
               const armed = presetPendingDelete === name;
               const builtin = isBuiltinPreset(name);
+              const editing = name === activePreset;
               return (
-                <div key={name} className="preset-card">
+                <div key={name} className={`preset-card${editing ? " editing" : ""}`}>
                   <button
                     className="preset-card-thumb"
                     onClick={() => loadPreset(name)}
@@ -3093,6 +3145,15 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                           duplicated and hidden, but never written
                           over. */}
                       {builtin && <span className="preset-card-badge" title="Built-in preset (read-only)">◆</span>}
+                      {/* Which card Save layout will write into --
+                          worth showing, since that's otherwise an
+                          invisible piece of state. */}
+                      {editing && (
+                        <span className="preset-card-badge editing"
+                              title="You're editing this preset -- Save layout updates it">
+                          ●
+                        </span>
+                      )}
                     </span>
                     <div className="preset-card-actions" data-preset-menu>
                       <button
