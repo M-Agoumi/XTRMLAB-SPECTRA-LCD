@@ -2661,6 +2661,43 @@ exception was really protecting) -- plus a real pointer drag on the
 hidden graph, grabbed from its own hit rect mapped out of SVG user
 units, which moves it and re-arms Save.
 
+Then: "add a button for creating a new custom theme, we only have
+duplicate now". Correct, and a real gap rather than a missing
+shortcut: every path to a new preset started from an existing one.
+Duplicate clones a card; "Save current layout as preset" captures
+whatever is on the canvas, which after the previous round's changes is
+usually a built-in someone just loaded. So "build my own" actually
+meant "load someone else's and delete its elements one at a time" --
+and now that built-ins are read-only, the deleting-down-to-nothing
+version of that is the *only* version.
+
+`createNewTheme()` saves an empty preset under an auto-numbered "New
+theme" name, then puts the canvas into editing it -- the same two
+moves loadPreset() makes (commit the elements, keep the background
+draft), minus the lookup, since an empty element list and the
+already-staged background are known without one. It also prefills the
+"Save current layout as preset" box with the new name, so the obvious
+next save lands back in that card instead of creating a sibling;
+that's only safe because saving over one of your *own* presets
+overwrites in place (the copy-instead behavior is built-ins only).
+
+Empty rather than seeded with DEFAULT_ELEMENTS on purpose: "Reset to
+defaults" in the toolbar already puts that layout on the canvas, so
+seeding it would make this a second Duplicate with fewer options. The
+background draft does carry over, because a truly blank start is a
+black rectangle, which isn't a useful canvas. Checked that an empty
+preset survives the parts of the app that assume elements exist --
+render_preset_thumbnail([]) and render_live_preview([]) both render
+the background cleanly, and _dashboard_preset_thumbnails() returns a
+real data URI for it, so the new card shows its background rather than
+the "No preview" fallback.
+
+Verified in the harness: the button adds exactly one card and leaves
+the other 16 alone, the canvas comes up with an empty element list,
+the name box is prefilled, adding a gauge and saving under that name
+updates the same card instead of creating a second, and a second click
+names the next one "New theme 2".
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

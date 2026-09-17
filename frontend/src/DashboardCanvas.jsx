@@ -1289,6 +1289,47 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     setStatus(`Loaded preset "${name}" -- Save layout to apply.`);
   };
 
+  // Starts a theme from nothing: saves an empty preset and drops the
+  // canvas straight into editing it. Until this existed, every preset
+  // was necessarily derived from another one -- Duplicate copies a
+  // card, and "Save current layout as preset" bottles up whatever
+  // happens to be on the canvas -- so "I want to build one of my own"
+  // meant first dismantling somebody else's layout element by element.
+  //
+  // Deliberately empty rather than seeded with the default 8 gauges:
+  // "Reset to defaults" in the toolbar above already puts that layout
+  // on the canvas for anyone who wants to start from it, so seeding it
+  // here would just make this a second, worse Duplicate. The one thing
+  // it does carry over is the background draft currently in effect --
+  // starting on a black rectangle would be a strange definition of
+  // "blank", and the Background section right below changes it.
+  const createNewTheme = () => {
+    const existing = new Set(Object.keys(meta.presets || {}));
+    let name = "New theme";
+    let n = 2;
+    while (existing.has(name)) {
+      name = `New theme ${n}`;
+      n += 1;
+    }
+    api.saveDashboardPreset(name, [], bgDraft).then(
+      (r) => {
+        const saved = r.name || name;
+        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
+        // Same two moves loadPreset() makes, minus the lookup: this
+        // preset's elements are empty by construction and its
+        // background is the draft that's already staged.
+        commit([]);
+        setSelectedId(null);
+        // Prefilled so "Save as preset" updates this card rather than
+        // spawning another one -- saving over your own preset
+        // overwrites in place (built-ins are the ones that copy).
+        setPresetName(saved);
+        setStatus(`Started "${saved}" -- an empty theme. Add elements above, then Save layout to put it on the panel, or Save as preset to update this card.`);
+      },
+      (e) => setError(e.message)
+    );
+  };
+
   const duplicatePreset = (name) => {
     // Works on any card -- one of the app's own built-ins (dashboard_
     // theme.BUILTIN_DASHBOARD_PRESETS) exactly as well as something a
@@ -2855,9 +2896,18 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
       )}
 
       <div className="preset-picker">
-        <span className="preset-picker-label">Presets</span>
+        <div className="preset-picker-head">
+          <span className="preset-picker-label">Presets</span>
+          <button className="preset-new" onClick={createNewTheme}
+                  title="Start an empty theme and edit it here">
+            + New theme
+          </button>
+        </div>
         {Object.keys(meta.presets || {}).length === 0 ? (
-          <p className="hint">No saved presets yet -- save the current layout below to create one.</p>
+          <p className="hint">
+            No saved presets yet -- "+ New theme" starts an empty one, or build a layout
+            above and save it below.
+          </p>
         ) : (
           <div className="preset-grid">
             {Object.keys(meta.presets || {}).map((name) => {

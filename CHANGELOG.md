@@ -1958,6 +1958,27 @@ dashboard designer) this is laying groundwork for.
   again (hidden), and with the panel disconnected so there's no
   backdrop to defer to (shown) — plus that the graph is still
   draggable while its mockup is hidden.
+- **A "+ New theme" button**, next to the Presets label. Requested:
+  "add a button for creating a new custom theme, we only have
+  duplicate now" — which was exactly right. Every route to a new
+  preset started from an existing one: Duplicate copies a card, and
+  "Save current layout as preset" bottles up whatever happens to be on
+  the canvas, so building something of your own meant first taking
+  someone else's layout apart element by element. This saves an empty
+  preset (auto-named "New theme", "New theme 2", …), drops the canvas
+  straight into editing it, and prefills the save box with its name so
+  "Save as preset" updates that same card instead of spawning another.
+  Deliberately empty rather than seeded with the default gauges —
+  "Reset to defaults" already puts that layout on the canvas, so
+  seeding it here would just be a second, worse Duplicate — though it
+  does keep whatever background is currently staged, since starting on
+  a bare black rectangle is a strange kind of blank. Verified: the
+  button creates the card without disturbing the other presets, the
+  canvas comes up with no elements, adding one and saving under the
+  prefilled name updates that card rather than making a second, a
+  second click produces "New theme 2", and an empty theme still
+  renders a real (background-only) thumbnail instead of a "No preview"
+  card.
 
 ## [1.0.0] — 2026-08-29
 
