@@ -439,71 +439,380 @@ def _card_frame_and_divider(img, layout, accent_color, medallion_cy=None, medall
         draw.line([(W * 0.5, divider_top), (W * 0.5, divider_bottom)], fill=(*accent_color, 130), width=2)
 
 
+_BLOOM = {
+    "left": (0.030, 0.155, 0.485, 0.930),
+    "right": (0.515, 0.155, 0.970, 0.930),
+}
+
+
+def _bloom_chassis(img, gold, card_fill, card_border, petal_palette, center_color,
+                   leaf_color, rng, corner=0.30):
+    """The shared structure of the two floral themes, v3: corner
+    scrollwork, two translucent stat cards, a bouquet tucked into each
+    of the two opposite outer corners, and a light blossom scatter
+    confined to the margins.
+
+    v2 built these around a title banner and a centered bouquet between
+    two bare text columns. Both are gone: the titles were removed from
+    every preset (a theme shouldn't spend its best real estate writing
+    its own name), which left the banner framing nothing, and the
+    columns became real cards to match the card-chassis themes above --
+    same design system, different personality, rather than two
+    unrelated looks in one picker."""
+    margin = int(H * 0.045)
+    _place_corner_flourishes(img, int(H * corner), gold, margin, rng)
+
+    _card(img, _BLOOM["left"], card_fill, radius=26, border=card_border, shadow=False)
+    _card(img, _BLOOM["right"], card_fill, radius=26, border=card_border, shadow=False)
+
+    flowers = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    _draw_flower_medallion(flowers, W * 0.085, H * 0.135, H * 0.085,
+                            petal_palette, center_color, leaf_color, rng)
+    _draw_flower_medallion(flowers, W * 0.915, H * 0.885, H * 0.085,
+                            petal_palette, center_color, leaf_color, rng)
+    for _ in range(7):
+        cx = rng.choice([rng.uniform(W * 0.30, W * 0.70), rng.uniform(W * 0.02, W * 0.10),
+                         rng.uniform(W * 0.90, W * 0.98)])
+        cy = rng.choice([rng.uniform(H * 0.02, H * 0.12), rng.uniform(H * 0.88, H * 0.98)])
+        _draw_petal_flower(flowers, cx, cy, rng.uniform(H * 0.028, H * 0.05),
+                            rng.choice(petal_palette), center_color, rng)
+    img.alpha_composite(flowers)
+
+
 def make_cherry_blossom(seed=5):
     rng = random.Random(seed)
-    layout = _CHERRY_LAYOUT
-    gold = (214, 150, 110)
-    img = vertical_gradient(W, H, (255, 226, 233), (244, 196, 209)).convert("RGBA")
-
-    margin = int(H * 0.05)
-    _place_corner_flourishes(img, int(H * 0.32), gold, margin, rng)
-
-    medallion_cy = H * ((layout["row_top"] + layout["row_bottom"]) / 2 + 0.03)
-    medallion_size = H * 0.13
-
-    draw = ImageDraw.Draw(img)
-    _draw_title_banner(draw, W * 0.5, layout["title_y"] * H, W * 0.34, H * 0.1, gold)
-    _card_frame_and_divider(img, layout, gold, medallion_cy=medallion_cy, medallion_gap=medallion_size * 1.5)
-
-    flower_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    petal_palette = [(255, 150, 180), (255, 190, 205), (255, 130, 160)]
-    center_color = (255, 235, 210)
-    # The bouquet anchor, centered in the empty gap between the two
-    # stat columns (below the divider's midpoint) -- the composition's
-    # focal point, echoing where the reference photo's portrait sits.
-    _draw_flower_medallion(flower_layer, W * 0.5, medallion_cy,
-                            medallion_size, petal_palette, center_color, (150, 200, 150), rng)
-    # A light, deliberately sparse scatter confined to the margins
-    # outside the two text columns (left of col_l, right of col_r) --
-    # not behind the stat rows themselves, so the readout stays calm.
-    for _ in range(9):
-        side = rng.choice([-1, 1])
-        cx = W * (0.08 if side < 0 else 0.92) + rng.uniform(-W * 0.03, W * 0.03)
-        cy = rng.uniform(H * 0.3, H * 0.8)
-        size = rng.uniform(H * 0.035, H * 0.06)
-        _draw_petal_flower(flower_layer, cx, cy, size, rng.choice(petal_palette), center_color, rng)
-    img = Image.alpha_composite(img, flower_layer)
+    img = vertical_gradient(W, H, (255, 236, 242), (250, 212, 226)).convert("RGBA")
+    _bloom_chassis(img,
+                   gold=(206, 138, 106),
+                   card_fill=(255, 250, 252, 172),
+                   card_border=(226, 150, 175, 190),
+                   petal_palette=[(246, 122, 162), (250, 168, 194), (238, 96, 142)],
+                   center_color=(255, 238, 214),
+                   leaf_color=(150, 196, 150),
+                   rng=rng)
     return img.convert("RGB")
 
 
 def make_lavender_bloom(seed=6):
     rng = random.Random(seed)
-    layout = _PETAL_LAYOUT
-    gold = (150, 130, 190)
-    img = vertical_gradient(W, H, (232, 223, 250), (204, 227, 236)).convert("RGBA")
+    img = vertical_gradient(W, H, (240, 233, 254), (214, 234, 244)).convert("RGBA")
+    _bloom_chassis(img,
+                   gold=(140, 120, 188),
+                   card_fill=(253, 251, 255, 176),
+                   card_border=(178, 160, 226, 190),
+                   petal_palette=[(164, 130, 226), (146, 196, 226), (186, 158, 240)],
+                   center_color=(246, 250, 238),
+                   leaf_color=(146, 190, 172),
+                   rng=rng)
+    return img.convert("RGB")
 
-    margin = int(H * 0.05)
-    _place_corner_flourishes(img, int(H * 0.32), gold, margin, rng)
 
-    medallion_cy = H * ((layout["row_top"] + layout["row_bottom"]) / 2)
-    medallion_size = H * 0.12
 
-    draw = ImageDraw.Draw(img)
-    _draw_title_banner(draw, W * 0.5, layout["title_y"] * H, W * 0.32, H * 0.1, gold)
-    _card_frame_and_divider(img, layout, gold, medallion_cy=medallion_cy, medallion_gap=medallion_size * 1.5)
+# =====================================================================
+# 7/8/9. The "flagship" backgrounds -- Fusion Core, Neon Pulse, Crimson
+# Strike. These are a different kind of background from everything
+# above: not a picture the layout happens to sit on, but the *chassis*
+# of the layout itself -- the cards each stat block lives in, the
+# dividers between them, the plot wells the history graphs draw into,
+# the accent edges. Every rectangle here is positioned from the same
+# fraction-of-panel constants the matching preset's elements use
+# (_FUSION/_NEON/_CRIMSON below mirror dashboard_theme.py's preset
+# entries), so a card and the gauge inside it can't drift apart.
+#
+# They also ship with `"dim": 0` (see _build_background_image()):
+# everything here is drawn at the contrast it should actually appear
+# at, rather than being a bright photo that needs knocking back 45%
+# before text is legible over it.
+# =====================================================================
 
-    flower_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    petal_palette = [(190, 160, 240), (170, 210, 235), (200, 180, 245)]
-    center_color = (235, 245, 230)
-    _draw_flower_medallion(flower_layer, W * 0.5, medallion_cy,
-                            medallion_size, petal_palette, center_color, (150, 195, 175), rng)
-    for _ in range(9):
-        side = rng.choice([-1, 1])
-        cx = W * (0.08 if side < 0 else 0.92) + rng.uniform(-W * 0.03, W * 0.03)
-        cy = rng.uniform(H * 0.28, H * 0.78)
-        size = rng.uniform(H * 0.035, H * 0.06)
-        _draw_petal_flower(flower_layer, cx, cy, size, rng.choice(petal_palette), center_color, rng)
-    img = Image.alpha_composite(img, flower_layer)
+# ---- shared drawing helpers for the card-style backgrounds ----------
+
+def _px(box):
+    """A (x0, y0, x1, y1) box in fractions of the panel -> pixels on
+    this 1920x960 canvas. Every card/slab position in this section is
+    written as fractions so it lines up with the preset elements, which
+    are also fractions (dashboard_theme.py resolves those against the
+    real panel size, whatever it is)."""
+    return [box[0] * W, box[1] * H, box[2] * W, box[3] * H]
+
+
+def _card(img, box, fill, radius=22, border=None, border_width=2, accent_edge=None,
+          accent_width=8, shadow=True):
+    """One rounded panel: an optional soft drop shadow, a translucent
+    fill, an optional hairline border, and an optional thicker accent
+    stripe down its left edge (the CPU/GPU color-coding the reference
+    dashboards use to tell two identical-looking cards apart at a
+    glance). Composited through an RGBA layer so `fill` can carry real
+    alpha and let the background art show through the card."""
+    x0, y0, x1, y1 = _px(box)
+    if shadow:
+        shadow_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        rounded_rect(ImageDraw.Draw(shadow_layer), [x0 + 3, y0 + 6, x1 + 3, y1 + 8],
+                     radius=radius, fill=(0, 0, 0, 120))
+        shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(14))
+        img.alpha_composite(shadow_layer)
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    rounded_rect(draw, [x0, y0, x1, y1], radius=radius, fill=fill)
+    if border:
+        rounded_rect(draw, [x0, y0, x1, y1], radius=radius, outline=border, width=border_width)
+    if accent_edge:
+        # Clipped to the card's own rounded silhouette: draw the stripe
+        # as a full rounded rect of accent color, then keep only the
+        # left `accent_width` pixels of it via a mask, so the stripe
+        # picks up the card's corner radius instead of sticking out
+        # past it as a square-cornered bar.
+        stripe = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        rounded_rect(ImageDraw.Draw(stripe), [x0, y0, x1, y1], radius=radius, fill=accent_edge)
+        mask = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(mask).rectangle([x0, y0, x0 + accent_width, y1], fill=255)
+        stripe.putalpha(Image.composite(stripe.split()[3], Image.new("L", (W, H), 0), mask))
+        layer.alpha_composite(stripe)
+    img.alpha_composite(layer)
+
+
+def _well(img, box, fill=(0, 0, 0, 90), radius=10, outline=None):
+    """A recessed inner panel -- the darker plot area a history graph's
+    line is drawn into, or the track a row of readings sits on. Same
+    fraction-box convention as _card()."""
+    x0, y0, x1, y1 = _px(box)
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    rounded_rect(ImageDraw.Draw(layer), [x0, y0, x1, y1], radius=radius, fill=fill, outline=outline)
+    img.alpha_composite(layer)
+
+
+def _ribbon(img, stops, y_center=0.5, thickness=0.42, wave=0.16, freq=1.25, phase=0.0,
+            blur=90, alpha=255, angle_drop=0.34):
+    """The wide diagonal color ribbon sweeping under the cards -- a
+    multi-stop horizontal gradient shown through a soft-edged wavy band
+    mask. Built as gradient-plus-mask rather than by drawing colored
+    shapes directly so the color transition stays perfectly smooth
+    across the whole sweep no matter how the band bends.
+
+    `stops` are the gradient colors left-to-right; `y_center`/
+    `angle_drop` set where the band starts vertically and how far it
+    falls across the width (its diagonal), `thickness` how tall it is,
+    `wave`/`freq`/`phase` the sine wobble along it, and `blur` how soft
+    its edges are."""
+    grad = Image.new("RGB", (W, H))
+    gdraw = ImageDraw.Draw(grad)
+    n = len(stops)
+    for x in range(W):
+        t = x / max(1, W - 1) * (n - 1)
+        i = min(n - 2, int(t))
+        f = t - i
+        c = tuple(int(stops[i][k] * (1 - f) + stops[i + 1][k] * f) for k in range(3))
+        gdraw.line([(x, 0), (x, H)], fill=c)
+
+    mask = Image.new("L", (W, H), 0)
+    mdraw = ImageDraw.Draw(mask)
+    half = thickness * H / 2
+    for x in range(0, W, 3):
+        t = x / max(1, W - 1)
+        cy = (y_center + (t - 0.5) * angle_drop) * H + math.sin(t * math.tau * freq + phase) * wave * H
+        mdraw.line([(x, cy - half), (x, cy + half)], fill=alpha, width=4)
+    mask = mask.filter(ImageFilter.GaussianBlur(blur))
+    grad.putalpha(mask)
+    img.alpha_composite(grad)
+
+
+def _halftone(img, box, color, dot=7, gap=20, alpha=90, fade=True):
+    """A dot-screen fill inside `box` (fractions) -- the comic/print
+    halftone texture the bolder reference themes use behind their
+    headline slabs. `fade` ramps the dots out toward the right so the
+    texture dissolves instead of ending on a hard edge."""
+    x0, y0, x1, y1 = _px(box)
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    y = y0
+    row = 0
+    while y < y1:
+        x = x0 + (gap / 2 if row % 2 else 0)
+        while x < x1:
+            a = alpha
+            if fade:
+                a = int(alpha * max(0.0, 1.0 - (x - x0) / max(1.0, x1 - x0)))
+            if a > 0:
+                draw.ellipse([x, y, x + dot, y + dot], fill=(*color, a))
+            x += gap
+        y += gap
+        row += 1
+    img.alpha_composite(layer)
+
+
+def _slab(img, points, fill, outline=None, width=4):
+    """An angular polygon slab (fraction coordinates) -- the sharp
+    diagonal shapes the cyber/comic themes are built out of."""
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    pts = [(x * W, y * H) for x, y in points]
+    draw.polygon(pts, fill=fill)
+    if outline:
+        for i in range(len(pts)):
+            draw.line([pts[i], pts[(i + 1) % len(pts)]], fill=outline, width=width)
+    img.alpha_composite(layer)
+
+
+def _glitch_bars(img, box, colors, rng, count=26, alpha=150):
+    """Thin offset horizontal slivers in `box` -- cheap, convincing
+    digital-glitch texture, and the only "noise" in these designs that
+    is actually random rather than placed."""
+    x0, y0, x1, y1 = _px(box)
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    for _ in range(count):
+        y = rng.uniform(y0, y1)
+        h = rng.uniform(2, 9)
+        w = rng.uniform((x1 - x0) * 0.08, (x1 - x0) * 0.55)
+        x = rng.uniform(x0, x1 - w)
+        draw.rectangle([x, y, x + w, y + h], fill=(*rng.choice(colors), alpha))
+    img.alpha_composite(layer)
+
+
+# ---------------------------------------------------------------------
+# 7. Fusion Core -- the dark card dashboard: a vivid color ribbon
+# sweeping behind matte panels, one per component group, each with its
+# own accent edge and graph well. Modeled on the modern all-in-one PC
+# monitor layouts the user pointed at, built entirely from the helpers
+# above.
+# ---------------------------------------------------------------------
+_FUSION = {
+    "clock": (0.030, 0.065, 0.470, 0.300),
+    "gpu": (0.030, 0.340, 0.470, 0.935),
+    "cpu": (0.530, 0.065, 0.970, 0.600),
+    "mem": (0.530, 0.640, 0.970, 0.935),
+    "gpu_well": (0.055, 0.815, 0.445, 0.905),
+    "cpu_well": (0.555, 0.478, 0.945, 0.568),
+}
+
+
+def make_fusion_core(seed=7):
+    rng = random.Random(seed)
+    img = vertical_gradient(W, H, (14, 16, 24), (7, 8, 13)).convert("RGBA")
+
+    # The signature sweep: teal -> violet -> magenta -> amber, bent
+    # through the panel. Three passes, widest and dimmest first: a huge
+    # soft wash that tints the whole field (it reads through the cards'
+    # near-opaque fill just enough to keep them from looking like grey
+    # boxes cut out of a dark sheet), then the ribbon proper, then a
+    # tight bright core along its spine. The first version had only the
+    # middle two and the cards swallowed nearly all of it -- the sweep
+    # only showed in the gutter between columns, so the composition
+    # read as "dark panels" rather than "panels floating on light".
+    _ribbon(img, [(0, 170, 190), (80, 70, 220), (215, 60, 170), (255, 140, 50)],
+            y_center=0.50, thickness=1.15, wave=0.05, freq=0.9, blur=190, alpha=150)
+    _ribbon(img, [(0, 200, 210), (110, 95, 240), (235, 75, 185), (255, 160, 65)],
+            y_center=0.52, thickness=0.42, wave=0.13, freq=1.1, blur=110, alpha=235)
+    _ribbon(img, [(120, 245, 250), (170, 130, 255), (255, 110, 210), (255, 200, 110)],
+            y_center=0.54, thickness=0.14, wave=0.12, freq=1.1, blur=40, alpha=225)
+
+    card_fill = (16, 18, 26, 232)
+    border = (64, 70, 94, 255)
+    _card(img, _FUSION["clock"], card_fill, border=border)
+    _card(img, _FUSION["gpu"], card_fill, border=border, accent_edge=(236, 72, 153, 255))
+    _card(img, _FUSION["cpu"], card_fill, border=border, accent_edge=(34, 211, 238, 255))
+    _card(img, _FUSION["mem"], card_fill, border=border, accent_edge=(168, 85, 247, 255))
+    _well(img, _FUSION["gpu_well"], fill=(0, 0, 0, 110))
+    _well(img, _FUSION["cpu_well"], fill=(0, 0, 0, 110))
+    return img.convert("RGB")
+
+
+# ---------------------------------------------------------------------
+# 8. Neon Pulse -- the loud one: an acid-yellow field cut by a magenta
+# diagonal, glitch slivers, halftone, and two dark readout slabs for
+# the CPU/GPU columns. Original shapes only -- the reference for this
+# look was a piece of licensed key art, so what's borrowed is the
+# palette and the angular energy, not the artwork.
+# ---------------------------------------------------------------------
+# The composition every one of the reference themes uses: a bold
+# graphic zone down the left ~30% (where their key art / character
+# sits) and the actual readout in panels filling the right. Shared by
+# Neon Pulse and Crimson Strike below, which differ in palette and
+# shape language, not structure -- and mirrored in those presets'
+# element positions.
+_SPLIT = {
+    "art": (0.0, 0.0, 0.300, 1.0),
+    "left_panel": [(0.335, 0.215), (0.645, 0.185), (0.645, 0.945), (0.335, 0.945)],
+    "right_panel": [(0.665, 0.185), (0.975, 0.215), (0.975, 0.945), (0.665, 0.945)],
+}
+
+
+def _keyline(img, panel, color, thickness=0.016):
+    """A bright bar along a panel's (skewed) top edge -- what stops the
+    dark readout panels from reading as plain holes punched in the
+    artwork."""
+    a, b = panel[0], panel[1]
+    _slab(img, [a, b, (b[0], b[1] + thickness), (a[0], a[1] + thickness)], (*color, 255))
+
+
+def _chevrons(img, box, color, count=3, alpha=60, thickness=0.055):
+    """Stacked right-pointing chevrons filling `box` -- the directional
+    texture the bolder themes use in their art zone, standing in for
+    the reference art's motion lines."""
+    x0, y0, x1, y1 = box
+    step = (y1 - y0) / (count + 1)
+    for i in range(count):
+        cy = y0 + step * (i + 1)
+        _slab(img, [(x0, cy - thickness), (x1 * 0.62, cy + step * 0.42),
+                    (x0, cy + step * 0.84 + thickness), (x0, cy + step * 0.84),
+                    (x1 * 0.62 - thickness * 0.9, cy + step * 0.42), (x0, cy)],
+              (*color, alpha))
+
+
+def make_neon_pulse(seed=8):
+    rng = random.Random(seed)
+    yellow = (250, 232, 26)
+    magenta = (236, 22, 110)
+    cyan = (34, 226, 236)
+    ink = (12, 12, 16)
+    img = Image.new("RGBA", (W, H), (*magenta, 255))
+
+    # Acid-yellow art block down the left, cut on a diagonal, with a
+    # cyan keyline along the cut and ink halftone + chevrons filling it.
+    _slab(img, [(0.0, 0.0), (0.300, 0.0), (0.245, 1.0), (0.0, 1.0)], (*yellow, 255))
+    _slab(img, [(0.300, 0.0), (0.316, 0.0), (0.261, 1.0), (0.245, 1.0)], (*cyan, 255))
+    _chevrons(img, (0.02, 0.42, 0.30, 0.98), ink, count=3, alpha=45)
+    _halftone(img, (0.0, 0.0, 0.30, 1.0), ink, dot=9, gap=26, alpha=110)
+    # Glitch slivers only in the magenta field's top/bottom margins, so
+    # they never run across the readout panels and muddy the numbers.
+    _glitch_bars(img, (0.33, 0.0, 1.0, 0.085), [yellow, cyan, (255, 255, 255)], rng, count=12, alpha=140)
+    _glitch_bars(img, (0.33, 0.955, 1.0, 1.0), [yellow, cyan], rng, count=6, alpha=140)
+
+    for panel, key in ((_SPLIT["left_panel"], cyan), (_SPLIT["right_panel"], yellow)):
+        _slab(img, panel, (*ink, 236))
+        _keyline(img, panel, key)
+    return img.convert("RGB")
+
+
+# ---------------------------------------------------------------------
+# 9. Crimson Strike -- red/black/white, hard diagonals, halftone and a
+# torn white slash: the high-contrast comic look, again as original
+# geometry rather than anything traced from the reference art.
+# ---------------------------------------------------------------------
+def make_crimson_strike(seed=9):
+    rng = random.Random(seed)
+    red = (206, 20, 34)
+    ink = (13, 11, 14)
+    bone = (246, 244, 240)
+    img = Image.new("RGBA", (W, H), (*red, 255))
+
+    # Same left-art / right-readout split as Neon Pulse, in the
+    # red-black-white comic register: an ink block down the left with a
+    # torn white slash across it, red halftone bleeding right, and a
+    # second slash cutting the top of the red field.
+    _slab(img, [(0.0, 0.0), (0.300, 0.0), (0.245, 1.0), (0.0, 1.0)], (*ink, 255))
+    _slab(img, [(0.0, 0.245), (0.300, 0.075), (0.300, 0.175), (0.0, 0.345)], (*bone, 255))
+    _slab(img, [(0.0, 0.365), (0.300, 0.195), (0.300, 0.225), (0.0, 0.395)], (*red, 255))
+    _chevrons(img, (0.015, 0.50, 0.29, 0.98), bone, count=3, alpha=42)
+    _halftone(img, (0.30, 0.0, 0.62, 1.0), ink, dot=8, gap=24, alpha=85)
+    # A hard ink wedge biting into the red from the top-right corner
+    # keeps the right half from being a flat red rectangle behind the
+    # panels.
+    _slab(img, [(1.0, 0.0), (1.0, 0.30), (0.70, 0.0)], (*ink, 255))
+    _slab(img, [(0.96, 0.0), (1.0, 0.0), (1.0, 0.06), (0.86, 0.0)], (*bone, 255))
+
+    for panel in (_SPLIT["left_panel"], _SPLIT["right_panel"]):
+        _slab(img, panel, (22, 19, 23, 240), outline=(*bone, 255), width=4)
     return img.convert("RGB")
 
 
@@ -514,3 +823,6 @@ if __name__ == "__main__":
     save(make_bokeh(), "bokeh.jpg")
     save(make_cherry_blossom(), "cherry_blossom.jpg")
     save(make_lavender_bloom(), "lavender_bloom.jpg")
+    save(make_fusion_core(), "fusion_core.jpg")
+    save(make_neon_pulse(), "neon_pulse.jpg")
+    save(make_crimson_strike(), "crimson_strike.jpg")

@@ -342,6 +342,15 @@ class AppController:
                 key: {"label": scheme["label"]}
                 for key, scheme in dashboard_theme.BACKGROUND_COLOR_SCHEMES.items()
             },
+            # The display faces bundled with the app (dashboard_theme.
+            # FONT_FAMILIES) for the text/clock property panel's font
+            # picker -- same "let the backend own the list, the
+            # frontend just renders it" shape as the stat/background/
+            # scheme lookups above.
+            "fontFamilies": {
+                key: {"label": spec["label"]}
+                for key, spec in dashboard_theme.FONT_FAMILIES.items()
+            },
             "nowPlaying": {
                 "default_art_path": d.get("default_art_path") or None,
                 "not_playing_message": d.get("not_playing_message") or None,

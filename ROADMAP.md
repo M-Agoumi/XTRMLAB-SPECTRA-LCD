@@ -2474,6 +2474,102 @@ harness: loading a preset and clicking Save layout fires both
 `/api/dashboard/elements` and `/api/dashboard/background` with the
 preset's own background, matching the elements call.
 
+### Phase 6b — Themes that hold up next to the commercial ones
+
+The feedback that kicked this off, with four reference screenshots
+attached (a modern all-in-one monitor dashboard, a pastel floral one,
+and two loud licensed-key-art ones): "please remove the titles from
+the themes, all the themes, what are we kids? we need the super hero
+fire spitter lmao ... i want shit like the images i sent u, when i say
+like i mean reaaaally like". Three separate problems in that.
+
+**Titles.** Every preset was drawing its own name on the panel
+("NORTHERN LIGHTS", "DEEP SPACE", "SYSTEM MONITOR", "Doing great
+today!"). None of the commercial themes does that -- the panel is 6.2
+inches of prime real estate and the person looking at it already knows
+which theme they picked. 15 title/greeting elements removed across 11
+presets (done by walking the source's preset literals and deleting
+whole element dicts by id, then re-importing and diffing element
+counts, rather than by hand). Stat captions like "CPU FREQ" or "BRAIN
+USAGE" stayed: those label a reading.
+
+**Typography, which turned out to be the actual gap.** The renderer
+could only ever call `load_font()`, which tries DejaVu Sans then
+Arial then Segoe UI -- so every theme, whatever its palette, was set
+in the same generic UI sans, and that single fact is most of why they
+read as hobby projects next to the references (whose entire character
+comes from a heavy display face). Fixed properly: six OFL families
+now ship in `assets/fonts/` (Poppins, Orbitron, Chakra Petch, Bebas
+Neue, Anton, Archivo Black -- obtained as the `@fontsource/*` npm
+packages' latin-subset woff2 and converted back to .ttf with fontTools,
+since Pillow can't read woff2; ~230KB total, license file alongside),
+registered in `FONT_FAMILIES`, resolved per element through the same
+`resource_path()` mechanism the bundled backgrounds use, cached by
+(size, weight, family) since a per-element family means hitting disk
+rather than the OS font cache. `"default"` deliberately maps to
+None/None so every element saved before this resolves to exactly the
+old candidate list.
+
+**The drawing primitives the reference layouts need.** Rather than
+fake these in the background art, four small additions to the
+renderer, each of which is independently useful in the canvas:
+`plate` on a text element draws a filled rounded chip behind it,
+measured from the text's own bbox (a chip painted into the background
+instead would have to be hand-fitted to a string it can't see, and
+would drift the moment the text or font changed); `show_title` on
+gauge/bar/graph and `show_value` on bar let a layout own its labels in
+its own face instead of getting a second one in the fallback sans
+drawn over it; `background["border"]` recolors or removes the fixed
+purple panel frame that was being drawn on every theme regardless of
+palette; `background["dim"]` controls the 45%-toward-black blend a
+background photo gets -- correct for an arbitrary photo, wrong for a
+background that IS the design and is already at final contrast; and
+bars take a `track_color`, because the empty track is otherwise always
+`dim_color(accent, 0.22)`, i.e. near-black, which is invisible on the
+dark themes and a heavy slab on a light one.
+
+Then the themes themselves. All five are built the same way, which is
+the real answer to "integrate into the design": the cards and panels
+each stat block sits in are drawn into the background art at the same
+fraction-of-panel coordinates the elements use, so the chassis and the
+readout can't drift apart. `generate_backgrounds.py` grew a small
+vocabulary for this -- `_card()` (shadow, translucent fill, hairline
+border, clipped accent stripe), `_well()` (the recessed graph plot
+area), `_ribbon()` (a multi-stop gradient shown through a soft wavy
+band mask, which keeps the color transition smooth in a way drawing
+colored shapes can't), `_slab()`, `_halftone()`, `_glitch_bars()`,
+`_keyline()`, `_chevrons()`.
+
+  - **Fusion Core** -- the card dashboard. Three ribbon passes
+    (a wide dim wash, the ribbon proper, a tight bright core) so the
+    sweep still reads through near-opaque cards; first attempt had
+    only the middle pass and the cards swallowed it, leaving what
+    looked like grey boxes on black.
+  - **Neon Pulse** / **Crimson Strike** -- both use the left-art /
+    right-readout split every one of the reference screenshots uses,
+    with the art zone holding the clock and graphic texture instead of
+    the licensed character art it holds in the references. First pass
+    had the panels filling nearly the whole canvas with the artwork
+    only visible in the gutters; restructuring to that 30/70 split is
+    what made them read as designs rather than decorated rectangles.
+  - **Cherry Blossom / Petal Dream** -- rebuilt on the same system in
+    a light register, which also retired the title banner v2 had
+    added (it was framing a title that no longer exists).
+
+Nothing was traced from the references: no characters, logos or
+wordmarks, only composition and palette. Verified by rendering all 16
+presets through `render_live_preview()` and reviewing them as images
+(which is how the bouquet-skewered-by-a-divider, the white-date-on-
+white-slash and the swallowed color ribbon were all caught), then in
+the browser harness: 16 picker cards, a flagship preset loads and Save
+layout persists elements *and* background including the new border/dim
+keys, the Font and Label chip controls render for a selected text
+element, no console errors. One editor bug surfaced doing that: graph
+elements always drew their SVG mockup box and title, even over an
+accurate live backdrop -- fine when every graph had a frame, wrong now
+that a frameless graph is a deliberate choice, so that exception is
+now conditional on `show_frame`.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

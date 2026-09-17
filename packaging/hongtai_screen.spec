@@ -45,12 +45,19 @@ a = Analysis(
     binaries=[],
     datas=[
         ("assets/icon.ico", "assets"),
-        # The 4 bundled dashboard background pictures (dashboard_theme.
+        # The bundled dashboard background pictures (dashboard_theme.
         # py's BUNDLED_BACKGROUND_IMAGES) -- same "assets" dest dir as
         # the icon above, so paths.py's _resource_path() finds them at
         # sys._MEIPASS/assets/backgrounds/*.jpg the same way it finds
         # icon.ico.
         ("assets/backgrounds/*.jpg", "assets/backgrounds"),
+        # The bundled display fonts (dashboard_theme.py's
+        # FONT_FAMILIES), resolved through the same resource_path()
+        # mechanism. Without these a frozen build silently falls back
+        # to whatever generic sans Windows has, which is exactly the
+        # "every theme looks the same" problem they were added to fix
+        # -- so they're a real build dependency, not decoration.
+        ("assets/fonts/*.ttf", "assets/fonts"),
     ],
     hiddenimports=hidden_imports,
     hookspath=[],
