@@ -68,8 +68,11 @@ bright subject in the middle, regenerate rather than settling — that
 one region decides whether the theme looks designed or looks like text
 dumped on a wallpaper.
 
-## Command Terminal — `command_terminal.jpg`
-Widget style: cyberpunk, recoloured to phosphor green.
+## Command Terminal — `command_terminal.jpg` — **done**
+Widget style: cyberpunk, recoloured to phosphor green. Generated from
+the prompt below at 1774×887 and bundled as
+`assets/backgrounds/command_terminal.jpg`; the theme ships as the
+"Command Terminal" preset.
 
 ```text
 Use case: stylized-concept

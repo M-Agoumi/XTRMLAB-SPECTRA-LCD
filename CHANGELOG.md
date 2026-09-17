@@ -2122,6 +2122,17 @@ dashboard designer) this is laying groundwork for.
     preset only when the canvas actually differs from it. Change
     something first and it still copies, as built-ins are read-only.
 
+- **New theme: Command Terminal.** A cold-war situation display — the
+  background's two wireframe hemispheres sit exactly under the CPU and
+  GPU dials, so each gauge reads as a scope drawn on the same screen,
+  the middle stays black for the music player, and the six reading rows
+  sit on the art's own perspective floor grid. It reuses the cyberpunk
+  widget geometry repainted in phosphor green (a palette is data; a
+  style is drawing code in two renderers, and this needed the former),
+  with amber alerts to match the warm pinpricks already in the art. No
+  theme title. First theme built from art commissioned *for* a layout
+  rather than a layout fitted around existing art.
+
 ## [1.0.0] — 2026-08-29
 
 First tagged release. Everything below shipped before this tag existed

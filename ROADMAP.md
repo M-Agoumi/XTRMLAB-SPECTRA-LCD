@@ -2957,6 +2957,42 @@ copy is reconciled, running again is a no-op, a hand-recreated
 collision is left alone, a newly-shipped built-in is reconciled), and
 the earlier preset suites still pass.
 
+**Command Terminal, and art commissioned for a layout.** "Now you
+create new themes, what they lacked is a proper background image as u
+can't generate images, so either find one open source ... or give me a
+prompt i can use with chatgpt."
+
+Prompts, then -- written against a layout rather than as wallpaper
+briefs, which is the floral round's lesson stated as a process instead
+of a fix. Four went into docs/background-prompts.md (Command Terminal,
+Molten Forge, Abyssal, Sakura Ink), each reserving the middle 35
+percent for the music player, the columns near 18 and 82 percent of the
+width for the dials, and the bottom third for the readings, because
+that is where the widgets actually are.
+
+Command Terminal came back first and the reservation held: the two
+wireframe hemispheres landed in the upper-left and upper-right
+quadrants, so the CPU and GPU dials sit *inside* them and read as
+scopes drawn on the same screen, and the faint perspective floor grid
+gives the six reading rows something to stand on. That is what the
+prompts were for -- art that knows where the widgets go.
+
+The style is the cyberpunk one repainted green rather than a fourth
+entry in widget_styles.STYLES. Worth being explicit about why: a style
+there is drawing code in two places (the Python renderer and the
+canvas's SVG mockups, which have to agree), while a palette is seven
+colours of data. Angular bezels, corner brackets and segmented meters
+are what a military display looks like anyway, so the geometry was
+already right and only the colour was wrong. Amber stays as the alert
+colour, matching the warm pinpricks already in the art. No title text.
+
+Verified by rendering the full 960x480 panel and the picker thumbnail
+and looking at both, which is how every preset here has been built
+since the first one clipped its own gauge titles.
+
+Still outstanding: Molten Forge, Abyssal and Sakura Ink have prompts
+and layouts but no art yet.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

@@ -3870,6 +3870,92 @@ BUILTIN_DASHBOARD_PRESETS["Arcane Observatory"] = _styled_dashboard_preset(
     {"mode": "arcane", "scheme": "emerald", "border": [191, 157, 88], "dim": 0.3}, "arcane")
 
 
+# Command Terminal -- the first theme built against art commissioned
+# *for* a layout rather than a layout fitted to existing art. The
+# background is a CRT situation display whose two wireframe hemispheres
+# sit in the upper-left and upper-right quadrants, exactly where the
+# two dials go, so each gauge reads as a scope drawn on the same
+# screen; the middle stays black for the music, and the faint
+# perspective floor grid across the bottom is what the reading rows sit
+# on.
+#
+# It borrows the cyberpunk style's geometry (angular bezels, corner
+# brackets, segmented meters -- all of which are what a military
+# display looks like anyway) and repaints it in phosphor green, per
+# element, rather than adding a fourth entry to widget_styles.STYLES:
+# a style there is drawing code in two renderers (Python and the
+# canvas's SVG mockups), while a palette is data. Amber stays as the
+# alert color, which is what the art's few warm pinpricks already are.
+# No title text -- the panel says what it is by looking like it.
+_TERMINAL_PALETTE = {
+    "color": [96, 240, 150],
+    "text_color": [188, 247, 210],
+    "ornament_color": [46, 120, 86],
+    "muted_color": [112, 172, 136],
+    "track_color": [11, 34, 24],
+    "face_color": [4, 14, 10],
+    "alert_color": [255, 176, 64],
+}
+_TERMINAL_PLATE = {"plate": [4, 14, 10], "plate_opacity": 0.78, "plate_pad": 0.32}
+
+
+def _terminal_reading(key, stat, label, x, y, align, z):
+    """One "LABEL  value" row plus the thin segmented meter under it --
+    the pair the side columns are built from."""
+    return [
+        {"id": f"terminal_{key}_reading", "type": "text", "stat": stat,
+         "template": f"{label}  {{value}}", "x": x, "y": y, "font_size": 0.028,
+         "align": align, "bold": True, **_TERMINAL_PLATE, **_TERMINAL_PALETTE,
+         "opacity": 1.0, "z": z},
+        {"id": f"terminal_{key}_meter", "type": "bar", "stat": stat,
+         "x": x, "y": y + 0.052, "width": 0.20, "height": 0.016,
+         "orientation": "horizontal", "show_knob": False, "show_title": False,
+         "show_value": False, **_TERMINAL_PALETTE, "opacity": 1.0, "z": z + 10},
+    ]
+
+
+BUILTIN_DASHBOARD_PRESETS["Command Terminal"] = {
+    "background": {"mode": "terminal", "scheme": "emerald", "border": [38, 104, 74],
+                   "dim": 0.15, "widget_style": "cyberpunk", "image_path": None},
+    "elements": [
+        # Clock top centre: the one part of the screen the art leaves
+        # completely black, and where a situation display puts its
+        # time-of-record anyway.
+        {"id": "terminal_clock", "type": "clock", "x": 0.5, "y": 0.085,
+         "font_size": 0.05, "show_seconds": False, "show_date": True,
+         "face": "digital", "hour_format": "24h", **_TERMINAL_PALETTE,
+         "opacity": 1.0, "z": 1},
+        # The two dials, centred on the hemispheres in the art.
+        {"id": "terminal_cpu_dial", "type": "gauge", "stat": "cpu_load",
+         "x": 0.155, "y": 0.325, "radius": 0.135, **_TERMINAL_PALETTE,
+         "opacity": 1.0, "z": 3},
+        {"id": "terminal_gpu_dial", "type": "gauge", "stat": "gpu_load",
+         "x": 0.845, "y": 0.325, "radius": 0.135, **_TERMINAL_PALETTE,
+         "opacity": 1.0, "z": 4},
+        *_terminal_reading("ram", "ram", "RAM", 0.155, 0.605, "center", 20),
+        *_terminal_reading("clk", "cpu_freq", "CLK", 0.155, 0.745, "center", 21),
+        *_terminal_reading("dsk", "disk_usage", "DSK", 0.155, 0.885, "center", 22),
+        *_terminal_reading("tmp", "gpu_temp", "TMP", 0.845, 0.605, "center", 23),
+        *_terminal_reading("vrm", "vram_usage", "VRM", 0.845, 0.745, "center", 24),
+        *_terminal_reading("net", "network", "NET", 0.845, 0.885, "center", 25),
+        # Two more readings on the floor grid under the player, where a
+        # third column would be too tight -- volume and process count,
+        # the two numbers that aren't load or heat.
+        {"id": "terminal_vol_reading", "type": "text", "stat": "volume",
+         "template": "VOL  {value}", "x": 0.415, "y": 0.905, "font_size": 0.028,
+         "align": "center", "bold": True, **_TERMINAL_PLATE, **_TERMINAL_PALETTE,
+         "opacity": 1.0, "z": 26},
+        {"id": "terminal_proc_reading", "type": "text", "stat": "process_count",
+         "template": "PROC  {value}", "x": 0.585, "y": 0.905, "font_size": 0.028,
+         "align": "center", "bold": True, **_TERMINAL_PLATE, **_TERMINAL_PALETTE,
+         "opacity": 1.0, "z": 27},
+        {"id": "terminal_spotify", "type": "media", "x": 0.5, "y": 0.45,
+         "width": 0.30, "height": 0.52, "show_art": True, "show_name": True,
+         "show_time": True, **_TERMINAL_PALETTE, "opacity": 1.0, "z": 50},
+    ],
+}
+
+
 
 def _element_accent(el):
     """An element's gauge color: an explicit `color` (r, g, b) tuple if
@@ -4771,6 +4857,7 @@ BACKGROUND_PRESETS = {
     "nocturne": "Nocturne Cathedral (image)",
     "ronin": "Neon Ronin (image)",
     "arcane": "Arcane Observatory (image)",
+    "terminal": "Command Terminal (image)",
     "image": "Custom image",
 }
 # The four "(image)" entries above aren't a user's own photo (that's
@@ -4798,6 +4885,7 @@ BUNDLED_BACKGROUND_IMAGES = {
     "nocturne": "nocturne_cathedral.jpg",
     "ronin": "neon_ronin.jpg",
     "arcane": "arcane_observatory.jpg",
+    "terminal": "command_terminal.jpg",
     # The three "chassis" backgrounds -- not pictures the layout sits
     # on but the cards/panels it sits *in*, drawn at the same
     # fraction-of-panel coordinates as their presets' elements (see
