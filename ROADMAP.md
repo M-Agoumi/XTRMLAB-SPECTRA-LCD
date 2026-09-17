@@ -2754,6 +2754,54 @@ a .json with images inlined; re-importing it restores the preset; the
 friend's real file imports cleanly; malformed JSON and wrong-shaped
 JSON each surface their own error instead of failing quietly.
 
+**CPU clock, and a new Volume stat.** "CPU Clock is always showing as
+3.4G which isn't accurate, can you verify that, add a new stats to
+everything to show pc volume."
+
+The clock was never a display bug. `get_cpu_freq_ghz()` returned
+`psutil.cpu_freq().current`, and on Windows psutil gets that from
+`CallNtPowerInformation(ProcessorInformation)`, whose `CurrentMhz` on
+current hardware is simply the nominal clock -- a constant. So the
+stat had been showing the base frequency the whole time, on a machine
+whose own vendor app was reading 5.5GHz simultaneously (visible in the
+screenshots from the theme rounds). Replaced with the
+`\Processor Information(_Total)\% Processor Performance` counter times
+the base clock: that counter is a percentage *of base*, exceeds 100
+under boost, and is the same quantity Task Manager's "Speed" field
+shows. Read through PDH by ctypes rather than adding pywin32/WMI --
+`PdhOpenQueryW` + `PdhAddEnglishCounterW` (the English variant so a
+localized Windows doesn't break it) + two collections, with the query
+kept open and the priming sample returning None. psutil stays as the
+fallback, which keeps Linux correct (its `current` genuinely is live)
+and covers any Windows SKU missing the counter. Sampled at 1Hz, not
+per frame.
+
+Worth being explicit about the limit here: this sandbox is Linux and
+the device bridge is a Linux VM with no access to Windows hardware, so
+*I can't verify the reading on the actual machine* -- only that the
+fallback path behaves and the code runs. That's what
+`scripts/check_sensors.py` is for: it prints psutil's number, the perf
+counter, and the resulting GHz five times a second apart so the fix
+can be checked against Task Manager directly, rather than declared
+fixed from here.
+
+The Volume stat is the first entry in STAT_DEFS that isn't about load
+or heat -- and the only one the person changes on purpose rather than
+watches. `get_volume_percent()` reads the default playback endpoint's
+scalar level through pycaw (the slider value, not the master dB level,
+which is a different curve and not what anyone means by "my volume is
+at 40%"), reporting 0 while muted. The endpoint is resolved once and
+cached, since that path goes through COM device enumeration; a device
+disappearing under it drops the cache so the next read re-resolves
+whatever the default is now, and the render thread gets a
+`CoInitialize()` since it's not the thread COM was set up on. pycaw is
+optional, like nvidia-ml-py and winsdk before it -- missing means that
+one stat reads "--". Registered in STAT_DEFS, which is all it takes:
+every element type reads stats through the same registry, and the
+frontend's stat picker is built from `dashboard_meta()["stats"]`, so
+gauge/bar/graph/text and the picker all got it with no further wiring.
+Verified by rendering all four element types bound to it.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

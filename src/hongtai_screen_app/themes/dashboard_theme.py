@@ -127,6 +127,7 @@ import os
 import random
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -216,20 +217,214 @@ def get_ram_percent():
     return state["prev"] + (state["next"] - state["prev"]) * frac
 
 
+def _pdh_cpu_performance_percent():
+    """`\\Processor Information(_Total)\\% Processor Performance` -- how
+    fast the CPU is actually running right now as a percentage of its
+    *base* clock, read straight from Windows' performance-counter API
+    (PDH) via ctypes. Goes above 100 when boosting, which is the whole
+    point: multiply it by the base clock and you get the real current
+    frequency, turbo included.
+
+    Windows-only and deliberately dependency-free (ctypes, not pywin32
+    or a WMI package). Any failure -- wrong OS, counter missing on an
+    odd SKU, PDH refusing for any reason -- returns None so the caller
+    falls back, rather than taking the whole stat down.
+
+    A PDH counter needs two collections a moment apart to produce a
+    rate, so the query is opened once and kept, and the first call
+    after opening deliberately returns None (there's nothing to
+    compare against yet)."""
+    if sys.platform != "win32":
+        return None
+    global _pdh_state
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except Exception:  # noqa: BLE001
+        return None
+
+    try:
+        pdh = ctypes.WinDLL("pdh.dll")
+        if _pdh_state is None:
+            query = wintypes.LPVOID()
+            if pdh.PdhOpenQueryW(None, 0, ctypes.byref(query)) != 0:
+                _pdh_state = False   # don't retry every frame once it's known-bad
+                return None
+            counter = wintypes.LPVOID()
+            # The "English" variant so this keeps working on a
+            # non-English Windows, where the localized counter name
+            # would be something else entirely.
+            if pdh.PdhAddEnglishCounterW(
+                    query, r"\Processor Information(_Total)\% Processor Performance",
+                    0, ctypes.byref(counter)) != 0:
+                pdh.PdhCloseQuery(query)
+                _pdh_state = False
+                return None
+            pdh.PdhCollectQueryData(query)   # priming sample
+            _pdh_state = (pdh, query, counter)
+            return None
+        if _pdh_state is False:
+            return None
+
+        pdh, query, counter = _pdh_state
+        if pdh.PdhCollectQueryData(query) != 0:
+            return None
+
+        class _FMT(ctypes.Structure):
+            _fields_ = [("CStatus", wintypes.DWORD), ("doubleValue", ctypes.c_double)]
+
+        value = _FMT()
+        PDH_FMT_DOUBLE = 0x00000200
+        if pdh.PdhGetFormattedCounterValue(
+                counter, PDH_FMT_DOUBLE, None, ctypes.byref(value)) != 0:
+            return None
+        return value.doubleValue
+    except Exception:  # noqa: BLE001
+        _pdh_state = False
+        return None
+
+
+_pdh_state = None          # None = not opened yet, False = unavailable, else (pdh, query, counter)
+_cpu_freq_state = {"value": None, "sampled_at": 0.0}
+CPU_FREQ_REFRESH = 1.0     # seconds between real reads -- the clock is sampled, not smoothed
+
+
 def get_cpu_freq_ghz():
     """Current CPU clock speed in GHz -- one of this theme's selectable
     stats (see STAT_DEFS' "cpu_freq" entry for its fixed gauge ceiling,
     CPU_FREQ_GAUGE_MAX_GHZ). CPU temp itself isn't shown here at all
     (see get_cpu_stats()'s docstring: the AIO panel already covers it),
     so this is a different number entirely, not a smaller version of
-    the same one."""
+    the same one.
+
+    This used to be `psutil.cpu_freq().current` alone, which on Windows
+    is a lie a lot of the time: psutil reads CurrentMhz out of
+    CallNtPowerInformation(ProcessorInformation), and on modern
+    machines Windows just reports the *nominal* clock there -- so the
+    stat sat on one fixed number forever (reported as "CPU Clock is
+    always showing as 3.4G which isn't accurate", against a CPU whose
+    vendor app was reading 5.5GHz at the same moment). It isn't a
+    smoothing or rounding problem; the number never had the real clock
+    in it to begin with.
+
+    So, in order:
+
+    1. The `% Processor Performance` performance counter (see
+       _pdh_cpu_performance_percent()) against the base clock. This is
+       the reading that actually tracks boost, and it's what Task
+       Manager's own "Speed" field is derived from.
+    2. psutil's `current`, if it's meaningfully different from
+       `max` -- on Linux (and some Windows setups) it IS the live
+       value, so it's a real answer there rather than a fallback.
+    3. psutil's `current` regardless, as a last resort: a fixed number
+       is still better than an empty gauge, and it's what this stat
+       always showed before.
+
+    Sampled at CPU_FREQ_REFRESH rather than per frame: PDH is cheap but
+    not free, and a clock readout that updates once a second reads as
+    steady rather than jittery."""
+    now = time.time()
+    state = _cpu_freq_state
+    if state["value"] is not None and now - state["sampled_at"] < CPU_FREQ_REFRESH:
+        return state["value"]
+
     try:
         freq = psutil.cpu_freq()
     except Exception:  # noqa: BLE001 -- not available on every platform
+        freq = None
+
+    value = None
+    # Base clock: psutil's `max` is the nominal/marketing clock, which
+    # is exactly what the performance counter is a percentage OF.
+    base_mhz = getattr(freq, "max", None) or None
+    percent = _pdh_cpu_performance_percent()
+    if base_mhz and percent:
+        value = (base_mhz * percent / 100.0) / 1000.0
+    elif freq is not None:
+        value = freq.current / 1000.0
+
+    if value is not None:
+        state["value"] = value
+        state["sampled_at"] = now
+    return state["value"] if value is None else value
+
+
+_volume_state = {"value": None, "sampled_at": 0.0}
+_volume_endpoint = None     # None = not tried, False = unavailable, else the IAudioEndpointVolume
+VOLUME_REFRESH = 0.5        # seconds -- fast enough that nudging the volume key looks live
+
+
+def _audio_endpoint():
+    """The system's default playback device's volume interface (pycaw),
+    or False if this machine can't provide one -- not Windows, pycaw
+    not installed, or no output device at all.
+
+    Cached because resolving the endpoint goes through COM device
+    enumeration, which is far too heavy to redo at the render loop's
+    rate; the interface itself stays valid and keeps reporting the
+    current level as the user moves the slider."""
+    global _volume_endpoint
+    if _volume_endpoint is not None:
+        return _volume_endpoint
+    _volume_endpoint = False
+    if sys.platform != "win32":
+        return _volume_endpoint
+    try:
+        import comtypes
+        from ctypes import POINTER, cast
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+
+        # The render loop is its own thread and pycaw's COM calls need
+        # that thread initialized; harmless if something else already
+        # did it.
+        try:
+            comtypes.CoInitialize()
+        except Exception:  # noqa: BLE001
+            pass
+        speakers = AudioUtilities.GetSpeakers()
+        interface = speakers.Activate(IAudioEndpointVolume._iid_, comtypes.CLSCTX_ALL, None)
+        _volume_endpoint = cast(interface, POINTER(IAudioEndpointVolume))
+    except Exception:  # noqa: BLE001 -- pycaw missing, no audio device, COM refusing
+        _volume_endpoint = False
+    return _volume_endpoint
+
+
+def get_volume_percent():
+    """The PC's master output volume, 0-100 -- the same number the
+    Windows volume slider shows, and 0 while muted (a gauge reading 40%
+    with nothing audible would be the wrong answer to "what's my
+    volume").
+
+    Windows-only in practice: it needs pycaw (see requirements.txt),
+    which is an optional dependency, so a machine without it just gets
+    None and the stat renders "--" like any other unavailable reading
+    rather than breaking the theme.
+
+    Uses the scalar level (what the slider shows), not the master
+    *dB* level -- the two differ, and the scalar is the one a person
+    recognizes as "my volume is at 40%"."""
+    now = time.time()
+    state = _volume_state
+    if now - state["sampled_at"] < VOLUME_REFRESH:
+        return state["value"]
+    state["sampled_at"] = now
+
+    endpoint = _audio_endpoint()
+    if endpoint is False:
+        state["value"] = None
         return None
-    if freq is None:
-        return None
-    return freq.current / 1000
+    try:
+        if endpoint.GetMute():
+            state["value"] = 0.0
+        else:
+            state["value"] = max(0.0, min(100.0, endpoint.GetMasterVolumeLevelScalar() * 100.0))
+    except Exception:  # noqa: BLE001 -- device unplugged/changed under us
+        # Drop the cached interface so the next read re-resolves
+        # whatever the default device is now.
+        global _volume_endpoint
+        _volume_endpoint = None
+        state["value"] = None
+    return state["value"]
 
 
 def get_disk_usage_percent():
@@ -850,8 +1045,15 @@ STAT_DEFS = {
                        "fmt": lambda v: f"{v:.0f}%"},
     "battery": {"label": "Battery", "title": "BATTERY", "min": 0, "max": 100,
                 "fmt": lambda v: f"{v:.0f}%"},
+    # The PC's master output volume -- the one stat here that isn't
+    # about load or heat, and the only one a person changes on purpose
+    # rather than watches. Reads 0 while muted (see
+    # get_volume_percent()), and "--" on a machine that can't report it
+    # at all, same as any other unavailable sensor.
+    "volume": {"label": "Volume", "title": "VOLUME", "min": 0, "max": 100,
+               "fmt": lambda v: f"{v:.0f}%"},
 }
-# 14 stats, 8 slots -- deliberately more of the former than the latter
+# 15 stats, 8 slots -- deliberately more of the former than the latter
 # (see STAT_DEFS' own comment above about how it's registered) so
 # picking a layout is a real choice, not just "which of exactly 8
 # things goes in the one slot it fits."
@@ -6811,7 +7013,7 @@ _THUMBNAIL_STATS = {
     "cpu_load": 42, "gpu_load": 55, "gpu_temp": 58, "ram": 61,
     "network": 12.4, "cpu_freq": 3.6, "disk_usage": 47, "vram_usage": 38,
     "swap": 5, "disk_io": 8.2, "gpu_power": 95, "process_count": 210,
-    "cpu_load_peak": 68, "battery": 80,
+    "cpu_load_peak": 68, "battery": 80, "volume": 45,
 }
 
 _thumbnail_fonts_cache = None
@@ -6945,6 +7147,7 @@ def render_live_preview(elements, background, width=REFERENCE_WIDTH, height=REFE
         "process_count": get_process_count(),
         "cpu_load_peak": get_cpu_load_peak_core(),
         "battery": get_battery_percent(),
+        "volume": get_volume_percent(),
     }
     history = {}
     for el in elements:
@@ -7178,6 +7381,7 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
                     "process_count": get_process_count(),
                     "cpu_load_peak": get_cpu_load_peak_core(),
                     "battery": get_battery_percent(),
+                    "volume": get_volume_percent(),
                 }
 
                 for graph_id, buf in history.items():
