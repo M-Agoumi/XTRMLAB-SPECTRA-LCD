@@ -662,6 +662,8 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
   const savedBackgroundRef = useRef(null);
   const dragRef = useRef(null); // {id, mode: 'move'|'resize', beforeElements}
   const svgRef = useRef(null);
+  // The hidden <input type="file"> behind the "Import theme" button.
+  const importInputRef = useRef(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -1328,6 +1330,71 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
       },
       (e) => setError(e.message)
     );
+  };
+
+  // Export writes the preset out as a .json the user can send to
+  // someone else; the backend inlines its images first so the file
+  // stands on its own (see export_dashboard_preset()). Downloading is
+  // done the only way a browser can -- a Blob URL behind a synthetic
+  // <a download> click.
+  const exportPreset = (name) => {
+    setPresetMenuOpen(null);
+    api.exportDashboardPreset(name).then(
+      (r) => {
+        const blob = new Blob([JSON.stringify(r.preset, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${name.replace(/[^\w.-]+/g, "_").replace(/^_|_$/g, "") || "theme"}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // Revoked on the next tick rather than immediately -- some
+        // browsers cancel an in-flight download if the URL dies first.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setStatus(`Exported "${name}" -- the file includes its background image, so it works as-is on another machine.`);
+      },
+      (e) => setError(e.message)
+    );
+  };
+
+  // Import reads the picked .json here (a file input is the only way a
+  // browser hands over file contents) and posts it; the backend
+  // validates the shape, writes any inlined images into its own image
+  // store, and ignores image paths that didn't travel with the file.
+  const importPresetFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onerror = () => setError(`Couldn't read "${file.name}".`);
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch (err) {
+        setError(`"${file.name}" isn't valid JSON: ${err.message}`);
+        return;
+      }
+      // Name it after the file, since a preset file carries a layout,
+      // not a name -- the backend uniquifies it if that's taken.
+      // "nocturne_cathedral.json" reads better in the picker as
+      // "Nocturne Cathedral", so separators become spaces and an
+      // all-lowercase name gets title-cased. A name that already has
+      // capitals ("GPU Monitor") is left exactly as the sender wrote
+      // it rather than being "helpfully" mangled into "Gpu Monitor".
+      let base = file.name.replace(/\.json$/i, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+      if (base && base === base.toLowerCase()) {
+        base = base.replace(/\b\w/g, (ch) => ch.toUpperCase());
+      }
+      base = base || "Imported theme";
+      api.importDashboardPreset(base, parsed).then(
+        (r) => {
+          setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
+          setStatus(`Imported "${r.name || base}". Click its card to load it.`);
+        },
+        (e) => setError(`Couldn't import "${file.name}": ${e.message}`)
+      );
+    };
+    reader.readAsText(file);
   };
 
   const duplicatePreset = (name) => {
@@ -2898,10 +2965,25 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
       <div className="preset-picker">
         <div className="preset-picker-head">
           <span className="preset-picker-label">Presets</span>
-          <button className="preset-new" onClick={createNewTheme}
-                  title="Start an empty theme and edit it here">
-            + New theme
-          </button>
+          <div className="preset-head-actions">
+            {/* A file input is the only way a browser will hand over a
+                file's contents, so the visible button just forwards to
+                a hidden one. */}
+            <input type="file" accept="application/json,.json" ref={importInputRef}
+                   style={{ display: "none" }}
+                   onChange={(e) => {
+                     importPresetFile(e.target.files?.[0]);
+                     e.target.value = "";  // so picking the same file twice still fires
+                   }} />
+            <button className="preset-new" onClick={() => importInputRef.current?.click()}
+                    title="Import a theme someone shared with you (.json)">
+              Import theme
+            </button>
+            <button className="preset-new" onClick={createNewTheme}
+                    title="Start an empty theme and edit it here">
+              + New theme
+            </button>
+          </div>
         </div>
         {Object.keys(meta.presets || {}).length === 0 ? (
           <p className="hint">
@@ -2964,6 +3046,14 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                             title={`Duplicate "${name}"`}
                           >
                             Duplicate
+                          </button>
+                          <button
+                            className="preset-card-duplicate"
+                            data-preset-menu
+                            onClick={() => exportPreset(name)}
+                            title={`Save "${name}" as a .json file you can share`}
+                          >
+                            Export
                           </button>
                           <button
                             className={`preset-card-delete${armed ? " confirm" : ""}`}

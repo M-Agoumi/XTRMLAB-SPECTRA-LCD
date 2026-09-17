@@ -1979,6 +1979,45 @@ dashboard designer) this is laying groundwork for.
   second click produces "New theme 2", and an empty theme still
   renders a real (background-only) thumbnail instead of a "No preview"
   card.
+- **Import and export themes.** Prompted by a theme a friend had made
+  and shared as a .json — which, before this, could only be installed
+  by hand-editing `app_config.json` and copying its background picture
+  into the managed image folder manually. Both directions now exist:
+  "Export" on any preset card's ⋯ menu saves it as a .json, and
+  "Import theme" next to "+ New theme" takes one back.
+  - The hard part isn't the layout — a preset is already plain JSON —
+    it's the pictures. Any image a preset references (background,
+    image element, clock face) is stored as an absolute path into
+    *this* machine's managed image folder, which means nothing on
+    anyone else's. Export therefore inlines each referenced image as
+    base64 and drops the path; import writes those bytes into the
+    receiving machine's own image store and repoints the preset at the
+    new copies. The exported file is self-contained.
+  - **Import doesn't trust a path it's given.** A preset file comes
+    from someone else, and a bare `image_path` in one would otherwise
+    let it aim the panel at any file on the receiving disk. Only
+    images that actually travelled with the file, or paths already
+    inside this machine's image store, survive; anything else is
+    dropped to None, which every renderer here already treats as "no
+    image". Shape is validated too (`elements` must be a list,
+    `background` an object), so a malformed file reports an error
+    instead of half-loading.
+  - Importing under a built-in's name lands as a copy, same as any
+    other save. Imported themes are named from the filename, tidied
+    up: `nocturne_cathedral.json` becomes "Nocturne Cathedral", while
+    a name that already has capitals is left exactly as sent rather
+    than being mangled into "Gpu Monitor".
+  - Export strips the 8-character content-hash prefix `image_store`
+    adds to a stored copy before sending the name along — otherwise
+    every export/import round trip stacked another prefix
+    (`ab12_ab12_shot.png`) and stored a second identical copy instead
+    of deduplicating onto the first. Verified stable across three
+    round trips, one file on disk.
+  Verified end to end: exporting a preset downloads a .json with its
+  images inlined, re-importing that file restores it, a real
+  friend-made theme file imports cleanly, and malformed JSON and
+  wrong-shaped JSON each surface a specific error rather than failing
+  silently.
 
 ## [1.0.0] — 2026-08-29
 

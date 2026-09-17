@@ -539,6 +539,12 @@ button:disabled {
   color: #9aa1ab;
 }
 
+.preset-head-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
 .preset-new {
   flex: none;
   padding: 3px 10px;
