@@ -1702,6 +1702,107 @@ BUILTIN_DASHBOARD_PRESETS = {
                 "opacity": 1.0,
                 "z": 7,
             },
+            # The eight gauges above are the user's own saved layout,
+            # untouched. What they left was a tall empty channel down
+            # the middle -- their board put every dial at the edges --
+            # and "circuit bloom has a lot of empty space in the
+            # middle, fill it as u see fit" is what these four are.
+            #
+            # They fill it as a column rather than one big block, since
+            # the free space is narrow: the two secondary dials close
+            # in to x 0.39 and 0.61 at mid-height, and the two minis
+            # take the bottom corners of the channel. So: clock up top
+            # where the picture is emptiest, a volume readout and
+            # hairline meter in the gap above the dials (volume being
+            # the one stat here nobody else was showing), a live CPU
+            # trace at mid-height (which keeps the channel moving even
+            # with nothing playing), and a compact player low down. The player runs with its album tile off
+            # -- a square of cover art dropped into a 0.24-wide channel
+            # between two dials would crowd the one part of the circuit
+            # photo still visible -- so it's the track line and a
+            # progress bar, and the theme keeps its own cyan/magenta
+            # split by taking the accent from the middle of it.
+            {
+                "id": "center_clock",
+                "type": "clock",
+                "x": 0.5,
+                "y": 0.125,
+                "font_size": 0.082,
+                "show_seconds": False,
+                "show_date": True,
+                "face": "digital",
+                "hour_format": "24h",
+                "color": [228, 238, 248],
+                "opacity": 1.0,
+                "z": 10,
+            },
+            {
+                "id": "center_volume_reading",
+                "type": "text",
+                "stat": "volume",
+                "template": "VOL  {value}",
+                "x": 0.5,
+                "y": 0.305,
+                "font_size": 0.032,
+                "align": "center",
+                "bold": True,
+                "color": [206, 224, 240],
+                "opacity": 1.0,
+                "z": 11,
+            },
+            {
+                "id": "center_volume_meter",
+                "type": "bar",
+                "stat": "volume",
+                "x": 0.5,
+                "y": 0.363,
+                "width": 0.178,
+                "height": 0.016,
+                "orientation": "horizontal",
+                "show_knob": False,
+                "show_title": False,
+                "show_value": False,
+                "color": [138, 170, 240],
+                "gradient": True,
+                "gradient_direction": "horizontal",
+                "gradient_colors": [[46, 200, 222], [214, 84, 210]],
+                "track_color": [18, 32, 48],
+                "opacity": 1.0,
+                "z": 12,
+            },
+            {
+                "id": "center_cpu_graph",
+                "type": "graph",
+                "stat": "cpu_load",
+                "x": 0.5,
+                "y": 0.497,
+                "width": 0.188,
+                "height": 0.125,
+                "color": [46, 200, 222],
+                "style": "line",
+                "history_seconds": 60,
+                "show_title": False,
+                "show_frame": True,
+                "gradient": True,
+                "gradient_colors": [[46, 200, 222], [214, 84, 210]],
+                "gradient_direction": "horizontal",
+                "opacity": 1.0,
+                "z": 13,
+            },
+            {
+                "id": "center_spotify",
+                "type": "media",
+                "x": 0.5,
+                "y": 0.705,
+                "width": 0.24,
+                "height": 0.20,
+                "show_art": False,
+                "show_name": True,
+                "show_time": True,
+                "color": [150, 128, 232],
+                "opacity": 1.0,
+                "z": 14,
+            },
         ],
     },
     # "Cherry Blossom" and "Petal Dream" -- requested as a pair: "two

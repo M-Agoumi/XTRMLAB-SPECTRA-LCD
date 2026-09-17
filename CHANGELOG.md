@@ -2162,6 +2162,18 @@ dashboard designer) this is laying groundwork for.
   without one, the old constant, so nothing that never set a colour
   changes.
 
+- **Circuit Bloom's empty middle is filled.** Its eight dials are the
+  user's own saved board and all sit at the edges, which left a tall
+  empty channel down the centre. Now: a clock with the date up top
+  where the picture is emptiest, a volume readout and hairline meter
+  (volume being the one stat nothing else on this board showed), a live
+  CPU trace at mid-height so the channel keeps moving even with nothing
+  playing, and a compact now-playing below it. The player runs with its
+  album tile off — a square of cover art in a channel this narrow would
+  crowd the one part of the circuit photo still visible — so it's the
+  track line and a progress bar. The eight original gauges are
+  untouched.
+
 ## [1.0.0] — 2026-08-29
 
 First tagged release. Everything below shipped before this tag existed
