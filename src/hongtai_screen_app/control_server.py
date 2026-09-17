@@ -94,6 +94,8 @@ def _make_handler(controller: AppController):
                     self._send_json(200, controller.list_ports())
                 elif path == "/api/dashboard/meta":
                     self._send_json(200, controller.dashboard_meta())
+                elif path == "/api/dashboard/volume":
+                    self._send_json(200, controller.volume_reading())
                 elif path == "/api/logs/stream":
                     self._handle_log_stream()
                 elif path == "/frame.jpg":
@@ -165,6 +167,12 @@ def _make_handler(controller: AppController):
                 elif path == "/api/dashboard/now_playing":
                     body = self._read_json_body()
                     self._send_json(200, controller.save_dashboard_now_playing(body.get("patch")))
+                elif path == "/api/dashboard/volume_device":
+                    # Which playback device the `volume` stat reads.
+                    # Answers with a fresh reading from it, so the
+                    # picker can show what that device actually says.
+                    body = self._read_json_body()
+                    self._send_json(200, controller.save_volume_device(body.get("device") or None))
                 elif path == "/api/dashboard/presets":
                     body = self._read_json_body()
                     result = controller.save_dashboard_preset(

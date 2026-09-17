@@ -3025,6 +3025,53 @@ after the first render put its bottom row across the lava seams
 (raised to the dark floor, plate opacity up) and left two readings
 unlabelled.
 
+**The Volume stat reading zero forever.** "Volume currently shows
+always zero, i think it's picks default windows interface, i need you
+to either switch it with windows (output device), or give the user the
+option to pick his speaker."
+
+The diagnosis in that sentence is right, and it's worth stating
+precisely: the reading was never broken, it was correct about the wrong
+device. `AudioUtilities.GetSpeakers()` returns the endpoint Windows
+nominates as default, and a desktop typically has several active render
+endpoints -- a monitor's HDMI audio, a virtual cable, a headset that's
+powered off -- any of which can hold the default role while sitting at
+0%. A stat that is confidently, verifiably correct about something
+nobody asked about is worse than one that errors, because there's
+nothing to notice.
+
+Both halves of the request are implemented, since they fix different
+things. The picker (`dashboard.volume_device`, a `set_volume_device()`
+on the renderer, `list_audio_outputs()` enumerating active render
+endpoints through pycaw) answers "point it at my speakers". The
+default-device path separately grew a 30-second TTL: the endpoint
+interface used to be cached for the life of the process, so switching
+Windows' output afterwards left the reading following the old device --
+the same class of bug one layer down, and one that would have survived
+the picker entirely for anyone who left it on the default.
+
+The UI decision worth recording is where the picker lives. It is a
+machine-wide setting, so the tidy place is a settings page -- and the
+tidy place is wrong here, because the moment anyone needs this setting
+is the moment they are looking at a volume gauge reading 0. So it
+appears in the element property panel whenever the selected element is
+bound to the volume stat, saves immediately rather than waiting for
+Save layout (it isn't part of the layout), and shows the chosen
+device's live reading beside itself. That last part is what makes it
+usable: choosing between "2 - LG HDR 4K (NVIDIA High Definition Audio)"
+and "Speakers (Realtek(R) Audio)" by name is guesswork, while nudging
+the volume key and watching which entry moves is not.
+
+Verified in the harness (`shot25.py`) against a mock machine shaped
+like the report -- default output at 0%, speakers at 42%: the control
+stays hidden until an element is bound to Volume, lists both devices
+with the default marked, shows 0% on the default and 42% after picking
+the speakers, saves without a Save layout, and survives a reload. What
+can't be verified from here, as with the CPU clock, is the pycaw
+enumeration against real hardware, so `scripts/check_sensors.py` now
+prints every playback device with its id and current level.
+
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

@@ -71,6 +71,31 @@ def main():
         print("pycaw:                       NOT installed -- the Volume stat will read '--'.")
         print("                             Install it with:  py -m pip install pycaw")
 
+    # Every active playback device, with what each one actually
+    # reports -- the answer to "volume always shows zero" is usually
+    # visible right here: the device Windows nominates as default is
+    # sitting at 0 while the one making noise is somewhere further down
+    # the list. Whichever id reads the number you expect is the one to
+    # pick in the app (the "Volume source" control on any volume
+    # element).
+    outputs = dt.list_audio_outputs()
+    print()
+    if not outputs:
+        print("playback devices:            none enumerable (not Windows, or pycaw missing)")
+    else:
+        print("playback devices:")
+        for dev in outputs:
+            dt.set_volume_device(dev["id"])
+            dt._volume_state["sampled_at"] = 0.0
+            level = dt.get_volume_percent()
+            level = "unavailable" if level is None else f"{level:.0f}%"
+            mark = " <- Windows default" if dev["default"] else ""
+            print(f"    {level:>11}  {dev['label']}{mark}")
+            print(f"                 id: {dev['id']}")
+        dt.set_volume_device(None)
+        dt._volume_state["sampled_at"] = 0.0
+    print()
+
     vol = dt.get_volume_percent()
     if vol is None:
         print("get_volume_percent():        unavailable")

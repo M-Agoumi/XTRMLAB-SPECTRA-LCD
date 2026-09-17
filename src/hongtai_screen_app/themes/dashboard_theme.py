@@ -353,38 +353,147 @@ def get_cpu_freq_ghz():
 
 _volume_state = {"value": None, "sampled_at": 0.0}
 _volume_endpoint = None     # None = not tried, False = unavailable, else the IAudioEndpointVolume
+_volume_endpoint_opened_at = 0.0
+_volume_device_id = None    # None = "whatever Windows is playing through", else a specific endpoint id
 VOLUME_REFRESH = 0.5        # seconds -- fast enough that nudging the volume key looks live
+# How long a resolved *default*-device interface is kept before being
+# re-resolved. A specific device stays valid until it's unplugged, but
+# "the default device" is a moving target: switch Windows' output from
+# speakers to a headset and the old interface keeps happily reporting
+# the level of a device nobody is listening to. Cheap insurance --
+# re-resolving costs one COM enumeration every half a minute, and only
+# when a volume reading is actually on screen.
+VOLUME_DEFAULT_DEVICE_TTL = 30.0
+
+
+def set_volume_device(device_id):
+    """Pick which playback device the `volume` stat reads. `None` means
+    the Windows default output, which is what it always used to be --
+    and what was reported as "volume currently shows always zero": a
+    machine can have several render endpoints (an idle HDMI output on a
+    monitor, a virtual cable, a headset that's off), and the one
+    Windows nominates as default isn't necessarily the one making
+    noise, so a device sitting at 0 was a perfectly truthful reading of
+    the wrong thing. Now the reading can be pointed at a named device
+    and stays there."""
+    global _volume_device_id, _volume_endpoint
+    device_id = device_id or None
+    if device_id == _volume_device_id:
+        return
+    _volume_device_id = device_id
+    _volume_endpoint = None  # re-resolve on the next read
+    _volume_state["sampled_at"] = 0.0
+
+
+def get_volume_device():
+    return _volume_device_id
+
+
+def _pycaw():
+    """pycaw's pieces, or None. Imported through here rather than at
+    each call site because the module layout moved between releases
+    (EDataFlow/DEVICE_STATE live in pycaw.constants on newer ones,
+    pycaw.pycaw on older), and because the COM init has to happen on
+    whichever thread is asking -- the render loop is not the thread
+    that started the app."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import comtypes
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        try:
+            from pycaw.constants import EDataFlow, DEVICE_STATE
+        except Exception:  # noqa: BLE001 -- older pycaw
+            from pycaw.pycaw import EDataFlow, DEVICE_STATE
+        try:
+            comtypes.CoInitialize()
+        except Exception:  # noqa: BLE001 -- already initialized on this thread
+            pass
+        return comtypes, AudioUtilities, IAudioEndpointVolume, EDataFlow, DEVICE_STATE
+    except Exception:  # noqa: BLE001 -- pycaw missing, or no audio stack at all
+        return None
+
+
+def _enum_value(value):
+    """pycaw's EDataFlow/DEVICE_STATE are IntEnums in current releases
+    and plain ints in older ones; EnumAudioEndpoints wants the int."""
+    return getattr(value, "value", value)
+
+
+def list_audio_outputs():
+    """Every active playback device, as [{"id", "label", "default"}] --
+    what the frontend's volume-source picker is built from. Empty off
+    Windows or without pycaw, which the picker reads as "nothing to
+    choose from"."""
+    parts = _pycaw()
+    if parts is None:
+        return []
+    comtypes, AudioUtilities, _ivol, EDataFlow, DEVICE_STATE = parts
+    devices = []
+    try:
+        default_id = None
+        try:
+            default_id = AudioUtilities.CreateDevice(AudioUtilities.GetSpeakers()).id
+        except Exception:  # noqa: BLE001 -- no default device configured at all
+            pass
+        enumerator = AudioUtilities.GetDeviceEnumerator()
+        collection = enumerator.EnumAudioEndpoints(
+            _enum_value(EDataFlow.eRender), _enum_value(DEVICE_STATE.ACTIVE))
+        for i in range(collection.GetCount()):
+            try:
+                dev = AudioUtilities.CreateDevice(collection.Item(i))
+            except Exception:  # noqa: BLE001 -- one bad endpoint shouldn't lose the rest
+                continue
+            if not getattr(dev, "id", None):
+                continue
+            devices.append({"id": dev.id,
+                            "label": getattr(dev, "FriendlyName", None) or dev.id,
+                            "default": dev.id == default_id})
+    except Exception:  # noqa: BLE001
+        return devices
+    return devices
 
 
 def _audio_endpoint():
-    """The system's default playback device's volume interface (pycaw),
-    or False if this machine can't provide one -- not Windows, pycaw
-    not installed, or no output device at all.
+    """The volume interface for whichever playback device the `volume`
+    stat is pointed at (see set_volume_device()), or False if this
+    machine can't provide one -- not Windows, pycaw not installed, or
+    no output device at all.
 
-    Cached because resolving the endpoint goes through COM device
+    Cached, because resolving an endpoint goes through COM device
     enumeration, which is far too heavy to redo at the render loop's
     rate; the interface itself stays valid and keeps reporting the
-    current level as the user moves the slider."""
-    global _volume_endpoint
+    current level as the user moves the slider. The *default*-device
+    case additionally expires after VOLUME_DEFAULT_DEVICE_TTL, since
+    "the default device" can change under a cached interface."""
+    global _volume_endpoint, _volume_endpoint_opened_at
     if _volume_endpoint is not None:
-        return _volume_endpoint
+        stale = (_volume_device_id is None
+                 and time.time() - _volume_endpoint_opened_at > VOLUME_DEFAULT_DEVICE_TTL)
+        if not stale:
+            return _volume_endpoint
     _volume_endpoint = False
-    if sys.platform != "win32":
+    _volume_endpoint_opened_at = time.time()
+    parts = _pycaw()
+    if parts is None:
         return _volume_endpoint
+    comtypes, AudioUtilities, IAudioEndpointVolume, _flow, _state = parts
     try:
-        import comtypes
         from ctypes import POINTER, cast
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
-        # The render loop is its own thread and pycaw's COM calls need
-        # that thread initialized; harmless if something else already
-        # did it.
-        try:
-            comtypes.CoInitialize()
-        except Exception:  # noqa: BLE001
-            pass
-        speakers = AudioUtilities.GetSpeakers()
-        interface = speakers.Activate(IAudioEndpointVolume._iid_, comtypes.CLSCTX_ALL, None)
+        device = None
+        if _volume_device_id:
+            try:
+                device = AudioUtilities.GetDeviceEnumerator().GetDevice(_volume_device_id)
+            except Exception:  # noqa: BLE001 -- chosen device unplugged or renamed away
+                device = None
+        if device is None:
+            # Either nothing was chosen, or what was chosen is gone:
+            # fall back to the default rather than reporting nothing,
+            # so unplugging a headset degrades to "the system volume"
+            # instead of to "--".
+            device = AudioUtilities.GetSpeakers()
+        interface = device.Activate(IAudioEndpointVolume._iid_, comtypes.CLSCTX_ALL, None)
         _volume_endpoint = cast(interface, POINTER(IAudioEndpointVolume))
     except Exception:  # noqa: BLE001 -- pycaw missing, no audio device, COM refusing
         _volume_endpoint = False

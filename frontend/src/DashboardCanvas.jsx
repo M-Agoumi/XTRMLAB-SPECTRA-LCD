@@ -380,6 +380,77 @@ const PREVIEW_SECONDS = 5;
 // element-type-specific belongs in here beyond which direction options
 // make sense to offer (`directionOptions`) and what to seed a first-time
 // gradient with (`defaultColor` -- the same fallback the plain solid
+// Which playback device the `volume` stat reads. Shown on any element
+// bound to that stat -- which is exactly where someone is standing when
+// they notice the number is wrong, and the setting is what fixes it.
+//
+// It is a global setting, not a property of the element (there's one
+// volume reading per machine), hence the note in the hint and the fact
+// that it saves immediately rather than waiting for Save layout. The
+// live percentage next to it is the point: a PC lists several playback
+// devices with names like "Realtek(R) Audio" and "2 - LG HDR 4K", and
+// picking the right one by name is guesswork, while watching a number
+// move when you nudge the volume key is not.
+function VolumeSourceControl({ meta, setMeta, setError }) {
+  const outputs = meta.audioOutputs || [];
+  const [device, setDevice] = useState(meta.volumeDevice || "");
+  const [percent, setPercent] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    const poll = () => api.getDashboardVolume().then(
+      (r) => { if (live) setPercent(r.percent); },
+      () => {}
+    );
+    poll();
+    const id = setInterval(poll, 1000);
+    return () => { live = false; clearInterval(id); };
+  }, [device]);
+
+  if (!outputs.length) {
+    return (
+      <div className="row">
+        <span className="hint">
+          Volume reads the Windows default output. No playback devices to choose from --
+          this machine either isn't Windows or doesn't have pycaw installed
+          (<code>py -m pip install pycaw</code>), in which case the reading shows "--".
+        </span>
+      </div>
+    );
+  }
+
+  const pick = (value) => {
+    setDevice(value);
+    api.setDashboardVolumeDevice(value || null).then(
+      (r) => {
+        setPercent(r.percent);
+        setMeta((m) => ({ ...m, volumeDevice: r.device, audioOutputs: r.outputs || m.audioOutputs }));
+      },
+      (e) => setError(e.message)
+    );
+  };
+
+  return (
+    <div className="row">
+      <label>
+        Volume source
+        <select value={device} onChange={(e) => pick(e.target.value)}>
+          <option value="">Windows default output</option>
+          {outputs.map((o) => (
+            <option key={o.id} value={o.id}>{o.label}{o.default ? " (default)" : ""}</option>
+          ))}
+        </select>
+      </label>
+      <span className="hint">
+        Reading {percent === null || percent === undefined ? "--" : `${Math.round(percent)}%`} right now.
+        Applies to every volume reading on the panel, and saves straight away.
+        If this sits at 0%, it's pointed at a device that isn't the one making noise --
+        change your volume and pick whichever entry follows it.
+      </span>
+    </div>
+  );
+}
+
 // The font-family picker shown for text and clock elements. The list
 // itself comes from the backend (meta.fontFamilies -- dashboard_theme
 // .FONT_FAMILIES), so adding a bundled face is a one-line change there
@@ -2294,6 +2365,9 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                 </select>
               </label>
             </div>
+          )}
+          {selected.stat === "volume" && (
+            <VolumeSourceControl meta={meta} setMeta={setMeta} setError={setError} />
           )}
           {!!meta.widgetStyles?.[styledSelected.widget_style] && ["gauge", "bar", "media"].includes(selected.type) && (
             <>

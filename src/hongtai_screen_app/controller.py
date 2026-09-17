@@ -63,6 +63,11 @@ class AppController:
             config_store.save_config(self.cfg)
         self._lock = threading.RLock()
         power_state.set_keep_active_when_locked(self.cfg.get("keep_active_when_locked", True))
+        # Which playback device the `volume` stat reads (None = the
+        # Windows default output). Applied here rather than only when
+        # the setting changes, so a restart keeps reading the device
+        # the person picked.
+        dashboard_theme.set_volume_device((self.cfg.get("dashboard") or {}).get("volume_device"))
         power_state.start_polling()
         self.running_theme = None      # display name, e.g. "Dashboard"
         self.active_screen = None      # set via on_connected once connect() succeeds
@@ -360,6 +365,13 @@ class AppController:
             # settings over into it -- see DEFAULT_BACKGROUND's own
             # comment for why that merge makes this necessary.
             "backgroundDefaults": dict(dashboard_theme.DEFAULT_BACKGROUND),
+            # The machine's playback devices, and which one the volume
+            # stat is pointed at (null = the Windows default output).
+            # Empty list off Windows or without pycaw, which the
+            # picker shows as "nothing to choose from" rather than an
+            # empty dropdown.
+            "audioOutputs": dashboard_theme.list_audio_outputs(),
+            "volumeDevice": d.get("volume_device") or None,
             "widgetStyles": dashboard_theme.widget_styles.STYLES,
             # Modes that are a photo, not a tinted procedural draw --
             # "image" (a user's own upload) plus every bundled one
@@ -593,6 +605,38 @@ class AppController:
         if "not_playing_message" in patch:
             dashboard_theme.set_not_playing_message(patch.get("not_playing_message"))
         return result
+
+    def save_volume_device(self, device_id):
+        """Points the `volume` stat at a specific playback device, or
+        back at the Windows default output (`device_id` None/empty).
+
+        Reported as "volume currently shows always zero": a PC usually
+        has several active render endpoints -- a monitor's HDMI audio,
+        a virtual cable, a headset that's switched off -- and Windows'
+        *default* one isn't necessarily the one making noise, so the
+        reading was a truthful 0% for the wrong device. Applied live
+        like the now-playing settings above rather than on the next
+        Start, and returned with a fresh reading so the UI can show
+        what the chosen device actually says instead of asking the
+        person to guess from the device name."""
+        if device_id is not None and not isinstance(device_id, str):
+            raise ValueError("device_id must be a string or null")
+        with self._lock:
+            dashboard_cfg = dict(self.cfg.get("dashboard") or {})
+            dashboard_cfg["volume_device"] = device_id or None
+            self.cfg["dashboard"] = dashboard_cfg
+            config_store.save_config(self.cfg)
+        dashboard_theme.set_volume_device(device_id or None)
+        return self.volume_reading()
+
+    def volume_reading(self):
+        """{"device": id or null, "percent": 0-100 or null, "outputs":
+        [...]} -- what the volume picker shows next to itself so
+        choosing a device is a matter of watching the number move
+        rather than recognizing a Windows device name."""
+        return {"device": dashboard_theme.get_volume_device(),
+                "percent": dashboard_theme.get_volume_percent(),
+                "outputs": dashboard_theme.list_audio_outputs()}
 
     # save_dashboard_middle_content() (the old global weather on/off,
     # "spotify"/"weather"/"none" fixed to the middle column) is gone --

@@ -192,6 +192,25 @@ export function saveDashboardNowPlaying(patch) {
   }).then(asJson);
 }
 
+export function getDashboardVolume() {
+  // {device, percent, outputs} -- a live reading from whichever
+  // playback device the volume stat is pointed at, so the picker below
+  // can show what a device actually reports instead of asking someone
+  // to recognize a Windows device name.
+  return fetch("/api/dashboard/volume").then(asJson);
+}
+
+export function setDashboardVolumeDevice(device) {
+  // `device` is an endpoint id from dashboard/meta's audioOutputs, or
+  // null for "whatever Windows is playing through". Applies live and
+  // answers with a fresh reading, same shape as getDashboardVolume().
+  return fetch("/api/dashboard/volume_device", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device }),
+  }).then(asJson);
+}
+
 export function saveDashboardPreset(name, elements, background) {
   return fetch("/api/dashboard/presets", {
     method: "POST",

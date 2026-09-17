@@ -2174,6 +2174,27 @@ dashboard designer) this is laying groundwork for.
   track line and a progress bar. The eight original gauges are
   untouched.
 
+- **Fixed: the Volume stat always read 0%**, and you can now choose
+  which device it reads. It was pointed at the Windows *default*
+  playback endpoint, which on a machine with several active outputs (a
+  monitor's HDMI audio, a virtual cable, a headset that's switched off)
+  is often not the one making noise — so 0% was a truthful reading of
+  the wrong device. Two changes:
+  - **A "Volume source" picker**, shown on any element bound to the
+    Volume stat — which is where you're standing when you notice the
+    number is wrong. It lists every active playback device, saves
+    immediately (no Save layout needed), and shows what the selected
+    device is reading *right now*, so you can nudge your volume key and
+    pick whichever entry follows it rather than guessing from names
+    like "2 - LG HDR 4K".
+  - **The default-output case re-resolves every 30 seconds.** The old
+    code cached the endpoint interface forever, so switching Windows'
+    output from speakers to a headset left the reading following a
+    device nobody was listening to.
+  `scripts/check_sensors.py` now prints every playback device with its
+  id and what each one reads, which is usually enough to see the
+  problem directly.
+
 ## [1.0.0] — 2026-08-29
 
 First tagged release. Everything below shipped before this tag existed
