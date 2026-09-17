@@ -2018,6 +2018,34 @@ dashboard designer) this is laying groundwork for.
   friend-made theme file imports cleanly, and malformed JSON and
   wrong-shaped JSON each surface a specific error rather than failing
   silently.
+- **Fixed: CPU Clock stuck on one number.** Reported as "always
+  showing as 3.4G which isn't accurate" — and it wasn't a rounding or
+  smoothing problem, the reading never contained the live clock at
+  all. `get_cpu_freq_ghz()` was `psutil.cpu_freq().current`, which on
+  Windows comes from `CallNtPowerInformation(ProcessorInformation)`;
+  on modern machines Windows reports the *nominal* clock there, so the
+  stat sat on the base frequency forever while the vendor app read
+  5.5GHz on the same CPU at the same moment. It now reads the
+  `\Processor Information(_Total)\% Processor Performance` performance
+  counter (PDH, via ctypes — no new dependency) and multiplies it by
+  the base clock, which is how Task Manager's own "Speed" field is
+  derived and which goes above 100% when boosting. psutil remains the
+  fallback, so Linux (where its `current` really is live) and any
+  machine missing that counter are unaffected. Sampled once a second
+  rather than per frame.
+- **A new "Volume" stat**, available to every element type (gauge,
+  bar, graph, stat-bound text) like any other. Reports the PC's master
+  output level 0-100%, and 0 while muted — a gauge sitting at 40% with
+  nothing audible would be the wrong answer to "what's my volume".
+  Needs `pycaw`, which is an optional dependency: without it the stat
+  reads "--" and nothing else changes. Install with
+  `py -m pip install pycaw` (it's in requirements.txt now).
+- **`scripts/check_sensors.py`**, a read-only diagnostic for exactly
+  the two readings above, since neither can be verified anywhere but
+  the Windows machine the panel is on. Prints psutil's clock, the perf
+  counter, and the resulting frequency five times a second apart (to
+  compare against Task Manager), plus whether pycaw is present and
+  whether the volume reading follows the slider.
 
 ## [1.0.0] — 2026-08-29
 
