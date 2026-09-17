@@ -119,6 +119,7 @@ dependency is missing.
 import argparse
 import asyncio
 from collections import deque
+from copy import deepcopy
 import functools
 import io
 import json
@@ -145,6 +146,7 @@ from ..driver.hongtai_screen import HongtaiScreen
 from .. import weather
 from .. import power_state
 from ..paths import resource_path
+from . import widget_styles
 
 # ---------------------------------------------------------------- psutil ---
 
@@ -4515,6 +4517,122 @@ BUILTIN_DASHBOARD_PRESETS = {
 }
 
 
+# A dark cathedral backdrop leaves the center clear for Spotify's live
+# Windows media session. Shared gothic styling supplies the typefaces,
+# engraved dials, pointed meters, and ornamental media frame.
+# Build the repeated rows from one small factory to keep their spacing,
+# labels, and stat bindings consistent when this preset is edited.
+def _nocturne_stat_row(stat, label, side, row):
+    y = (0.61, 0.73, 0.85)[row]
+    x = 0.075 if side == "left" else 0.925
+    return [
+        {
+            "id": f"nocturne_{side}_{stat}_reading", "type": "text",
+            "stat": stat, "template": f"{label}  {{value}}",
+            "x": x, "y": y, "font_size": 0.036,
+            "color": (239, 229, 218),
+            "align": "left" if side == "left" else "right",
+            "bold": True,
+            "plate": (9, 7, 12), "plate_opacity": 0.82,
+            "plate_pad": 0.32,
+            "opacity": 1.0, "z": 20 + row,
+        },
+        {
+            "id": f"nocturne_{side}_{stat}_meter", "type": "bar",
+            "stat": stat, "x": 0.18 if side == "left" else 0.82,
+            "y": round(y + 0.047, 3), "width": 0.205, "height": 0.018,
+            "orientation": "horizontal",
+            "show_knob": False, "show_title": False, "show_value": False,
+            "opacity": 1.0,
+            "z": 30 + row,
+        },
+    ]
+
+
+BUILTIN_DASHBOARD_PRESETS["Nocturne Cathedral"] = {
+    "background": {
+        "mode": "nocturne", "scheme": "crimson", "image_path": None,
+        "border": [132, 112, 106], "dim": 0.28, "widget_style": "gothic",
+    },
+    "elements": [
+        {
+            "id": "nocturne_title", "type": "text", "text": "Nocturne",
+            "x": 0.5, "y": 0.075, "font_size": 0.09,
+            "color": (232, 220, 210), "align": "center", "bold": True,
+            "font": "unifraktur", "opacity": 1.0, "z": 1,
+        },
+        {
+            "id": "nocturne_music_label", "type": "text", "text": "NOW PLAYING",
+            "x": 0.5, "y": 0.15, "font_size": 0.027,
+            "color": (181, 82, 96), "align": "center", "bold": True,
+            "opacity": 1.0, "z": 2,
+        },
+        {
+            "id": "nocturne_cpu_dial", "type": "gauge", "stat": "cpu_load",
+            "x": 0.18, "y": 0.345, "radius": 0.145,
+            "opacity": 1.0, "z": 3,
+        },
+        {
+            "id": "nocturne_gpu_dial", "type": "gauge", "stat": "gpu_load",
+            "x": 0.82, "y": 0.345, "radius": 0.145,
+            "opacity": 1.0, "z": 4,
+        },
+        *[el for row, (stat, label) in enumerate((
+            ("ram", "RAM"),
+            ("cpu_freq", "CLOCK"), ("disk_usage", "DISK"),
+        )) for el in _nocturne_stat_row(stat, label, "left", row)],
+        *[el for row, (stat, label) in enumerate((
+            ("gpu_temp", "TEMP"),
+            ("vram_usage", "VRAM"), ("network", "NET"),
+        )) for el in _nocturne_stat_row(stat, label, "right", row)],
+        {
+            "id": "nocturne_spotify", "type": "media",
+            "x": 0.5, "y": 0.47, "width": 0.315, "height": 0.59,
+            "show_art": True, "show_name": True, "show_time": True,
+            "opacity": 1.0, "z": 50,
+        },
+        {
+            "id": "nocturne_clock", "type": "clock",
+            "x": 0.5, "y": 0.855, "font_size": 0.056,
+            "color": (232, 220, 210), "show_seconds": False,
+            "show_date": True, "face": "digital", "hour_format": "24h",
+            "opacity": 1.0, "z": 51,
+        },
+    ],
+}
+
+
+def _styled_dashboard_preset(style, title, background, prefix):
+    """Keep the music and useful readings in the same readable arrangement.
+
+    Only geometry is shared. Font, metalwork, needles, meters, media frame,
+    and palette are supplied by the selected style, with normal overrides.
+    """
+    preset = deepcopy(BUILTIN_DASHBOARD_PRESETS["Nocturne Cathedral"])
+    preset["background"] = {**background, "widget_style": style, "image_path": None}
+    for el in preset["elements"]:
+        el["id"] = el["id"].replace("nocturne", prefix)
+        el.pop("color", None)
+        el.pop("font", None)
+        if el.get("plate"):
+            el["plate"] = widget_styles.STYLES[style]["defaults"]["face_color"]
+        if el["id"] == f"{prefix}_title":
+            el.update(text=title, font_size=0.052 if style == "cyberpunk" else 0.047)
+        if el["id"] == f"{prefix}_music_label":
+            el["color"] = widget_styles.STYLES[style]["defaults"]["color"]
+        if style == "cyberpunk" and el.get("type") == "text" and el.get("stat"):
+            el["font_size"] = 0.029
+    return preset
+
+
+BUILTIN_DASHBOARD_PRESETS["Neon Ronin"] = _styled_dashboard_preset(
+    "cyberpunk", "NEON // RONIN",
+    {"mode": "ronin", "scheme": "blue", "border": [33, 224, 238], "dim": 0.26}, "ronin")
+BUILTIN_DASHBOARD_PRESETS["Arcane Observatory"] = _styled_dashboard_preset(
+    "high_fantasy", "Arcane Observatory",
+    {"mode": "arcane", "scheme": "emerald", "border": [191, 157, 88], "dim": 0.3}, "arcane")
+
+
 
 def _element_accent(el):
     """An element's gauge color: an explicit `color` (r, g, b) tuple if
@@ -4715,6 +4833,17 @@ def _draw_text_plate(img, el, text, font, pos, anchor, size_px, opacity):
     box = [left - pad_x, top - pad_y, right + pad_x, bottom + pad_y]
     radius = max(0, (box[3] - box[1]) * float(el.get("plate_radius", 0.28)))
     plate_opacity = float(el.get("plate_opacity", 1.0)) * opacity
+    if el.get("widget_style") in widget_styles.STYLES:
+        layer = Image.new("RGBA", img.size)
+        d = ImageDraw.Draw(layer)
+        x0, y0, x1, y1 = box
+        cut = min(4, (y1-y0)/4)
+        points = [(x0+cut, y0), (x1-cut, y0), (x1, y0+cut), (x1, y1-cut),
+                  (x1-cut, y1), (x0+cut, y1), (x0, y1-cut), (x0, y0+cut)]
+        d.polygon(points, fill=(*plate, max(0, min(255, round(255*plate_opacity)))))
+        d.line([(x0+cut, y1), (x1-cut, y1)], fill=(*widget_styles.color(el, "ornament_color"), round(90*opacity)))
+        img.paste(layer, (0, 0), layer)
+        return
     if plate_opacity >= 1.0:
         rounded_rect(draw, box, radius=radius, fill=plate)
         return
@@ -4885,6 +5014,11 @@ def _draw_clock_element(img, el, width, height, fonts):
     # The date line inherits the clock's own font family (it's the same
     # element, just a second line), only smaller and never bolded.
     date_font = _cached_scaled_font(max(7, int(size_px * 0.45)), False, family) if show_date else None
+    if el.get("widget_style") in widget_styles.STYLES:
+        ornament = Image.new("RGBA", img.size)
+        widget_styles.rule(ImageDraw.Draw(ornament), x-size_px*2.5, x+size_px*2.5,
+                           y-size_px*.95, (*widget_styles.color(el, "ornament_color"), round(180*opacity)), el["widget_style"])
+        img.paste(ornament, (0, 0), ornament)
 
     # `el["gradient"]` (2-4 stops, same fields text/graph/bar/gauge all
     # use) fills the time -- and date, if shown, a touch dimmer, same
@@ -5133,8 +5267,10 @@ def _draw_graph_static(img, el, box, fonts):
         return
     stat_def = STAT_DEFS.get(el.get("stat"))
     title = stat_def["title"] if stat_def else str(el.get("stat", "")).upper()
-    draw.text((box["cx"], box["y0"] - 10), title, font=fonts.small_title,
-              fill=(225, 226, 236), anchor="mb")
+    gothic = el.get("widget_style") in widget_styles.STYLES
+    draw.text((box["cx"], box["y0"] - (22 if gothic else 10)), title,
+              font=_cached_scaled_font(11, True, el.get("font")) if gothic else fonts.small_title,
+              fill=widget_styles.color(el, "text_color") if gothic else (225, 226, 236), anchor="mb")
 
 
 def _draw_graph_tile(el, box, values, accent, gradient_colors=None, gradient_direction="horizontal"):
@@ -5247,8 +5383,10 @@ def _draw_bar_static(img, el, box, fonts):
     draw = ImageDraw.Draw(img)
     stat_def = STAT_DEFS.get(el.get("stat"))
     title = stat_def["title"] if stat_def else str(el.get("stat", "")).upper()
-    draw.text((box["cx"], box["y0"] - 10), title, font=fonts.small_title,
-              fill=(225, 226, 236), anchor="mb")
+    gothic = el.get("widget_style") in widget_styles.STYLES
+    draw.text((box["cx"], box["y0"] - (22 if gothic else 10)), title,
+              font=_cached_scaled_font(11, True, el.get("font")) if gothic else fonts.small_title,
+              fill=widget_styles.color(el, "text_color") if gothic else (225, 226, 236), anchor="mb")
 
 
 def _draw_bar_dynamic(img, el, box, value, min_v, max_v, accent, font_value, value_fmt):
@@ -5393,6 +5531,9 @@ BACKGROUND_PRESETS = {
     "fusion": "Fusion Core (card chassis)",
     "neon": "Neon Pulse (card chassis)",
     "crimson": "Crimson Strike (card chassis)",
+    "nocturne": "Nocturne Cathedral (image)",
+    "ronin": "Neon Ronin (image)",
+    "arcane": "Arcane Observatory (image)",
     "image": "Custom image",
 }
 # The four "(image)" entries above aren't a user's own photo (that's
@@ -5417,6 +5558,9 @@ BUNDLED_BACKGROUND_IMAGES = {
     "circuit": "circuit_bloom.jpg",
     "cherry": "cherry_blossom.jpg",
     "lavender": "lavender_bloom.jpg",
+    "nocturne": "nocturne_cathedral.jpg",
+    "ronin": "neon_ronin.jpg",
+    "arcane": "arcane_observatory.jpg",
     # The three "chassis" backgrounds -- not pictures the layout sits
     # on but the cards/panels it sits *in*, drawn at the same
     # fraction-of-panel coordinates as their presets' elements (see
@@ -5463,6 +5607,10 @@ def dim_color(color, factor):
 # old system-font candidate list below, so nothing that already exists
 # re-renders differently.
 FONT_FAMILIES = {
+    "unifraktur": {"label": "UnifrakturCook (blackletter)",
+                    "regular": "UnifrakturCook-Bold.ttf", "bold": "UnifrakturCook-Bold.ttf"},
+    "cinzel": {"label": "Cinzel (engraved serif)",
+                "regular": "Cinzel.ttf", "bold": "Cinzel.ttf"},
     "default": {"label": "Default (system sans)", "regular": None, "bold": None},
     "poppins": {"label": "Poppins (modern UI)",
                 "regular": "Poppins-Regular.ttf", "bold": "Poppins-SemiBold.ttf"},
@@ -5501,7 +5649,10 @@ def load_font(size, bold=False, family=None):
         filename = spec["bold"] if bold else spec["regular"]
         if filename:
             try:
-                return ImageFont.truetype(resource_path("fonts", filename), size)
+                font = ImageFont.truetype(resource_path("fonts", filename), size)
+                if family == "cinzel":
+                    font.set_variation_by_axes([650 if bold else 450])
+                return font
             except Exception:  # noqa: BLE001 -- missing/corrupt bundled font
                 pass
     if bold:
@@ -6453,6 +6604,7 @@ def build_static_background(width, height, fonts, elements=None, background=None
     """
     elements = DEFAULT_ELEMENTS if elements is None else elements
     background = dict(DEFAULT_BACKGROUND, **(background or {}))
+    elements = [widget_styles.resolve_element(el, background) for el in elements]
 
     img = _build_background_image(width, height, background)
     draw = ImageDraw.Draw(img)
@@ -6468,8 +6620,11 @@ def build_static_background(width, height, fonts, elements=None, background=None
     border = (background or {}).get("border", "default")
     if border not in ("none", False):
         border_color = tuple(border) if isinstance(border, (list, tuple)) else dim_color(PANEL_BORDER, 0.7)
-        rounded_rect(draw, [margin, margin, width - margin, height - margin],
-                     radius=10, outline=border_color, width=2)
+        if background.get("widget_style") in widget_styles.STYLES:
+            widget_styles.draw_frame(img, border_color, background["widget_style"])
+        else:
+            rounded_rect(draw, [margin, margin, width - margin, height - margin],
+                         radius=10, outline=border_color, width=2)
 
     base = min(width, height)
     resolved = {}
@@ -6482,6 +6637,9 @@ def build_static_background(width, height, fonts, elements=None, background=None
             accent = _element_accent(el)
             gauge_gradient, gauge_gradient_dir = _element_gauge_gradient(el)
             title = STAT_DEFS[el["stat"]]["title"]
+            if el.get("widget_style") in widget_styles.STYLES:
+                widget_styles.draw_gauge_static(img, el, g, title, _cached_scaled_font)
+                continue
             tile = draw_gauge_static(g, accent, gradient_colors=gauge_gradient, gradient_direction=gauge_gradient_dir)
             tile = _apply_tile_opacity(tile, el.get("opacity", 1.0))
             # `rotation` is stored and round-trips through config/
@@ -6830,6 +6988,10 @@ def _draw_media_element(img, el, box, media, fonts):
     content -- the whole point of dragging boxes next to each other.
     Turning a piece off still doesn't leave a gap where it used to be,
     same as before."""
+    if el.get("widget_style") in widget_styles.STYLES:
+        widget_styles.draw_media(img, el, box, media, _cached_scaled_font,
+                                _load_default_art(), _not_playing_message or "Awaiting Spotify")
+        return
     mid_cx, mid_w, box_h = box["cx"], box["w"], box["h"]
     opacity = el.get("opacity", 1.0)
     show_art = el.get("show_art", True)
@@ -6961,6 +7123,9 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
         if etype == "gauge":
             g = layout["resolved"][el["id"]]
             stat = STAT_DEFS[el["stat"]]
+            if el.get("widget_style") in widget_styles.STYLES:
+                widget_styles.draw_gauge_dynamic(img, el, g, stats.get(el["stat"]), stat, _cached_scaled_font)
+                continue
             accent = _element_accent(el)
             gauge_gradient, gauge_gradient_dir = _element_gauge_gradient(el)
             big = g["radius"] >= base * BIG_GAUGE_RADIUS_FRACTION
@@ -6982,6 +7147,9 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
                 continue
             stat_def = STAT_DEFS.get(el.get("stat"))
             if stat_def is None:
+                continue
+            if el.get("widget_style") in widget_styles.STYLES:
+                widget_styles.draw_bar(img, el, box, stats.get(el["stat"]), stat_def, _cached_scaled_font)
                 continue
             accent = _element_color(el, default=ACCENT_CPU)
             _draw_bar_dynamic(img, el, box, stats.get(el["stat"]), stat_def["min"], stat_def["max"],
