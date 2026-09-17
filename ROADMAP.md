@@ -2698,6 +2698,62 @@ the name box is prefilled, adding a gauge and saving under that name
 updates the same card instead of creating a second, and a second click
 names the next one "New theme 2".
 
+**Theme import/export**, which arrived as a concrete errand: "there is
+theme created by my friend can u import it?", with a .json and a PNG.
+The file turned out to be a valid preset for *this* app -- built
+entirely on the features added over the previous rounds (`font`,
+`plate`/`plate_opacity`/`plate_pad`/`plate_radius`, `show_title`/
+`show_value`, `track_color`, `border`, `dim`), 22 elements, every stat
+and font it names real -- with one snag: its background was `"mode":
+"nocturne"`, a bundled mode this app doesn't have, because the PNG was
+what that mode stood for. Imported it by hand (image copied into the
+managed store under image_store.py's own sha1-prefixed naming, preset
+injected into app_config.json with `mode: "image"` pointing at the
+copy, config backed up first), then built the feature so the next one
+doesn't need me.
+
+Export/import as a pair, because sharing only works if both ends
+exist and the friend's file had to be produced by hand for lack of
+one. The layout was never the hard part -- a preset is already plain
+JSON. The images are: every picture a preset references lives at an
+absolute path into the *local* managed image folder, which is
+meaningless on another machine, and that single fact is what made
+"send someone your theme" a manual operation. So export inlines each
+referenced image as base64 (`image_b64` + `image_name`, path nulled)
+and import materializes them back into the receiving machine's store
+via `image_store.store_image_bytes()`, repointing the preset at the
+new copies.
+
+Import treats the file as untrusted, which matters more than it might
+look: a preset file is something a person got from someone else, and
+an `image_path` in one is an instruction to render an arbitrary file
+from the receiving disk on a screen. So a path that didn't travel with
+the file only survives if `image_store.is_managed()` already claims it
+(the re-import-your-own-export case); everything else becomes None,
+which every renderer here already handles as "no image". Shape is
+checked too (`elements` a list, `background` an object or absent),
+while unknown element types and background modes are deliberately left
+alone -- the renderers skip what they don't recognize, which is what
+lets a file from a newer or differently-configured copy still load.
+Names route through save_dashboard_preset(), so an import called
+"Fusion Core" copies rather than overwrites, and the filename is
+tidied into a title ("nocturne_cathedral.json" -> "Nocturne
+Cathedral") unless it already carries capitals, in which case it's
+left as sent.
+
+One bug found by testing the round trip rather than a single
+direction: export sent `os.path.basename(path)` as the image name,
+which still had the 8-char content-hash prefix image_store had added
+on storage, so each cycle stacked another (`ab12_ab12_shot.png`) and,
+because the name differed, stored a fresh identical copy every time.
+Export now strips that prefix; verified stable over three round trips
+with one file on disk.
+
+Verified in the harness: Export appears in the card menu and downloads
+a .json with images inlined; re-importing it restores the preset; the
+friend's real file imports cleanly; malformed JSON and wrong-shaped
+JSON each surface their own error instead of failing quietly.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit
