@@ -2629,6 +2629,38 @@ customization ends up under "Deep Space (custom)", the built-in is
 identity-equal to the code-defined one again, and a second migration
 run is a no-op.
 
+Then, with a screenshot of the canvas showing "Neon Horizon": "the
+graphs keeps getting highlighted on their own (not selected) like
+network graph in the image". The graph sat under a gradient-filled box
+with "NETWORK" across the middle, on top of an otherwise-correct live
+render, with nothing selected.
+
+That box was the editor's mockup overlay. Every element type hides its
+mockup once `hasAccurateBackdrop` is true -- graphs were the one
+exception, unconditionally drawing theirs (the previous round narrowed
+that exception to `show_frame !== false`, which helped the new card
+themes but left every ordinary graph exactly as it was). The exception
+dated from the reasoning that the SVG layer can't plot the line, so
+the box was the only thing making the region findable and draggable.
+Both halves were false: the backdrop it defers to is a full render of
+the panel -- the graph's frame, title AND line are all in it -- and
+the mockup isn't a hairline outline but a filled box (0.55 alpha when
+the element has a gradient) with the element's name centered in it, so
+"defer to the real thing" turned into "paint a colored slab over the
+real thing". Removed the exception; graphs follow the same rule as
+everything else now.
+
+Dragging never depended on the mockup: the branch that renders it
+falls through to a transparent hit rect of the same geometry when it's
+hidden, which is what carries the pointer handler. Verified all four
+states in the harness rather than just the reported one -- deselected
+over the live frame (hidden), selected (shown), deselected again
+(hidden), and with the mock panel reporting disconnected so there's no
+accurate backdrop at all (shown, which is the case the original
+exception was really protecting) -- plus a real pointer drag on the
+hidden graph, grabbed from its own hit rect mapped out of SVG user
+units, which moves it and re-arms Save.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

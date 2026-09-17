@@ -1692,18 +1692,23 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
               // goes false again and the mockup goes back to deferring
               // to the real frame.
               const overLiveFrame = hasAccurateBackdrop;
-              // A graph normally keeps its mockup box visible even over
-              // an accurate backdrop -- the SVG overlay can't draw the
-              // plotted line itself, so the box is the only thing
-              // making an otherwise-empty region locatable/draggable.
-              // A graph explicitly set frameless (show_frame: false, as
-              // the card-based presets do, since their background art
-              // already draws the plot well) is the exception: forcing
-              // a frame and a title label on top of a backdrop that
-              // deliberately has neither is the same double-render the
-              // other mockup gates exist to avoid.
-              const graphNeedsBox = el.type === "graph" && el.show_frame !== false;
-              const showMockup = graphNeedsBox || isSelected || !overLiveFrame || forceAllMockups;
+              // Graphs used to be exempt from all of this and draw their
+              // mockup unconditionally, on the theory that the SVG
+              // overlay can't plot the line itself so the box was the
+              // only thing making the region locatable. That was wrong
+              // twice over: the backdrop this defers to (the panel's
+              // live frame, or the live-rendered preview of an unsaved
+              // edit) draws the graph in full -- frame, title AND line
+              // -- so there's nothing to locate that isn't already
+              // there; and the mockup isn't a faint outline, it's a
+              // gradient-filled box with the element's name across the
+              // middle, so forcing it on top of that real render read
+              // as the graph highlighting itself at random. Reported
+              // exactly that way. The transparent hit rect below still
+              // covers dragging when the mockup is hidden, and
+              // `!overLiveFrame` still brings it back whenever there's
+              // no accurate backdrop to defer to.
+              const showMockup = isSelected || !overLiveFrame || forceAllMockups;
               return (
                 <g key={el.id}>
                   {imageUrl && (

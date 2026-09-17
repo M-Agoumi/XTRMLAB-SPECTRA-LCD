@@ -1937,6 +1937,27 @@ dashboard designer) this is laying groundwork for.
   over a user's own preset still overwrites it rather than piling up
   copies; hiding a built-in removes it from the picker and offers the
   restore, which brings it back; no console errors.
+- **Fixed: graphs highlighting themselves in the design canvas.**
+  Reported with a screenshot of "Neon Horizon": the network graph sat
+  under a bright gradient-filled box with "NETWORK" written across it,
+  while nothing was selected. That box was the editor's own mockup
+  overlay, not the render. Every other element type hides its mockup
+  once the canvas is showing an accurate backdrop (the panel's live
+  frame, or the live-rendered preview of an unsaved edit) — graphs
+  were exempt, on the reasoning that the SVG overlay can't plot the
+  line so the box was the only thing making the region locatable. Both
+  halves of that were wrong: the backdrop draws the graph *in full*
+  (frame, title and line), so there was nothing to locate that wasn't
+  already drawn, and the mockup is a filled box with the element's
+  name across it rather than a faint outline, so forcing it over the
+  real render read exactly as reported — a graph lighting itself up
+  for no reason. Graphs now follow the same rule as everything else.
+  Dragging is unaffected: the transparent hit rect that stands in for
+  a hidden mockup already covered that. Verified in all four states —
+  deselected over a live frame (hidden), selected (shown), deselected
+  again (hidden), and with the panel disconnected so there's no
+  backdrop to defer to (shown) — plus that the graph is still
+  draggable while its mockup is hidden.
 
 ## [1.0.0] — 2026-08-29
 
