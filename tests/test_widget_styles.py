@@ -27,7 +27,7 @@ class WidgetStyleTests(unittest.TestCase):
         self.assertIs(gothic.resolve_element(el, {}), el)
 
     def test_default_style_keeps_legacy_render_identical(self):
-        preset = dashboard.BUILTIN_DASHBOARD_PRESETS["Neon Horizon"]
+        preset = dashboard.BUILTIN_DASHBOARD_PRESETS["Deep Space"]
         fonts = dashboard.Fonts()
         original, layout = dashboard.build_static_background(960, 480, fonts, preset["elements"], preset["background"])
         explicit, other = dashboard.build_static_background(960, 480, fonts, preset["elements"],

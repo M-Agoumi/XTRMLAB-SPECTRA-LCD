@@ -2853,6 +2853,47 @@ adds no third card; reset clears the link and a save after it writes
 no preset at all; the link survives a page reload; deleting the edited
 preset clears it. No console errors.
 
+**Retiring the first seven built-ins.** "Can you remove the simple
+default themes? (neon horizon, bubblegum, panic mode, mission control,
+midnight minimal, arcade RGB, northern lights)."
+
+Those are the six that shipped first plus one from the photo-backed
+batch, and the shared trait behind the word "simple" is real: each is
+gauges placed on a procedural background -- a starfield, a flat grid, a
+gradient -- with no relationship between the art and the widgets. Every
+theme built since (the flagship trio, the floral pair, the friend's
+gothic/cyberpunk/fantasy set) draws its background and its layout
+against the same coordinates, so the two read as one picture. Keeping
+the old ones meant the picker opened on the weakest work in it.
+
+The removal itself is only a deletion, because built-ins were designed
+not to leak: they're pure code, merged into the picker at read time by
+`resolve_dashboard_presets()` and never written into anyone's
+`app_config.json`. So no migration, and a person who had saved their
+own version over one of those names keeps it -- that copy lives in
+`presets` and the merge never needed the built-in to exist. The block
+comment above `BUILTIN_DASHBOARD_PRESETS` was rewritten rather than
+trimmed, since it described a lineup that no longer exists; it now
+records why those seven went, which is the part worth keeping.
+
+One real edge case fell out of it. `dashboard.active_preset` (the
+link added just above) could point at a theme this version no longer
+ships, and the canvas would then claim to be editing a card that isn't
+in the picker -- with the next Save layout recreating it as a new
+preset of the user's own, quietly resurrecting a theme they'd just
+had removed. `dashboard_meta()` now reports the link only when the
+name is actually in the resolved presets. The same guard covers the
+ordinary case of deleting the preset you're editing from another
+window.
+
+Verified in the harness: all seven are gone from the picker, the
+remaining 12 built-ins plus the user's own presets all render their
+thumbnails, editing a user-owned preset still saves back into it with
+no copy, and the full active-preset cycle still passes. Every built-in
+was also rendered through `render_preset_thumbnail()` directly, and
+`tests/test_widget_styles.py` (which pinned its legacy-render
+comparison to Neon Horizon) was repointed at Deep Space and passes.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

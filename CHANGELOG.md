@@ -2073,6 +2073,23 @@ dashboard designer) this is laying groundwork for.
   save updates that copy and adds no third card; reset clears the link
   and writes no preset; the link is still there after a page reload;
   deleting the edited preset clears it.
+- **Removed the seven first-draft built-in themes** — Neon Horizon,
+  Bubblegum, Panic Mode, Mission Control, Midnight Minimal, Arcade RGB
+  and Northern Lights. They were the earliest ones, all "gauges placed
+  on a procedural background", and next to the art-directed themes that
+  came later they were just padding the picker. Twelve remain (Deep
+  Space, Outrun Drive, City Nights, Circuit Bloom, Fusion Core, Neon
+  Pulse, Crimson Strike, Cherry Blossom, Petal Dream, Nocturne
+  Cathedral, Neon Ronin, Arcane Observatory). Built-ins are pure code
+  and were never copied into anyone's config, so nothing needs
+  migrating: if you'd saved your own version of one of those names, it
+  lives in your config and stays exactly where it was.
+  - Related fix while removing them: the canvas's "currently editing"
+    link is now dropped if it points at a preset that isn't there any
+    more (deleted, or a built-in this version no longer ships).
+    Otherwise it would have claimed to be editing a card you couldn't
+    see, and the next Save layout would have recreated that theme as a
+    new preset of your own.
 
 ## [1.0.0] — 2026-08-29
 

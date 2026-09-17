@@ -340,8 +340,13 @@ class AppController:
             "builtinPresets": list(dashboard_theme.BUILTIN_DASHBOARD_PRESETS),
             # The preset the live layout was last saved from, so the
             # canvas reopens still editing it instead of treating a
-            # restart as a fresh start unrelated to any card.
-            "activePreset": d.get("active_preset") or None,
+            # restart as a fresh start unrelated to any card. Dropped
+            # if that preset isn't there any more -- deleted, or a
+            # built-in this version of the app no longer ships -- since
+            # otherwise the canvas would claim to be editing a card
+            # that doesn't exist, and the next Save layout would
+            # recreate it as a brand-new preset under that name.
+            "activePreset": (d.get("active_preset") or None) if d.get("active_preset") in presets else None,
             "dismissedBuiltinPresets": list(d.get("dismissed_builtin_presets") or []),
             "stats": {
                 key: {"label": meta["label"], "title": meta["title"]}
