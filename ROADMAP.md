@@ -2570,6 +2570,65 @@ accurate live backdrop -- fine when every graph had a frame, wrong now
 that a frameless graph is a deliberate choice, so that exception is
 now conditional on `show_frame`.
 
+Next, once those shipped: "defeault themes shouldn't be modified, like
+if a user tries to modify them, we create a duplicate of it where the
+user does his modifications". The one path that could mutate a
+built-in was saving a preset under its exact name -- resolve_dashboard
+_presets() prefers the saved side on a collision, so that saved copy
+shadowed the code-defined preset permanently. That was deliberate once
+(it was *how* you customized a built-in) but it's a bad trade on
+inspection: the only way to tweak a built-in also destroyed your
+access to the original, with nothing able to bring it back, and froze
+that name against every future app update to it -- the exact failure
+the merge-on-read design was introduced to avoid, just arrived at from
+the other direction.
+
+Now `save_dashboard_preset()` checks the name against BUILTIN_DASHBOARD
+_PRESETS and, on a hit, saves under a free derived name instead
+(`config_store.free_preset_name()`: "Fusion Core (custom)", then
+"(custom 2)"), returning the name it actually used -- the frontend
+reports that rather than echoing what was typed, since a save that
+silently lands elsewhere is worse than one that refuses. Saving over
+one of the person's *own* presets still overwrites in place; the rule
+is only about the app's own read-only ones. The picker also warns
+before the save, as soon as the typed name matches a built-in, and
+badges every built-in card.
+
+Two consequences worth handling rather than leaving:
+
+`migrate_unshadow_builtin_presets()` covers configs that already
+shadow a built-in from before this rule -- it renames the saved entry
+to "<name> (custom)" so the customization survives and the built-in
+reappears, and un-dismisses that name if it had also been deleted
+(such a built-in was only ever visible *as* its override, so leaving
+it dismissed would make the preset the person was actually using
+vanish). It runs after migrate_strip_redundant_builtin_presets(),
+which already removes untouched copies, so every collision it sees is
+a genuine customization. Flagged `_unshadowed_builtin_presets_v1` so
+it runs once and doesn't keep undoing a hand-edited config.
+
+And deleting a built-in, now the only thing that can be done *to* one,
+gained a real undo: `restore_dismissed_dashboard_presets()` clears the
+dismissed list, exposed as `POST /api/dashboard/presets/restore_
+builtins` and a "Restore built-ins" button that appears only while
+something is hidden (the delete button itself reads "Hide" on a
+built-in, since that's what it does). This isn't scope creep -- the
+old behavior had an accidental undo (saving anything under that name
+un-dismissed it) that this change removes, so without a replacement
+"delete" would have become a one-way door.
+
+Verified in the browser harness: the pre-save warning appears while
+typing a built-in's name; saving it leaves the built-in in place and
+produces "Fusion Core (custom)", then "(custom 2)" on a second save;
+saving over a user's own preset still overwrites rather than piling up
+copies; hiding a built-in removes it and offers the restore, which
+brings it back and hides the button again; no console errors. The
+migration and the naming rule were also exercised directly against a
+synthetic config (a customized + dismissed "Deep Space"): the
+customization ends up under "Deep Space (custom)", the built-in is
+identity-equal to the code-defined one again, and a second migration
+run is a no-op.
+
 ### Phase 7 — Packaging and cutover
 
 **Cutover done early (source-run only), at the user's explicit

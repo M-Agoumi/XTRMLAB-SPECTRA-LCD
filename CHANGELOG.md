@@ -1900,6 +1900,43 @@ dashboard designer) this is laying groundwork for.
   Save layout persists both its elements and its background (including
   the new border/dim keys); the new Font and Label chip controls
   render for a selected text element; no console errors.
+- **Built-in presets are read-only now; editing one saves a copy.**
+  Requested directly: "default themes shouldn't be modified, like if a
+  user tries to modify them, we create a duplicate of it where the
+  user does his modifications". Saving a preset under a built-in's
+  exact name used to overwrite it — the saved copy shadowed the
+  code-defined one from then on, which is a bad bargain in both
+  directions: the only way to tweak a built-in also destroyed your
+  access to the original (nothing could bring it back), and it froze
+  that slot against any future app update to it. `save_dashboard_
+  preset()` now detects the collision and saves under a free derived
+  name instead ("Fusion Core" → "Fusion Core (custom)", then
+  "(custom 2)", …), returning the name it actually used so the UI
+  reports what happened rather than claiming a save that landed
+  somewhere else. Saving over one of *your own* presets is unchanged —
+  it still overwrites in place, which is what editing your own work
+  should do.
+  - A one-time migration (`migrate_unshadow_builtin_presets()`)
+    renames any existing saved preset that shadows a built-in aside to
+    "<name> (custom)", so an install that had already customized one
+    keeps that work *and* gets the original back. It runs after the
+    existing strip-redundant-copies migration, so what it sees is
+    always a real customization rather than a stale duplicate.
+  - Deleting a built-in is now the only thing that can be done *to*
+    one, so it got an undo: the button reads "Hide" for a built-in,
+    and a "Restore built-ins" button appears while any are hidden
+    (`restore_dismissed_dashboard_presets()`, `POST /api/dashboard/
+    presets/restore_builtins`). It used to have an accidental undo —
+    saving anything under that name un-dismissed it — which this
+    change would otherwise have quietly removed.
+  - The picker marks every built-in with a small ◆ and warns *before*
+    you save, as soon as the name you've typed matches one.
+  Verified in the browser harness: the warning appears while typing a
+  built-in's name; saving it leaves the built-in in place and creates
+  "Fusion Core (custom)", then "(custom 2)" on a second save; saving
+  over a user's own preset still overwrites it rather than piling up
+  copies; hiding a built-in removes it from the picker and offers the
+  restore, which brings it back; no console errors.
 
 ## [1.0.0] — 2026-08-29
 

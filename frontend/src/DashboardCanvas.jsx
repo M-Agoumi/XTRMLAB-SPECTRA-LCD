@@ -1217,6 +1217,13 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     );
   };
 
+  // The app's own presets (dashboard_theme.BUILTIN_DASHBOARD_PRESETS,
+  // sent along in meta) are read-only: they can be loaded, duplicated
+  // and hidden, but never written over -- saving under one of their
+  // names saves a copy instead. Used for the card badge, the
+  // save-name warning, and the wording of a delete.
+  const isBuiltinPreset = (name) => (meta?.builtinPresets || []).includes(name);
+
   const saveAsPreset = () => {
     const name = presetName.trim();
     if (!name) return;
@@ -1229,7 +1236,27 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
       (r) => {
         setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
         setPresetName("");
-        setStatus(`Saved preset "${name}".`);
+        // The backend decides the final name: saving under a built-in's
+        // name saves a copy ("Fusion Core (custom)") rather than
+        // overwriting a read-only preset, so report what it actually
+        // did instead of echoing what was typed.
+        const saved = r.name || name;
+        setStatus(saved === name
+          ? `Saved preset "${saved}".`
+          : `"${name}" is a built-in preset and can't be overwritten -- saved your version as "${saved}".`);
+      },
+      (e) => setError(e.message)
+    );
+  };
+
+  const restoreBuiltins = () => {
+    api.restoreBuiltinDashboardPresets().then(
+      (r) => {
+        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails,
+                           dismissedBuiltinPresets: [] }));
+        setStatus(r.restored?.length
+          ? `Restored ${r.restored.length} built-in preset${r.restored.length === 1 ? "" : "s"}.`
+          : "No deleted built-in presets to restore.");
       },
       (e) => setError(e.message)
     );
@@ -1306,8 +1333,11 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
     setPresetMenuOpen(null);
     api.deleteDashboardPreset(name).then(
       (r) => {
-        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails }));
-        setStatus(`Deleted preset "${name}".`);
+        setMeta((m) => ({ ...m, presets: r.presets, presetThumbnails: r.thumbnails,
+                           dismissedBuiltinPresets: r.dismissed ?? m.dismissedBuiltinPresets }));
+        setStatus(isBuiltinPreset(name)
+          ? `Hid built-in preset "${name}" -- "Restore built-ins" below brings it back.`
+          : `Deleted preset "${name}".`);
       },
       (e) => setError(e.message)
     );
@@ -2828,6 +2858,7 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
             {Object.keys(meta.presets || {}).map((name) => {
               const thumb = meta.presetThumbnails?.[name];
               const armed = presetPendingDelete === name;
+              const builtin = isBuiltinPreset(name);
               return (
                 <div key={name} className="preset-card">
                   <button
@@ -2847,7 +2878,17 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                     )}
                   </button>
                   <div className="preset-card-footer">
-                    <span className="preset-card-name" title={name}>{name}</span>
+                    <span className="preset-card-name"
+                          title={builtin
+                            ? `${name} -- built in, read-only. Editing it saves a copy.`
+                            : name}>
+                      {name}
+                      {/* Marks a preset that belongs to the app rather
+                          than to this config: it can be loaded,
+                          duplicated and hidden, but never written
+                          over. */}
+                      {builtin && <span className="preset-card-badge" title="Built-in preset (read-only)">◆</span>}
+                    </span>
                     <div className="preset-card-actions" data-preset-menu>
                       <button
                         className="preset-card-menu-toggle"
@@ -2873,9 +2914,13 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                             className={`preset-card-delete${armed ? " confirm" : ""}`}
                             data-preset-menu
                             onClick={() => deletePreset(name)}
-                            title={armed ? "Click again to confirm" : `Delete "${name}"`}
+                            title={armed
+                              ? "Click again to confirm"
+                              : builtin
+                                ? `Hide "${name}" -- it's built in, so this can be undone with "Restore built-ins"`
+                                : `Delete "${name}"`}
                           >
-                            {armed ? "Confirm?" : "Delete"}
+                            {armed ? "Confirm?" : builtin ? "Hide" : "Delete"}
                           </button>
                         </div>
                       )}
@@ -2887,6 +2932,15 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
           </div>
         )}
       </div>
+      {(meta.dismissedBuiltinPresets || []).length > 0 && (
+        <div className="row">
+          <span className="hint grow">
+            {(meta.dismissedBuiltinPresets || []).length} built-in preset
+            {(meta.dismissedBuiltinPresets || []).length === 1 ? " is" : "s are"} hidden.
+          </span>
+          <button onClick={restoreBuiltins}>Restore built-ins</button>
+        </div>
+      )}
       <div className="row">
         <label className="grow">
           Save current layout as preset
@@ -2895,6 +2949,15 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
         </label>
         <button onClick={saveAsPreset} disabled={!presetName.trim()}>Save as preset</button>
       </div>
+      {/* Says so before the save rather than after: a built-in can't be
+          overwritten, so this name will come back as a copy. */}
+      {isBuiltinPreset(presetName.trim()) && (
+        <p className="hint">
+          "{presetName.trim()}" is a built-in preset -- built-ins are read-only, so this
+          saves your version as a separate copy ("{presetName.trim()} (custom)") and leaves
+          the original alone.
+        </p>
+      )}
 
       {status && <p className="hint settings-saved">{status}</p>}
       {error && <p className="error">{error}</p>}
