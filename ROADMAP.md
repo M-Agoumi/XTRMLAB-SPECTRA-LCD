@@ -3113,6 +3113,48 @@ Verified by rendering all four element types bound to the new stat --
 gauge, bar, stat-bound text and graph -- and reading the numbers off
 the result.
 
+**White-on-white in the now-playing widget.** "Now playing is always in
+white, sometimes when the background in white, the now playing is not
+visible, so make it also configurable, also adapt the sakura ink theme
+to use it, and change the font of it to something inky to fit the
+theme."
+
+The second half of that sentence is the more interesting one. The bug
+is ordinary -- five hard-coded near-white fills in `_draw_media_
+element()` (track, artist, idle message, two time labels), written when
+every theme in the app was dark, and unnoticed until Sakura Ink made
+the app's first light background. What is worth recording is that this
+is the *third* thing in the now-playing widget to need the same fix:
+the album-art glow and the progress bar were the same class of
+hard-coded constant, found two rounds ago on the same theme. A widget
+whose palette is a literal is fine right up until someone builds a
+theme the literals were never chosen for.
+
+So the fix follows the pattern the other two already established:
+`text_color` for the loud line, `muted_color` for the supporting type,
+`track_color` for the unplayed part of the progress bar, `font` for any
+bundled face -- each defaulting to exactly the constant it replaced, so
+every existing preset renders byte-identically and nothing needed
+migrating. The frontend controls sit on the default renderer only; the
+styled renderers (gothic/cyberpunk/high fantasy) already expose their
+own Accent/Metal/Text row, and showing both would be two sets of
+controls fighting over the same pixels.
+
+Sakura Ink then uses it properly rather than just legibly: near-black
+for the track, warm grey for the details, the seal's vermilion for the
+progress fill over a pale paper-grey track, and Cinzel -- the engraved
+serif, which is as close to brushed ink as the bundled faces get --
+instead of the UI sans that made the one part of that theme look
+pasted on.
+
+Verified by rendering Sakura Ink with a track playing (before: pale
+violet on rice paper, unreadable; after: ink), and by re-rendering
+Abyssal and Neon Ronin with the same fake track to confirm the
+defaults left dark themes untouched. The controls themselves are
+covered in the harness (`shot26.py`, 5 checks): absent on a gauge,
+present on a now-playing element, saved onto the element, cleared by
+Reset, and not shown on a styled theme that has its own palette row.
+
 
 ### Phase 7 — Packaging and cutover
 

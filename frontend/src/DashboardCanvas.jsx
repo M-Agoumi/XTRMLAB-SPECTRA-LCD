@@ -2666,6 +2666,38 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
             </div>
           )}
 
+          {selected.type === "media" && !meta.widgetStyles?.[styledSelected.widget_style] && (
+            /* The now-playing type used to be fixed near-white, which
+               disappears on a light theme ("now playing is always in
+               white ... not visible"). Track line, supporting type and
+               the frame/progress accent are each pickable, and the font
+               comes from the same bundled list text elements use. The
+               styled renderers have their own palette controls above,
+               so this only shows for the default one. */
+            <div className="row">
+              <label>
+                Font
+                <select value={selected.font || ""}
+                        onChange={(e) => updateSelected({ font: e.target.value || null })}>
+                  <option value="">Default</option>
+                  {Object.entries(meta.fontFamilies || {}).map(([key, f]) => (
+                    <option key={key} value={key}>{f.label}</option>
+                  ))}
+                </select>
+              </label>
+              {[["text_color", "Track", [238, 238, 244]],
+                ["muted_color", "Details", [200, 192, 220]],
+                ["color", "Accent", [150, 128, 232]]].map(([key, label, fallback]) => (
+                <label key={key}>{label}
+                  <input type="color" value={rgbToHex(selected[key] || fallback)}
+                         onChange={(e) => updateSelected({ [key]: hexToRgb(e.target.value) })} />
+                </label>
+              ))}
+              <button onClick={() => updateSelected({ text_color: null, muted_color: null, color: null, font: null })}>
+                Reset
+              </button>
+            </div>
+          )}
           {selected.type === "media" && (
             <>
               <div className="row">

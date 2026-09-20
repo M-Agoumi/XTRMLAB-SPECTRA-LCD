@@ -2210,6 +2210,23 @@ dashboard designer) this is laying groundwork for.
     machine files CPU temperature under a section name this doesn't
     recognise, one run identifies it.
 
+- **The now-playing widget's type is configurable, and Sakura Ink uses
+  it.** Reported as "now playing is always in white, sometimes when the
+  background in white, the now playing is not visible" — the track
+  line, artist, "nothing playing" message and the two time labels were
+  all hard-coded near-whites, which is exactly invisible on the app's
+  one light theme. A now-playing element now takes **Track** colour,
+  **Details** colour (artist, message, times), **Accent** (the album
+  frame and progress fill), a **Font** from the bundled faces, and a
+  progress-track colour. All of them default to what was hard-coded
+  before, so every existing preset renders identically; the controls
+  appear on the default renderer only, since the styled themes have
+  their own palette row already.
+- **Sakura Ink's player is now ink on paper**: near-black track line,
+  warm grey details, vermilion progress on a pale track, set in Cinzel
+  rather than the UI sans — the same engraved serif the rest of that
+  theme reads in.
+
 ## [1.0.0] — 2026-08-29
 
 First tagged release. Everything below shipped before this tag existed

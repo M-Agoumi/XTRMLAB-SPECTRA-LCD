@@ -4437,7 +4437,10 @@ BUILTIN_DASHBOARD_PRESETS["Sakura Ink"] = {
         # hairline.
         {"id": "ink_spotify", "type": "media", "x": 0.5, "y": 0.50,
          "width": 0.30, "height": 0.30, "show_art": False, "show_name": True,
-         "show_time": True, "color": _INK_SEAL, "opacity": 1.0, "z": 50},
+         "show_time": True, "color": _INK_SEAL, "text_color": _INK_DARK,
+         "muted_color": [128, 116, 104], "font": "cinzel",
+         "track_color": _INK_TRACK,
+         "opacity": 1.0, "z": 50},
     ],
 }
 
@@ -6836,6 +6839,31 @@ def _draw_media_element(img, el, box, media, fonts):
     # now drives both; without one, the old constant, so nothing that
     # never set a color changes.
     accent = _element_color(el, default=ACCENT_MID)
+    # Same story for the type, one step later and for a worse symptom:
+    # the track line, artist, "nothing playing" message and the two
+    # time labels were all fixed near-whites, which is invisible on a
+    # light background -- reported as "now playing is always in white,
+    # sometimes when the background in white, the now playing is not
+    # visible". `text_color` is the track line (the loud one),
+    # `muted_color` the supporting type, and `font` picks any bundled
+    # face (FONT_FAMILIES), which is what text and clock elements
+    # already accept. All three default to what was hard-coded before,
+    # so every existing preset renders identically.
+    text_color = _element_color(el, key="text_color", default=(238, 238, 244))
+    muted_color = _element_color(el, key="muted_color", default=(200, 192, 220))
+    time_color = _element_color(el, key="muted_color", default=(170, 165, 190))
+    family = el.get("font") or None
+    if family in (None, "default"):
+        f_track, f_artist, f_message, f_progress = (
+            fonts.track, fonts.artist, fonts.message, fonts.progress)
+    else:
+        # The same pixel sizes the Fonts class picked for these four, so
+        # a family swap changes the face and nothing else about the
+        # layout the box was measured against.
+        f_track = load_font(19, family=family)
+        f_artist = load_font(15, bold=True, family=family)
+        f_message = load_font(22, family=family)
+        f_progress = load_font(15, family=family)
 
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
@@ -6864,7 +6892,7 @@ def _draw_media_element(img, el, box, media, fonts):
         if title:
             content_h += 24 + (22 if artist else 0)
         elif _MEDIA_OK:
-            not_playing_lines = wrap_text(draw, get_not_playing_message(), fonts.message, mid_w - 12)
+            not_playing_lines = wrap_text(draw, get_not_playing_message(), f_message, mid_w - 12)
             content_h += 24 * len(not_playing_lines)
     if show_time and title and duration:
         content_h += 26  # bar_y offset (4) + bar_h (6) + gap to the time labels (16)
@@ -6895,18 +6923,18 @@ def _draw_media_element(img, el, box, media, fonts):
 
     if show_name:
         if title:
-            track_line = truncate(draw, title.upper(), fonts.track, mid_w - 12)
-            draw.text((mid_cx, y), track_line, font=fonts.track, fill=(238, 238, 244), anchor="ma")
+            track_line = truncate(draw, title.upper(), f_track, mid_w - 12)
+            draw.text((mid_cx, y), track_line, font=f_track, fill=text_color, anchor="ma")
             y += 24
             if artist:
-                artist_line = truncate(draw, artist, fonts.artist, mid_w - 12)
-                draw.text((mid_cx, y), artist_line, font=fonts.artist, fill=(200, 192, 220), anchor="ma")
+                artist_line = truncate(draw, artist, f_artist, mid_w - 12)
+                draw.text((mid_cx, y), artist_line, font=f_artist, fill=muted_color, anchor="ma")
                 y += 22
         elif _MEDIA_OK:
             for line in not_playing_lines:
                 if y > bottom:
                     break
-                draw.text((mid_cx, y), line, font=fonts.message, fill=(200, 190, 220), anchor="ma")
+                draw.text((mid_cx, y), line, font=f_message, fill=muted_color, anchor="ma")
                 y += 24
 
     if show_time and title and duration and y + 20 <= bottom:
@@ -6915,13 +6943,16 @@ def _draw_media_element(img, el, box, media, fonts):
         bar_x = int(mid_cx - bar_w / 2)
         bar_y = y + 4
         fraction = max(0.0, min(1.0, (position or 0.0) / duration))
-        progress_bar_glow(layer, bar_x, bar_y, bar_w, bar_h, fraction, accent)
+        # The unplayed part of the track takes a color too -- the
+        # default near-black reads as a smudge on a light theme.
+        progress_bar_glow(layer, bar_x, bar_y, bar_w, bar_h, fraction, accent,
+                          track_color=_element_color(el, key="track_color", default=None))
         y = bar_y + bar_h + 16
         if y <= bottom:
-            draw.text((bar_x, y), fmt_mmss(position), font=fonts.progress,
-                       fill=(170, 165, 190), anchor="lm")
-            draw.text((bar_x + bar_w, y), fmt_mmss(duration), font=fonts.progress,
-                       fill=(170, 165, 190), anchor="rm")
+            draw.text((bar_x, y), fmt_mmss(position), font=f_progress,
+                       fill=time_color, anchor="lm")
+            draw.text((bar_x + bar_w, y), fmt_mmss(duration), font=f_progress,
+                       fill=time_color, anchor="rm")
 
     layer = _apply_tile_opacity(layer, opacity)
     img.paste(layer, (0, 0), layer)
