@@ -2226,6 +2226,26 @@ dashboard designer) this is laying groundwork for.
   warm grey details, vermilion progress on a pale track, set in Cinzel
   rather than the UI sans — the same engraved serif the rest of that
   theme reads in.
+- **Sakura Ink now reads as genuinely Japanese everywhere, not just the
+  player.** Reported as "everythign else is still default font, only
+  the now playing got changed in the sakura ink, i want every text to
+  be inky ... real japonese" — the previous fix only re-fonted the
+  now-playing widget; the six stat rows, the clock and the volume line
+  were still Poppins, and Cinzel itself is a Western engraved serif
+  standing in for "inky" rather than an actual Japanese face. Bundled
+  two new fonts (`assets/fonts/`, OFL-licensed, converted from
+  `@fontsource` the same way Cinzel/UnifrakturCook were): **Yuji
+  Syuku**, a genuine Japanese brush-calligraphy face (Meiji-era
+  woodblock lettering), used for the clock, the one element sized big
+  enough to carry its stroke weight without turning to mush; and
+  **Shippori Mincho**, a proper Japanese mincho book serif, for every
+  other element in the theme — labels, values, the volume line, and
+  the now-playing widget (replacing Cinzel there too). Registered as
+  `yuji_syuku`/`shippori_mincho` in `FONT_FAMILIES`, so both are
+  pickable from the Font dropdown on any text/clock/now-playing
+  element, not just Sakura Ink's own. Verified by rendering the full
+  preset (idle and with a track playing) through the real Pillow
+  renderer — every line of text is now the same ink-on-paper voice.
 
 ## [1.0.0] — 2026-08-29
 

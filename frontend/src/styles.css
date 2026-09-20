@@ -19,6 +19,27 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Sakura Brush";
+  src: url("../../assets/fonts/YujiSyuku-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Sakura Mincho";
+  src: url("../../assets/fonts/ShipporiMincho-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Sakura Mincho";
+  src: url("../../assets/fonts/ShipporiMincho-SemiBold.ttf") format("truetype");
+  font-weight: 600 700;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light dark;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;

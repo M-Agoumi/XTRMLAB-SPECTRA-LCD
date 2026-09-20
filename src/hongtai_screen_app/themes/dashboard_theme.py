@@ -4400,10 +4400,10 @@ def _ink_row(key, stat, label, x, y, z):
     return [
         {"id": f"ink_{key}_label", "type": "text", "text": label, "x": x - 0.098,
          "y": y, "font_size": 0.03, "align": "left", "bold": False,
-         "font": "poppins", "color": [122, 110, 98], "opacity": 1.0, "z": z},
+         "font": "shippori_mincho", "color": [122, 110, 98], "opacity": 1.0, "z": z},
         {"id": f"ink_{key}_value", "type": "text", "stat": stat,
          "template": "{value}", "x": x + 0.098, "y": y, "font_size": 0.038,
-         "align": "right", "bold": True, "font": "poppins_bold",
+         "align": "right", "bold": True, "font": "shippori_mincho",
          "color": _INK_DARK, "opacity": 1.0, "z": z + 1},
         {"id": f"ink_{key}_meter", "type": "bar", "stat": stat, "x": x,
          "y": y + 0.055, "width": 0.196, "height": 0.012,
@@ -4425,11 +4425,18 @@ BUILTIN_DASHBOARD_PRESETS["Sakura Ink"] = {
         *_ink_row("net", "network", "NET", 0.84, 0.72, 25),
         {"id": "ink_vol", "type": "text", "stat": "volume",
          "template": "VOL  {value}", "x": 0.5, "y": 0.90, "font_size": 0.03,
-         "align": "center", "bold": False, "font": "poppins",
+         "align": "center", "bold": False, "font": "shippori_mincho",
          "color": [122, 110, 98], "opacity": 1.0, "z": 30},
+        # The clock is the one place sized big enough to carry Yuji
+        # Syuku's brush character without it turning to mush -- a
+        # genuine Japanese calligraphy face (Meiji-era mokkatsuji
+        # woodblock lettering), not a Western engraved serif standing
+        # in for "inky". Everything else stays on Shippori Mincho, a
+        # proper Japanese mincho book face, since Yuji Syuku's stroke
+        # weight gets illegible at label/value sizes.
         {"id": "ink_clock", "type": "clock", "x": 0.5, "y": 0.135,
          "font_size": 0.05, "show_seconds": False, "show_date": True,
-         "face": "digital", "hour_format": "24h", "font": "poppins",
+         "face": "digital", "hour_format": "24h", "font": "yuji_syuku",
          "color": _INK_DARK, "opacity": 1.0, "z": 1},
         # No album tile: a dark square dropped on rice paper is the
         # one thing that would break this theme, and sumi-e is space,
@@ -4438,7 +4445,7 @@ BUILTIN_DASHBOARD_PRESETS["Sakura Ink"] = {
         {"id": "ink_spotify", "type": "media", "x": 0.5, "y": 0.50,
          "width": 0.30, "height": 0.30, "show_art": False, "show_name": True,
          "show_time": True, "color": _INK_SEAL, "text_color": _INK_DARK,
-         "muted_color": [128, 116, 104], "font": "cinzel",
+         "muted_color": [128, 116, 104], "font": "shippori_mincho",
          "track_color": _INK_TRACK,
          "opacity": 1.0, "z": 50},
     ],
@@ -5459,6 +5466,11 @@ FONT_FAMILIES = {
                "regular": "Anton-Regular.ttf", "bold": "Anton-Regular.ttf"},
     "archivo": {"label": "Archivo Black (poster)",
                  "regular": "ArchivoBlack-Regular.ttf", "bold": "ArchivoBlack-Regular.ttf"},
+    "yuji_syuku": {"label": "Yuji Syuku (Japanese brush)",
+                    "regular": "YujiSyuku-Regular.ttf", "bold": "YujiSyuku-Regular.ttf"},
+    "shippori_mincho": {"label": "Shippori Mincho (Japanese serif)",
+                          "regular": "ShipporiMincho-Medium.ttf",
+                          "bold": "ShipporiMincho-SemiBold.ttf"},
 }
 
 

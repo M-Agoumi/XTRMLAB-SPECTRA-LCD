@@ -3155,6 +3155,39 @@ covered in the harness (`shot26.py`, 5 checks): absent on a gauge,
 present on a now-playing element, saved onto the element, cleared by
 Reset, and not shown on a styled theme that has its own palette row.
 
+**Sakura Ink wasn't actually Japanese yet.** "Everythign else is still
+default font, only the now playing got changed in the sakura ink, i
+want every text to be inky, to give that classic view to the theme,
+real japonese." Fair on both counts. The previous entry only touched
+`_draw_media_element()`, so the six stat rows (`_ink_row()`), the
+volume line and the clock were untouched Poppins. And "as close to
+brushed ink as the bundled faces get" was doing a lot of work in that
+sentence -- Cinzel is a Roman engraved serif with no Japanese
+calligraphic ancestry at all; it read as *formal*, not as ink on rice
+paper.
+
+Rather than stretch a Western face further, bundled two actually
+Japanese fonts the same way Cinzel and UnifrakturCook were bundled
+(`@fontsource` npm package -> woff2 -> ttf via fontTools, OFL license
+copied alongside): **Yuji Syuku**, a brush-calligraphy face descended
+from Meiji-era woodblock lettering, and **Shippori Mincho**, a proper
+Japanese mincho book serif. Registered as `yuji_syuku` and
+`shippori_mincho` in `FONT_FAMILIES` -- generally available from the
+Font dropdown on any element, not special-cased to this theme.
+
+Sakura Ink now splits the two by size rather than using one face
+everywhere: Yuji Syuku only on the clock, the one element large enough
+to carry its stroke weight without the brush character turning to
+mush at small sizes; Shippori Mincho (its 500 weight for labels/muted
+text, 600 for values/bold) on every other line in the theme --
+`_ink_row()`'s labels and values, the volume line, and the
+now-playing widget, replacing Cinzel there.
+
+Verified by rendering the full preset through the real Pillow
+renderer, both idle and with a fake track playing, at panel
+resolution -- every element in the theme now shares one voice instead
+of one widget standing apart from six rows of the old UI sans.
+
 
 ### Phase 7 — Packaging and cutover
 

@@ -14,7 +14,9 @@ export function resolveWidgetStyle(el, background, styles) {
 export function widgetFont(el) {
   return el.font === "unifraktur" ? '"Nocturne Blackletter", serif'
     : el.font === "cinzel" ? '"Nocturne Serif", serif'
-    : el.font === "orbitron" ? '"Dashboard Orbitron", sans-serif' : undefined;
+    : el.font === "orbitron" ? '"Dashboard Orbitron", sans-serif'
+    : el.font === "yuji_syuku" ? '"Sakura Brush", serif'
+    : el.font === "shippori_mincho" ? '"Sakura Mincho", serif' : undefined;
 }
 
 const rgb = (value) => `rgb(${value.join(",")})`;
