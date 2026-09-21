@@ -77,7 +77,14 @@ jobs:
           pip install pyinstaller
 
       - name: Install Playwright Chromium (webpage-mirror theme)
-        run: playwright install chromium
+        # `playwright install chromium` (the bare console script) isn't
+        # reliably on PATH in this same step right after `pip install`
+        # on the windows-latest runner -- confirmed by a real CI run:
+        # "The term 'playwright' is not recognized...". `python -m
+        # playwright` resolves the installed module directly instead of
+        # depending on pip's Scripts/ dir having been picked up by
+        # PATH, so it doesn't have that problem.
+        run: python -m playwright install chromium
 
       - name: Build frontend
         working-directory: frontend
