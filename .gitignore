@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 env/
+build/
+build_venv/
+/dist/
 
 # --- Run output -------------------------------------------------------
 # The .bat wrappers overwrite these on every run; they are session
@@ -21,6 +24,26 @@ drawlab_output.log
 *.orig
 *.rej
 
+# --- Personal settings & media (never commit) --------------------------
+# app_config.json holds your own port, brightness, and local file paths
+# (video/image locations on your machine) -- machine-specific, not source.
+# The app now creates/reads it under %LOCALAPPDATA%\HongtaiScreen (see
+# paths.py's USER_DATA_DIR), not in the repo/exe folder -- this entry is
+# just a leftover safety net in case a source checkout someone runs
+# `python app.py` from directly ever writes one here.
+app_config.json
+
+# Nothing here ships with a bundled video or "nothing playing" image on
+# purpose (see the Dashboard/Video tabs' file pickers) -- your own picks
+# stay out of the repo. Add your own filenames here too if you keep them
+# in this folder instead of elsewhere.
+badapple.mp4
+default_spotify.jpeg
+*.mp4
+*.mkv
+*.avi
+*.mov
+
 # --- Vendor material (do NOT commit) ----------------------------------
 # app.asar is ~58 MB of the vendor's proprietary Electron bundle. It was
 # the reference for the protocol, but it is their copyrighted code and has
@@ -28,6 +51,23 @@ drawlab_output.log
 # The local copy lives in Downloads\turing-screen\.
 *.asar
 app.asar.unpacked/
+
+# --- Frontend (frontend/, ROADMAP.md Phase 2b) -------------------------
+# node_modules is huge and fully reproducible from package.json --
+# never commit it. frontend/dist (the built bundle control_server.py
+# serves) is committed on purpose, per ROADMAP.md's "Risks and open
+# questions": the project's whole appeal is that it runs without a
+# Node toolchain, so `pip install -r requirements.txt && python app.py`
+# stays enough even though the UI itself is a React app under the
+# hood. Rebuild it with `cd frontend && npm install && npm run build`
+# whenever frontend/src changes, and commit the result.
+frontend/node_modules/
+
+# A runtime-only signal file (see paths.py's SHOW_TRIGGER_PATH) -- its
+# mtime is touched by a second launch to tell the already-running
+# instance to raise its own window. Nothing but its timestamp matters,
+# and it doesn't exist until the app runs once.
+show_request.trigger
 
 # --- Editors / OS -----------------------------------------------------
 .vscode/

@@ -1,0 +1,166 @@
+name: Build
+
+# main + a `v*.*.*` tag -> a production release (not a prerelease).
+# develop -> a rolling "beta" prerelease, re-published on every push.
+# A pull request into develop only runs the test job -- no exe built.
+# A pull request into main (the develop -> main release PR) also builds
+# the exe, so there's something to sanity-check before merging -- but
+# only as a workflow artifact attached to the PR's checks, never as a
+# published GitHub Release and never touching the "beta" tag. Nothing
+# is actually released until the merge itself (see the tag-triggered
+# "prod" build below).
+on:
+  push:
+    branches: [develop]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps for pycairo
+        run: sudo apt-get update && sudo apt-get install -y libcairo2-dev pkg-config
+
+      - name: Install Python test dependencies
+        run: pip install pytest pyserial pillow numpy pycairo psutil
+
+      - name: Run test suite
+        env:
+          PYTHONPATH: src
+        run: pytest tests/ -q
+
+  build:
+    needs: test
+    # Runs for every push this workflow triggers on (develop, a
+    # v*.*.* tag, workflow_dispatch) AND for a pull_request whose base
+    # is main -- e.g. the develop -> main release PR. A pull_request
+    # into develop stops here: `needs: test` above already ran, and
+    # that's all a routine feature PR gets.
+    if: github.event_name != 'pull_request' || github.base_ref == 'main'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Determine release channel
+        id: channel
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # The develop -> main release PR -- a preview build to
+            # sanity-check before merging, not a release. No GitHub
+            # Release gets published and no tag gets touched for this
+            # one (see the "Publish release" / "Upload PR build" step
+            # split below); this channel value only picks that branch.
+            echo "channel=pr" >> "$GITHUB_OUTPUT"
+            echo "tag=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "channel=prod" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=beta" >> "$GITHUB_OUTPUT"
+            echo "tag=beta" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Move the floating "beta" tag to this commit
+        if: steps.channel.outputs.channel == 'beta'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f beta
+          git push -f origin beta
+
+      - name: Install Python dependencies
+        # `python -m pip install`, not bare `pip install` -- the
+        # windows-latest runner can have more than one Python on PATH,
+        # and bare `pip` isn't guaranteed to be the same interpreter
+        # `python` resolves to right after.
+        #
+        # `shell: bash`, not this job's default pwsh -- confirmed by a
+        # real CI failure: requirements.txt's install genuinely failed
+        # outright (an unsatisfiable winsdk constraint aborted the
+        # whole file, taking playwright/pycaw/pythonnet/pystray/
+        # pywebview down with it -- see requirements.txt's own comment
+        # on that line for the fix), and this step still showed green.
+        # pwsh doesn't fail a multi-line `run:` block just because one
+        # of its lines exited non-zero (no bash-style `set -e`), so the
+        # second line (`pip install pyinstaller`, which had nothing
+        # wrong with it) running fine was enough to mark the whole step
+        # a pass. GitHub Actions' bash steps run with `-e` on by
+        # default, so the same silent-failure shape can't happen here
+        # again.
+        shell: bash
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Install Playwright Chromium (webpage-mirror theme)
+        # `playwright install chromium` (the bare console script) isn't
+        # reliably on PATH in this same step right after `pip install`
+        # on the windows-latest runner -- confirmed by a real CI run:
+        # "The term 'playwright' is not recognized...". `python -m
+        # playwright` resolves the installed module directly instead of
+        # depending on pip's Scripts/ dir having been picked up by
+        # PATH, so it doesn't have that problem.
+        shell: bash
+        run: python -m playwright install chromium
+
+      - name: Build frontend
+        working-directory: frontend
+        # shell: bash for the same reason as "Install Python
+        # dependencies" above -- pwsh's default multi-line `run:`
+        # doesn't stop after `npm ci` fails, so a broken `npm ci` could
+        # let `npm run build` run against a half-installed
+        # node_modules and still show the step as green.
+        shell: bash
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build the exe with PyInstaller
+        run: pyinstaller packaging/hongtai_screen.spec
+
+      - name: Publish release
+        if: steps.channel.outputs.channel != 'pr'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.channel.outputs.tag }}
+          name: ${{ steps.channel.outputs.channel == 'prod' && format('Hongtai Screen {0}', steps.channel.outputs.tag) || 'Beta build' }}
+          prerelease: ${{ steps.channel.outputs.channel == 'beta' }}
+          make_latest: ${{ steps.channel.outputs.channel == 'prod' }}
+          files: "dist/Hongtai Screen.exe"
+          body: ${{ steps.channel.outputs.channel == 'beta' && format('Automatic beta build from `develop` @ `{0}`.', github.sha) || format('Production release built from tag `{0}`.', steps.channel.outputs.tag) }}
+
+      - name: Upload PR build
+        # The develop -> main release PR's build: attached to the PR's
+        # checks as a downloadable workflow artifact instead of a
+        # GitHub Release, since nothing about this commit is "released"
+        # until the PR actually merges (and, for a real release, gets
+        # tagged v*.*.*). Expires on its own after 14 days so these
+        # don't pile up in the repo's storage quota.
+        if: steps.channel.outputs.channel == 'pr'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hongtai Screen (PR #${{ github.event.pull_request.number }})
+          path: "dist/Hongtai Screen.exe"
+          retention-days: 14

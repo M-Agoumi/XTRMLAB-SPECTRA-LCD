@@ -1,0 +1,746 @@
+@font-face {
+  font-family: "Nocturne Blackletter";
+  src: url("../../assets/fonts/UnifrakturCook-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Nocturne Serif";
+  src: url("../../assets/fonts/Cinzel.ttf") format("truetype");
+  font-weight: 400 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Dashboard Orbitron";
+  src: url("../../assets/fonts/Orbitron-Bold.ttf") format("truetype");
+  font-weight: 400 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Sakura Brush";
+  src: url("../../assets/fonts/YujiSyuku-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Sakura Mincho";
+  src: url("../../assets/fonts/ShipporiMincho-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Sakura Mincho";
+  src: url("../../assets/fonts/ShipporiMincho-SemiBold.ttf") format("truetype");
+  font-weight: 600 700;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #14161a;
+  color: #e6e8eb;
+}
+
+.app {
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Full-width rows, top to bottom (controls, then config+preview, then
+   brightness, system, log) -- see App.jsx's comment on why this
+   replaced the earlier two-column page layout: splitting app-level
+   settings into their own left column and everything else into a
+   right column produced two independently-tall columns, which is
+   exactly what left an empty gap under the shorter one. A plain
+   top-to-bottom stack (this is what `.app`'s own flex-column already
+   gives every direct child) has no such gap -- each row is exactly as
+   tall as its own content and nothing else.
+
+   The one exception is this row: the selected theme's own config
+   really does need to sit next to the live preview, since those two
+   are what's actually being watched together while a theme runs.
+   `flex-wrap: wrap` is the narrow-viewport fallback -- once there's
+   less than both panes' min-widths plus the gap to give them, this
+   drops back to stacked (config first) automatically rather than
+   squeezing either one unreadably thin. */
+.config-and-preview {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.config-pane {
+  flex: 1 1 420px;
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.preview-pane {
+  flex: 0 0 340px;
+  min-width: 260px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+header h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-ok {
+  background: #3ecf6c;
+  box-shadow: 0 0 6px #3ecf6c;
+}
+
+.dot-off {
+  background: #666;
+}
+
+.status-text {
+  font-size: 0.85rem;
+  color: #9aa1ab;
+}
+
+.panel {
+  background: #1c1f24;
+  border: 1px solid #2a2e35;
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  color: #c7cbd1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Collapsible.jsx's clickable header -- a full-width plain button so
+   the whole header row (not just the text) toggles the section, styled
+   to look like the h2 it wraps rather than an obvious button. */
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0 0 12px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.collapsible-header:hover:not(:disabled) {
+  background: none;
+}
+
+.collapsible-header h2 {
+  margin: 0;
+  flex: 1;
+}
+
+.collapsible-chevron {
+  color: #7d8390;
+  font-size: 0.75rem;
+  transition: transform 0.15s ease;
+  transform: rotate(0deg);
+}
+
+.collapsible-chevron.open {
+  transform: rotate(90deg);
+}
+
+
+.preview-box {
+  aspect-ratio: 4 / 3;
+  max-height: 320px;
+  background: #0c0d0f;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.preview-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-placeholder {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.row:last-child {
+  margin-bottom: 0;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: #9aa1ab;
+}
+
+label.grow {
+  flex: 1;
+  min-width: 200px;
+}
+
+label.row-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #e6e8eb;
+}
+
+label.row-inline input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+}
+
+input[type="text"],
+select {
+  background: #101216;
+  border: 1px solid #33383f;
+  color: #e6e8eb;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.9rem;
+}
+
+input[type="range"] {
+  width: 100%;
+}
+
+/* The browser's default "Choose File" control doesn't take any of the
+   above styling (it's not a normal form control -- it's a button plus
+   a filename readout glued together, each themed by the OS/browser,
+   not by us), so it's restyled by hand here: the filename readout gets
+   the same look as a text input, and ::file-selector-button gets the
+   same look as every other button on the page. Firefox doesn't
+   support ::file-selector-button yet -- ::-moz-file-selector-button is
+   its (Firefox-prefixed) equivalent, kept in a separate rule since an
+   unsupported selector in the same comma-list invalidates the whole
+   rule in some browsers. */
+input[type="file"] {
+  background: #101216;
+  border: 1px solid #33383f;
+  color: #9aa1ab;
+  border-radius: 6px;
+  padding: 5px 8px 5px 5px;
+  font-size: 0.82rem;
+  max-width: 100%;
+}
+
+/* Deliberately two separate rules, not one comma-joined selector list:
+   an unknown pseudo-element inside a selector list invalidates the
+   WHOLE rule in most browsers, so Chromium (which knows
+   ::file-selector-button but not the Firefox-prefixed one) would
+   silently drop both if they shared a rule. */
+input[type="file"]::file-selector-button {
+  background: #2c3542;
+  border: 1px solid #3e4a5c;
+  color: #e6e8eb;
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+input[type="file"]::-moz-file-selector-button {
+  background: #2c3542;
+  border: 1px solid #3e4a5c;
+  color: #e6e8eb;
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+input[type="file"]:hover::file-selector-button {
+  background: #354254;
+}
+
+input[type="file"]:hover::-moz-file-selector-button {
+  background: #354254;
+}
+
+button {
+  background: #2c3542;
+  border: 1px solid #3e4a5c;
+  color: #e6e8eb;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #354254;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-attention {
+  background: #4a3a1a;
+  border-color: #ffd85e;
+  color: #ffe9ae;
+}
+
+.btn-attention:hover:not(:disabled) {
+  background: #5a4622;
+}
+
+.hint {
+  font-size: 0.78rem;
+  color: #7d8390;
+  margin: 8px 0 0;
+}
+
+.error {
+  font-size: 0.8rem;
+  color: #ff8080;
+  margin: 8px 0 0;
+}
+
+/* The page-level action-error banner (App.jsx, right under <header>) --
+   deliberately more visible than the plain inline `.error` text above:
+   this is the one place an error from *any* button on the page (not
+   just whichever section happens to be open) shows up, so it needs to
+   actually catch the eye rather than blend in as another line of small
+   red hint text easy to scroll past. */
+.app-error {
+  font-size: 0.85rem;
+  padding: 10px 14px;
+  margin: 0;
+  background: rgba(255, 128, 128, 0.12);
+  border: 1px solid rgba(255, 128, 128, 0.4);
+  border-radius: 6px;
+}
+
+.settings-saved {
+  color: #6fd68f;
+}
+
+.log-box {
+  background: #0c0d0f;
+  border-radius: 6px;
+  padding: 10px 12px;
+  height: 180px;
+  overflow-y: auto;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  color: #b7d9c8;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-placeholder {
+  color: #555;
+}
+
+/* Two children only: the "+ Add X"/undo/redo/reset group and the Save
+   layout button -- space-between is what pushes Save layout to the
+   toolbar's far right, separating "building the layout" from
+   "committing it" instead of the two reading as one flat row of
+   equally-weighted buttons. flex-wrap still lets Save layout drop to
+   its own line below the group on a narrow viewport, rather than
+   forcing the group to squeeze. */
+.canvas-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.canvas-toolbar-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.canvas-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  background: #0c0d0f;
+  border-radius: 6px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.canvas-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.9;
+}
+
+.canvas-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.canvas-guide {
+  stroke: #ffd85e;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+}
+
+.file-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #3e4a5c;
+  background: #101216;
+}
+
+.canvas-props {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2e35;
+}
+
+/* The canvas itself (live preview) next to the element list + selected-
+   element property panel -- this is the one place on the whole page
+   where preview and config genuinely need to be visible at once (drag
+   something on the left, watch its numbers update on the right), which
+   is exactly what stacking them (the previous layout) made impossible
+   without scrolling. Same wrap-to-stacked fallback as
+   .preview-and-config above once the available width can't fit both
+   comfortably. */
+.canvas-layout {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.canvas-main {
+  flex: 1 1 480px;
+  min-width: 320px;
+}
+
+.canvas-side {
+  flex: 0 0 300px;
+  min-width: 260px;
+  max-width: 360px;
+}
+
+.element-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  /* Tall enough that the default layout's 10-11 rows (8 gauges + clock
+     + media, + weather once added) all fit without scrolling -- this
+     used to be capped at 140px, which was already a tight 2-3 rows
+     before Phase 6 added the clock/media/weather elements on top of
+     the 8 gauges, so the list was scrolling by default even with
+     nothing custom added yet. 480px comfortably fits every built-in
+     default element at this sidebar's width; overflow-y stays on as a
+     safety net for someone who adds many more than that. overflow-x
+     is explicitly hidden (not just "not set") because leaving only
+     overflow-y set lets some browsers resolve the other axis to auto
+     too, drawing a horizontal scrollbar even though nothing here
+     actually overflows sideways -- see CHANGELOG.md. */
+  max-height: 480px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.element-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #101216;
+  border: 1px solid #33383f;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  color: #c7cbd1;
+  cursor: pointer;
+}
+
+.element-row:hover:not(:disabled) {
+  background: #181b20;
+  border-color: #454c56;
+}
+
+.element-row.selected {
+  border-color: #ffd85e;
+  background: #2a2416;
+  color: #ffe9ae;
+}
+
+.element-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #7d8390;
+  background: #1c1f24;
+  border-radius: 4px;
+  padding: 1px 5px;
+  letter-spacing: 0.03em;
+}
+
+.element-row.selected .element-badge {
+  color: #ffe9ae;
+  background: #4a3a1a;
+}
+
+.element-id {
+  color: #5c6370;
+  font-size: 0.72rem;
+}
+
+/* Dashboard preset picker (DashboardCanvas.jsx) -- a grid of actual
+   rendered thumbnails instead of a <select> of plain names, so picking
+   a preset means recognizing its picture rather than remembering what
+   a name like "Streaming layout" actually looks like. */
+.preset-picker {
+  margin-bottom: 14px;
+}
+
+/* The label and the "+ New theme" button share a row so the button
+   sits with the presets it adds to, rather than down in the save row
+   (which is about the layout currently on the canvas, a different
+   thing). */
+.preset-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.preset-picker-label {
+  display: block;
+  font-size: 0.8rem;
+  color: #9aa1ab;
+}
+
+.preset-head-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.preset-new {
+  flex: none;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  background: #101216;
+  border: 1px solid #33383f;
+  border-radius: 8px;
+  /* Used to be `overflow: hidden` here (to round off the thumbnail
+     image's top corners to match the card) -- but that also clipped
+     the "..." action menu's popover, which is deliberately absolutely
+     positioned *outside* the footer's own box so it can float over
+     the thumbnail above it (see .preset-card-menu below). Clipping
+     moved onto .preset-card-thumb itself instead, which is the only
+     part that actually needs it. */
+  position: relative;
+}
+
+.preset-card-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 7px 7px 0 0;
+  overflow: hidden;
+  background: #05060a;
+  cursor: pointer;
+}
+
+.preset-card-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preset-card-thumb:hover {
+  outline: 2px solid #5b8cff;
+  outline-offset: -2px;
+}
+
+.preset-card-thumb-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: #5c6370;
+  font-size: 0.75rem;
+}
+
+.preset-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.preset-card-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: #e6e8eb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Marks one of the app's own read-only presets. Deliberately a small
+   dim glyph rather than a "BUILT-IN" pill: the footer's width is
+   already the scarce thing here (see .preset-card-actions' comment
+   below), and this only has to answer "can I overwrite this?" at a
+   glance, with the full explanation in the name's tooltip. */
+.preset-card-badge {
+  margin-left: 5px;
+  font-size: 0.62rem;
+  color: #8b93a7;
+  vertical-align: 1px;
+}
+
+/* Duplicate/Delete used to sit here as two always-visible, full-label
+   buttons -- wide enough on a long preset name to squeeze
+   preset-card-name down to "N...", "B...", etc. Collapsing both behind
+   a single "..." toggle (below) keeps this column narrow and fixed-
+   width, so the name gets essentially all the footer's space instead. */
+.preset-card-actions {
+  position: relative;
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.preset-card-menu-toggle {
+  flex: none;
+  width: 26px;
+  padding: 2px 0;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: #c7cbd1;
+}
+
+.preset-card-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: #1a1d23;
+  border: 1px solid #33383f;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.preset-card-duplicate,
+.preset-card-delete {
+  flex: none;
+  width: 100%;
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.preset-card-delete.confirm {
+  background: #4a1a1a;
+  border-color: #ff8080;
+  color: #ffb3b3;
+}
+
+/* The preset the canvas is currently editing: Save layout writes back
+   into this one (see DashboardCanvas's activePreset), which is
+   invisible state otherwise -- you'd have no way to tell which card is
+   about to change. */
+.preset-card.editing {
+  border-color: #5b8cff;
+  box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.45);
+}
+
+.preset-card-badge.editing {
+  color: #5b8cff;
+}
