@@ -2,7 +2,13 @@ name: Build
 
 # main + a `v*.*.*` tag -> a production release (not a prerelease).
 # develop -> a rolling "beta" prerelease, re-published on every push.
-# Pull requests only run the test job -- no exe is built for them.
+# A pull request into develop only runs the test job -- no exe built.
+# A pull request into main (the develop -> main release PR) also builds
+# the exe, so there's something to sanity-check before merging -- but
+# only as a workflow artifact attached to the PR's checks, never as a
+# published GitHub Release and never touching the "beta" tag. Nothing
+# is actually released until the merge itself (see the tag-triggered
+# "prod" build below).
 on:
   push:
     branches: [develop]
@@ -37,7 +43,12 @@ jobs:
 
   build:
     needs: test
-    if: github.event_name != 'pull_request'
+    # Runs for every push this workflow triggers on (develop, a
+    # v*.*.* tag, workflow_dispatch) AND for a pull_request whose base
+    # is main -- e.g. the develop -> main release PR. A pull_request
+    # into develop stops here: `needs: test` above already ran, and
+    # that's all a routine feature PR gets.
+    if: github.event_name != 'pull_request' || github.base_ref == 'main'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +65,15 @@ jobs:
         id: channel
         shell: bash
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # The develop -> main release PR -- a preview build to
+            # sanity-check before merging, not a release. No GitHub
+            # Release gets published and no tag gets touched for this
+            # one (see the "Publish release" / "Upload PR build" step
+            # split below); this channel value only picks that branch.
+            echo "channel=pr" >> "$GITHUB_OUTPUT"
+            echo "tag=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "channel=prod" >> "$GITHUB_OUTPUT"
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           else
@@ -122,6 +141,7 @@ jobs:
         run: pyinstaller packaging/hongtai_screen.spec
 
       - name: Publish release
+        if: steps.channel.outputs.channel != 'pr'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.channel.outputs.tag }}
@@ -130,3 +150,17 @@ jobs:
           make_latest: ${{ steps.channel.outputs.channel == 'prod' }}
           files: "dist/Hongtai Screen.exe"
           body: ${{ steps.channel.outputs.channel == 'beta' && format('Automatic beta build from `develop` @ `{0}`.', github.sha) || format('Production release built from tag `{0}`.', steps.channel.outputs.tag) }}
+
+      - name: Upload PR build
+        # The develop -> main release PR's build: attached to the PR's
+        # checks as a downloadable workflow artifact instead of a
+        # GitHub Release, since nothing about this commit is "released"
+        # until the PR actually merges (and, for a real release, gets
+        # tagged v*.*.*). Expires on its own after 14 days so these
+        # don't pile up in the repo's storage quota.
+        if: steps.channel.outputs.channel == 'pr'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hongtai Screen (PR #${{ github.event.pull_request.number }})
+          path: "dist/Hongtai Screen.exe"
+          retention-days: 14
