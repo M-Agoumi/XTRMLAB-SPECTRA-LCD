@@ -108,9 +108,18 @@ automated by `pip install` or this build:
 1. `pip install pythonnet` (already in `requirements.txt`, so this is
    covered by step 1 above if you installed the full file).
 2. Download a release from LibreHardwareMonitor's own
-   [GitHub Releases page](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
-   (the `LibreHardwareMonitor-net472.zip` asset) and extract **every
-   `.dll` in it** -- not just `LibreHardwareMonitorLib.dll` -- into:
+   [GitHub Releases page](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases).
+   Recent releases ship two zips -- get the plain **`LibreHardwareMonitor.zip`**
+   (the classic .NET Framework build pythonnet actually loads), **not**
+   `LibreHardwareMonitor.NET.10.zip` (a modern-.NET-only build whose
+   dependency DLLs pythonnet's default runtime can't load -- confirmed
+   by a real report: the library itself loaded, but
+   `ReflectionTypeLoadException`/`ModuleNotFoundError` followed as soon
+   as anything touched its types). Older releases labeled this same
+   zip `LibreHardwareMonitor-net472.zip` instead -- same idea, whichever
+   name this repo's own release uses, it's the one *without* a .NET
+   version number in its name. Extract **every `.dll` in it** -- not
+   just `LibreHardwareMonitorLib.dll` -- into:
 
    ```
    assets\hardware\
