@@ -69,6 +69,27 @@ frontend/node_modules/
 # and it doesn't exist until the app runs once.
 show_request.trigger
 
+# --- Local dev/build byproducts (never commit) --------------------------
+# Written by scripts/make_launcher.py next to app.py -- hardcodes an
+# absolute path to *your* build_venv, so it's meaningless (and wrong) on
+# anyone else's machine. Regenerate it locally with that script instead.
+Launch Hongtai Screen.vbs
+
+# A backup snapshot of app_config.json someone makes by hand before
+# testing something risky -- personal, machine-specific, same reasoning
+# as app_config.json itself above.
+app_config.backup-*.json
+
+# The LibreHardwareMonitorLib DLLs for CPU Temp (see BUILD.md's
+# "Hardware sensors" section) -- fetched by hand from the vendor's own
+# GitHub Releases, not something this repo ships or should ship.
+/assets/hardware/
+
+# Ad hoc `python scripts/check_sensors.py > sensors_output.txt`-style
+# diagnostic redirects -- a scratch file, not something meant to be
+# committed.
+sensors_output.txt
+
 # --- Editors / OS -----------------------------------------------------
 .vscode/
 .idea/
