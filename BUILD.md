@@ -109,18 +109,31 @@ automated by `pip install` or this build:
    covered by step 1 above if you installed the full file).
 2. Download a release from LibreHardwareMonitor's own
    [GitHub Releases page](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
-   (the `LibreHardwareMonitor-net472.zip` asset), pull
-   `LibreHardwareMonitorLib.dll` out of it, and place that one file at:
+   (the `LibreHardwareMonitor-net472.zip` asset) and extract **every
+   `.dll` in it** -- not just `LibreHardwareMonitorLib.dll` -- into:
 
    ```
-   assets\hardware\LibreHardwareMonitorLib.dll
+   assets\hardware\
    ```
 
    in this repo (source run: `python app.py` finds it there directly;
    frozen build: `hongtai_screen.spec`'s `datas` bundles that same
-   folder into the exe the same way it already bundles `assets\icon.ico`
-   and the backgrounds/fonts -- build the exe *after* placing the DLL,
-   not before).
+   folder into the exe, wildcard-matching every `.dll` in it, the same
+   way it already bundles `assets\icon.ico` and the backgrounds/fonts
+   -- build the exe *after* placing the DLLs, not before).
+
+   `LibreHardwareMonitorLib.dll` isn't standalone -- it depends on
+   other DLLs from the same zip (`HidSharp.dll` in particular, used
+   for its USB/HID sensor support) that it loads at runtime. Copying
+   only the one file loads fine on the surface (`clr.AddReference()`
+   raises nothing) but fails as soon as anything actually enumerates
+   its types, with a `ReflectionTypeLoadException` -- which pythonnet's
+   own `from LibreHardwareMonitor.Hardware import Computer` surfaces as
+   a plain `ModuleNotFoundError`, giving no hint that a dependency,
+   not the DLL itself, is what's missing. Copying the whole zip's
+   `.dll` files avoids chasing that one down again; the extras (its
+   own GUI's `Aga.Controls.dll`/`OxyPlot.dll`, unused here) are
+   harmless to have sitting alongside it.
 
    **Unblock the file after placing it.** Windows tags anything
    downloaded from the internet -- including a file pulled out of a
