@@ -36,6 +36,7 @@ export default function App() {
   const [videoDraft, setVideoDraft] = useState({ path: "", loop: true, bw: false, audio: false, fps: "" });
   const [webpageDraft, setWebpageDraft] = useState({ url: "", interval: "0.1", reloadEvery: "" });
   const [settingsSaved, setSettingsSaved] = useState(null);
+  const [copyLogsMsg, setCopyLogsMsg] = useState(null);
   const logBoxRef = useRef(null);
   const brightnessTimer = useRef(null);
 
@@ -287,6 +288,50 @@ export default function App() {
       await api.relaunchElevated();
       setRelaunchMsg("Approve the prompt that just opened -- this window will close on its own.");
     });
+
+  // Copies the log panel's own text, not a fresh fetch -- what's
+  // currently on screen is exactly what someone reporting a bug wants
+  // to paste, "sensors_output.txt"-style copy/paste from a terminal was
+  // the whole workaround this replaces (see the CPU Temp debugging
+  // session that kept running into "i can't copy the logs").
+  //
+  // navigator.clipboard needs a secure context; pywebview's WebView2
+  // window (see ui_window.py) serves this over http://127.0.0.1, which
+  // Chromium/Edge treats as secure same as localhost, so this is
+  // expected to work there -- but a plain browser tab pointed at this
+  // same backend over a non-localhost http:// URL would find
+  // navigator.clipboard undefined, hence the execCommand("copy")
+  // fallback below rather than just letting that throw.
+  const handleCopyLogs = async () => {
+    const text = logs.length ? logs.join("\n") : "(no log lines yet)";
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopyLogsMsg(`Copied ${logs.length} log line${logs.length === 1 ? "" : "s"} to the clipboard.`);
+    } catch (e) {
+      setCopyLogsMsg(`Couldn't copy: ${e.message}`);
+    }
+  };
+
+  // Self-clearing, same reasoning as any other one-shot status line
+  // here (relaunchMsg, shortcutMsg) -- "Copied" is only useful for a
+  // few seconds, not as a permanent fixture next to the button.
+  useEffect(() => {
+    if (!copyLogsMsg) return;
+    const t = setTimeout(() => setCopyLogsMsg(null), 4000);
+    return () => clearTimeout(t);
+  }, [copyLogsMsg]);
 
   const running = !!state?.worker_alive;
   // Everything past this point needs to know which physical port to
@@ -627,6 +672,12 @@ export default function App() {
       </Collapsible>
 
       <Collapsible id="log" title="Log" defaultOpen={false}>
+        <div className="row">
+          <button type="button" onClick={handleCopyLogs} disabled={logs.length === 0}>
+            Copy logs
+          </button>
+          {copyLogsMsg && <p className="hint">{copyLogsMsg}</p>}
+        </div>
         <div className="log-box" ref={logBoxRef}>
           {logs.length === 0 ? (
             <div className="log-placeholder">(no log lines yet)</div>
