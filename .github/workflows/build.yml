@@ -72,9 +72,17 @@ jobs:
           git push -f origin beta
 
       - name: Install Python dependencies
+        # `python -m pip install`, not bare `pip install` -- the
+        # windows-latest runner can have more than one Python on PATH,
+        # and bare `pip` isn't guaranteed to be the same interpreter
+        # `python` resolves to right after. Confirmed by a real CI
+        # failure: this step passed (pip install genuinely succeeded),
+        # but `python -m playwright install chromium` right after it
+        # still hit "No module named playwright" -- it had installed
+        # into a different Python than the one actually running later.
         run: |
-          pip install -r requirements.txt
-          pip install pyinstaller
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
 
       - name: Install Playwright Chromium (webpage-mirror theme)
         # `playwright install chromium` (the bare console script) isn't
