@@ -13,9 +13,8 @@
 # app.py's own docstring for why a single-file frozen build needs that
 # dispatch rather than two separate scripts.
 #
-# Build (Windows only, from the REPO ROOT -- not from this packaging/
-# folder -- so the relative paths below resolve correctly; see
-# BUILD.md, which also covers building frontend/dist/ first):
+# Build (Windows only; see BUILD.md, which also covers building
+# frontend/dist/ first):
 #
 #   pip install pyinstaller
 #   pyinstaller packaging/hongtai_screen.spec
@@ -26,11 +25,27 @@
 # around after building; nothing else needs to travel with it -- the
 # app package (src/), the built frontend, and the icon are all baked
 # in.
+#
+# Every path below is anchored on REPO_ROOT (derived from SPECPATH,
+# PyInstaller's own "directory this spec file lives in" variable), NOT
+# on whatever directory `pyinstaller` happens to be invoked from. A
+# real CI run confirmed PyInstaller resolves the Analysis() entry
+# script relative to the spec file's own directory regardless of cwd
+# ("script '...\packaging\app.py' not found" -- it was looking for
+# app.py *inside* packaging/, i.e. treating "app.py" as relative to
+# this file rather than to the repo root command shown above) -- this
+# used to be dismissed as a sandbox-only quirk when it first showed up
+# during local testing, but it happens on real Windows too. Building
+# every path here from REPO_ROOT makes this spec correct no matter
+# where it's invoked from, instead of relying on an invocation-
+# directory convention PyInstaller doesn't actually honor.
 
 import glob
+import os
 import sys
 
 block_cipher = None
+REPO_ROOT = os.path.dirname(SPECPATH)  # SPECPATH: packaging/ -- one level up is the repo root
 
 hidden_imports = [
     # PyInstaller's static import scanner can miss these -- they're
@@ -68,39 +83,37 @@ hidden_imports = [
 # has to be built up conditionally in Python here rather than listed
 # as a plain tuple like everything else.
 optional_datas = []
-if glob.glob("assets/hardware/*.dll"):
-    optional_datas.append(("assets/hardware/*.dll", "assets/hardware"))
+if glob.glob(os.path.join(REPO_ROOT, "assets", "hardware", "*.dll")):
+    optional_datas.append((os.path.join(REPO_ROOT, "assets", "hardware", "*.dll"), "assets/hardware"))
 else:
     print('NOTE: assets/hardware/*.dll not found -- building without CPU Temp '
           'support. See BUILD.md\'s "Hardware sensors" section.')
 
 a = Analysis(
-    ["app.py"],
+    [os.path.join(REPO_ROOT, "app.py")],
     # app.py (the repo-root launcher) does its own sys.path.insert(0,
     # ".../src") before importing hongtai_screen_app -- PyInstaller's
     # static analyzer can't follow that at scan time, so it's told
-    # here explicitly instead (paths below are relative to wherever
-    # `pyinstaller` is invoked from, i.e. the repo root -- see the
-    # build command above).
-    pathex=["src"],
+    # here explicitly instead.
+    pathex=[os.path.join(REPO_ROOT, "src")],
     binaries=[],
     datas=[
-        ("assets/icon.ico", "assets"),
+        (os.path.join(REPO_ROOT, "assets", "icon.ico"), "assets"),
         # The bundled dashboard background pictures (dashboard_theme.
         # py's BUNDLED_BACKGROUND_IMAGES) -- same "assets" dest dir as
         # the icon above, so paths.py's _resource_path() finds them at
         # sys._MEIPASS/assets/backgrounds/*.jpg the same way it finds
         # icon.ico.
-        ("assets/backgrounds/*.jpg", "assets/backgrounds"),
+        (os.path.join(REPO_ROOT, "assets", "backgrounds", "*.jpg"), "assets/backgrounds"),
         # The bundled display fonts (dashboard_theme.py's
         # FONT_FAMILIES), resolved through the same resource_path()
         # mechanism. Without these a frozen build silently falls back
         # to whatever generic sans Windows has, which is exactly the
         # "every theme looks the same" problem they were added to fix
         # -- so they're a real build dependency, not decoration.
-        ("assets/fonts/*.ttf", "assets/fonts"),
-        ("assets/fonts/*-OFL.txt", "assets/fonts"),
-        ("assets/fonts/LICENSES.md", "assets/fonts"),
+        (os.path.join(REPO_ROOT, "assets", "fonts", "*.ttf"), "assets/fonts"),
+        (os.path.join(REPO_ROOT, "assets", "fonts", "*-OFL.txt"), "assets/fonts"),
+        (os.path.join(REPO_ROOT, "assets", "fonts", "LICENSES.md"), "assets/fonts"),
         # The built React frontend (see BUILD.md/README.md -- `cd
         # frontend && npm install && npm run build` before running
         # pyinstaller) -- control_server.py serves this out of
@@ -110,7 +123,7 @@ a = Analysis(
         # split as the assets above). Without this a frozen build
         # would fall back to the plain-HTML placeholder page instead
         # of the real UI.
-        ("frontend/dist", "frontend/dist"),
+        (os.path.join(REPO_ROOT, "frontend", "dist"), "frontend/dist"),
     ] + optional_datas,
     hiddenimports=hidden_imports,
     hookspath=[],
@@ -145,5 +158,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon="assets/icon.ico",
+    icon=os.path.join(REPO_ROOT, "assets", "icon.ico"),
 )

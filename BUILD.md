@@ -47,9 +47,15 @@ Skip this only if `frontend/dist/` is already present and up to date
 
 ## 3. Build the exe
 
-Run this from the **repo root** (not from inside `packaging\`) — the
-spec's paths (`app.py`, `assets\icon.ico`, `frontend\dist`, the `src`
-pathex) are all relative to wherever `pyinstaller` is invoked from:
+Run this from the **repo root** so the output lands in `dist\` right
+there (PyInstaller's default output location is relative to wherever
+`pyinstaller` is invoked from) — the spec's own input paths (`app.py`,
+`assets\icon.ico`, `frontend\dist`, the `src` pathex) no longer
+depend on this either way, they're anchored on the spec file's own
+location, confirmed by a real CI run that hit the opposite assumption
+(PyInstaller resolving `app.py` relative to the spec file's own
+`packaging\` directory, not the invoking directory, even though this
+doc used to claim it worked the other way round):
 
 ```
 pyinstaller packaging\hongtai_screen.spec
