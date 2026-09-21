@@ -67,6 +67,15 @@ export function createShortcut() {
   return fetch("/api/shortcut", { method: "POST" }).then(asJson);
 }
 
+// Restarts the app as Administrator (a UAC prompt) so CPU Temp can
+// actually read hardware sensors -- see controller.py's
+// relaunch_elevated() docstring. This process closes itself down
+// shortly after responding, so the fetch here resolves normally even
+// though the backend it just talked to is about to disappear.
+export function relaunchElevated() {
+  return fetch("/api/relaunch_elevated", { method: "POST" }).then(asJson);
+}
+
 // Mirrors the official XTRM Lab app's "Keep playing when screen is
 // off" setting -- see power_state.py's docstring. Applies immediately,
 // no restart needed.

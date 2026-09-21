@@ -136,6 +136,25 @@ def _make_handler(controller: AppController):
                 elif path == "/api/keep_active_when_locked":
                     body = self._read_json_body()
                     self._send_json(200, controller.set_keep_active_when_locked(body.get("value")))
+                elif path == "/api/relaunch_elevated":
+                    # relaunch_elevated() already released the
+                    # single-instance mutex before spawning the elevated
+                    # copy (see single_instance._release_single_instance()),
+                    # so there's no race to worry about here -- this
+                    # process quitting a moment later is only about
+                    # letting the 200 below actually reach the browser
+                    # first, and releasing the COM port (controller.
+                    # close()) before this process is gone rather than
+                    # leaving that to whatever cleanup a bare os._exit()
+                    # would skip.
+                    controller.relaunch_elevated()
+                    self._send_json(200, {"ok": True})
+
+                    def _quit_soon():
+                        controller.close()
+                        os._exit(0)
+
+                    threading.Timer(0.75, _quit_soon).start()
                 elif path == "/api/dashboard/upload_image":
                     body = self._read_json_body()
                     self._send_json(200, controller.upload_dashboard_image(

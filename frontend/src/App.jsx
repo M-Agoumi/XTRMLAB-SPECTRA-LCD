@@ -32,6 +32,7 @@ export default function App() {
   const [actionError, setActionError] = useState(null);
   const [systemError, setSystemError] = useState(null);
   const [shortcutMsg, setShortcutMsg] = useState(null);
+  const [relaunchMsg, setRelaunchMsg] = useState(null);
   const [videoDraft, setVideoDraft] = useState({ path: "", loop: true, bw: false, audio: false, fps: "" });
   const [webpageDraft, setWebpageDraft] = useState({ url: "", interval: "0.1", reloadEvery: "" });
   const [settingsSaved, setSettingsSaved] = useState(null);
@@ -278,6 +279,13 @@ export default function App() {
       setShortcutMsg(null);
       const { path } = await api.createShortcut();
       setShortcutMsg(`Created: ${path}`);
+    });
+
+  const handleRelaunchElevated = () =>
+    runAction(async () => {
+      setRelaunchMsg(null);
+      await api.relaunchElevated();
+      setRelaunchMsg("Approve the prompt that just opened -- this window will close on its own.");
     });
 
   const running = !!state?.worker_alive;
@@ -603,6 +611,18 @@ export default function App() {
             <span className="hint">(Windows only)</span>
           )}
         </div>
+        {system?.platform === "win32" && system?.elevated === false && (
+          <div className="row">
+            <p className="hint">
+              CPU Temp reads "--" without Administrator (its sensor driver needs
+              it) -- restart elevated to fix it.
+            </p>
+            <button onClick={handleRelaunchElevated} disabled={busy}>
+              Restart as Administrator
+            </button>
+          </div>
+        )}
+        {relaunchMsg && <p className="hint">{relaunchMsg}</p>}
         {systemError && <p className="error">{systemError}</p>}
       </Collapsible>
 

@@ -23,13 +23,52 @@ import base64
 from . import config_store
 from . import desktop_shortcut
 from . import image_store
+from . import single_instance
 from . import startup_registration
 from . import theme_kwargs
 from . import weather
 from . import power_state
 from .driver import hongtai_screen
+from .paths import _app_base_dir
 from .screen_engine import ScreenEngine
 from .themes import dashboard_theme
+
+
+def _is_elevated():
+    """True/False if this process is running as Administrator, None on
+    anything but Windows (the question doesn't apply there). Same
+    IsUserAnAdmin() check scripts/check_sensors.py already prints,
+    exposed through system_info() so the frontend can show its own
+    "CPU Temp needs Administrator" notice without a separate poll."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _elevated_relaunch_target():
+    """(executable, argument string) for ShellExecuteW's "runas" verb --
+    same source-vs-frozen resolution as startup_registration.py's own
+    _launch_command(), anchored on _app_base_dir() rather than
+    sys.modules["__main__"].__file__ for the same reason that one's
+    docstring gives (this same code runs whether __main__ ended up
+    being run_v2_app.py or run_backend.py). Split into two return
+    values instead of one quoted command-line string, since
+    ShellExecuteW (unlike schtasks' /tr) takes them separately.
+
+    No --autostart: this relaunch is for someone already sitting at the
+    open app clicking a button, who wants the window back, not a
+    tray-only, hidden restart."""
+    if getattr(sys, "frozen", False):
+        return sys.executable, ""
+    app_path = os.path.join(_app_base_dir(), "scripts", "run_v2_app.py")
+    py_dir = os.path.dirname(sys.executable)
+    pythonw = os.path.join(py_dir, "pythonw.exe")
+    interpreter = pythonw if os.path.isfile(pythonw) else sys.executable
+    return interpreter, f'"{app_path}"'
 
 
 class AppController:
@@ -207,7 +246,57 @@ class AppController:
             "startup_enabled": startup_registration.is_startup_enabled(log=log or (lambda m: None)),
             "keep_active_when_locked": keep_active,
             "keep_active_supported": power_state.IS_WINDOWS,
+            # True/False on Windows, None elsewhere -- see _is_elevated().
+            # The frontend uses this to show/hide the "CPU Temp needs
+            # Administrator" notice (dashboard_theme.get_cpu_temp_c()'s
+            # docstring has the underlying reason).
+            "elevated": _is_elevated(),
         }
+
+    def relaunch_elevated(self):
+        """Launches a fresh, elevated copy of this app (UAC prompt via
+        ShellExecuteW's "runas" verb) so the SystemInfos.exe helper's
+        sensor driver can actually load -- see dashboard_theme.
+        get_cpu_temp_c()'s docstring: without Administrator, that
+        helper writes one frame and exits, and CPU Temp is stuck at
+        "--" no matter how many times the theme is restarted, because
+        the *process*, not the panel connection, is what's missing the
+        privilege.
+
+        Only spawns the new copy -- does NOT quit this one.
+        control_server.py's /api/relaunch_elevated handler does that
+        itself, a moment after this returns, so the HTTP response for
+        this call reaches the browser before this process (and the
+        port it's answering on) goes away.
+
+        Raises RuntimeError on anything but Windows, and if the UAC
+        prompt is declined or the launch otherwise fails (ShellExecuteW
+        returns <= 32 for either case, with no way to tell them apart
+        from here) -- control_server.py turns that into a 400 the
+        frontend shows as an error instead of silently doing nothing.
+        """
+        if sys.platform != "win32":
+            raise RuntimeError("Restarting elevated is Windows-only.")
+        import ctypes
+        target, args = _elevated_relaunch_target()
+        # Release *before* spawning, not after -- see
+        # single_instance._release_single_instance()'s docstring for
+        # why this ordering is the whole point: it's what keeps the
+        # elevated copy's own single-instance check from racing this
+        # process's eventual exit and losing.
+        single_instance._release_single_instance()
+        SW_SHOWNORMAL = 1
+        result = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", target, args, None, SW_SHOWNORMAL)
+        if result <= 32:
+            # Didn't actually launch (declined UAC prompt, or something
+            # else went wrong) -- this process is carrying on as normal,
+            # so it needs its single-instance protection back rather
+            # than staying unprotected until it eventually exits.
+            single_instance._ensure_single_instance()
+            raise RuntimeError(
+                "The elevation prompt was declined, or the relaunch failed to start.")
+        self._log("(system: relaunching elevated for CPU temperature -- this window will close)")
 
     def set_keep_active_when_locked(self, value):
         """Whether a running theme keeps pushing frames to the panel

@@ -11,6 +11,30 @@ _single_instance_mutex_handle = None  # kept alive for the process's whole
 # lifetime on purpose -- see _ensure_single_instance()'s docstring.
 
 
+def _release_single_instance():
+    """Closes this process's handle on the single-instance mutex right
+    now, instead of waiting for it to be released the normal way (by
+    this process actually exiting) -- the one caller that needs this is
+    controller.py's relaunch_elevated(), which spawns a *second* copy
+    of this app (elevated) shortly before this one quits. Closing the
+    last handle on a Windows kernel object happens synchronously, so
+    calling this immediately before that spawn leaves no race window at
+    all for the new copy's own _ensure_single_instance() check --
+    unlike just letting this process's exit release it "soon", which
+    the freshly-spawned copy could easily win against (and, having lost,
+    would just bring this now-closing window to the front and exit,
+    silently undoing the whole point of restarting elevated)."""
+    global _single_instance_mutex_handle
+    if sys.platform != "win32" or _single_instance_mutex_handle is None:
+        return
+    import ctypes
+    try:
+        ctypes.windll.kernel32.CloseHandle(_single_instance_mutex_handle)
+    except Exception:  # noqa: BLE001
+        pass
+    _single_instance_mutex_handle = None
+
+
 def _ensure_single_instance():
     """Windows-only: refuses to let a second copy of this app start, and
     instead brings the already-running one to the front (even if it's
