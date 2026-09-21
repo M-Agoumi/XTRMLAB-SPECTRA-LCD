@@ -31,12 +31,14 @@ python app.py
 ```
 
 That's the desktop app with every theme available (see "Desktop app"
-below for what it does). First run: make sure the vendor "XTRM lab" app
-isn't running — only one program can hold the panel's COM port at a
-time, see **Setup** below for how to fully close it. Then pick a theme
-tab in the app and hit Start; nothing personal is bundled, so the
-Dashboard tab's "nothing playing" picture and the Video tab's clip are
-things you point at your own files (or just leave blank).
+below for what it does): a system tray icon, a window showing the
+React UI, driving the panel over a local control API. First run: make
+sure the vendor "XTRM lab" app isn't running — only one program can
+hold the panel's COM port at a time, see **Setup** below for how to
+fully close it. Then pick a theme tab in the app and hit Start; nothing
+personal is bundled, so the Dashboard tab's "nothing playing" picture
+and the Video tab's clip are things you point at your own files (or
+just leave blank).
 
 Prefer a double-clickable app with nothing to install? See
 [`BUILD.md`](BUILD.md) for building a standalone `Hongtai Screen.exe`.
@@ -51,26 +53,31 @@ than crashing the others.
 ## Project layout
 
 ```
-app.py                     -- thin launcher; this is what you run/shortcut
+app.py                     -- the app's single entry point; this is what
+                               you run/shortcut (see its own docstring
+                               for the backend/window dispatch it does)
 requirements.txt
 src/hongtai_screen_app/     -- the actual implementation
-    app.py                  -- the Tkinter GUI + its main()
+    controller.py            -- start/stop/apply/config logic
+    control_server.py        -- the local HTTP control API
+    backend_app.py            -- ties the API + tray icon + window
+                                 process together; app.py's main entry
+    ui_window.py              -- the webview window process
     paths.py, config_store.py, startup_registration.py,
-    desktop_shortcut.py, single_instance.py, theme_worker.py,
-    tray_icon.py            -- the app-shell, one concern per module
+    desktop_shortcut.py, single_instance.py,
+    tray_icon.py             -- the app-shell, one concern per module
     driver/hongtai_screen.py -- the panel protocol driver
     themes/                  -- dashboard_theme.py, video_theme.py,
                                  webpage_theme.py, demo_clock.py
 scripts/                    -- standalone tools, run directly:
     list_screens.py, test_connection.py, blind_draw.py,
-    diag2_lines.py, make_launcher.py, run_backend.py, and a thin
-    CLI wrapper for each theme (dashboard_theme.py, video_theme.py,
-    etc.)
-frontend/                   -- optional React UI for the control API
-    (ROADMAP.md Phase 2) -- src/ is the app; dist/ is the built
-    bundle, committed so no Node toolchain is needed to just run
-    the app (see below)
-assets/                     -- icon.ico
+    diag2_lines.py, make_launcher.py, run_backend.py, run_ui.py,
+    run_v2_app.py, and a thin CLI wrapper for each theme
+    (dashboard_theme.py, video_theme.py, etc.)
+frontend/                   -- the React UI: src/ is the app; dist/ is
+    the built bundle, committed so no Node toolchain is needed to just
+    run the app (see below)
+assets/                     -- icon.ico, bundled backgrounds and fonts
 packaging/                  -- hongtai_screen.spec (PyInstaller)
 experiments/                -- throwaway spikes, see ROADMAP.md
 ```
@@ -80,18 +87,17 @@ experiments/                -- throwaway spikes, see ROADMAP.md
 reach the package. See **Files** below for what each module in
 `src/hongtai_screen_app/` actually does.
 
-### The control API + web UI (optional, alongside the Tkinter app)
+### Driving the panel without the window
 
-`python scripts/run_backend.py` runs a second, independent way to
-drive the panel: a local HTTP API (`127.0.0.1:8899` by default) with
-start/stop/apply/config endpoints, a live log stream, and the same
-`app_config.json` the Tkinter app uses. Opening
+`python scripts/run_backend.py` runs just the control API standalone,
+no tray icon or window: a local HTTP API (`127.0.0.1:8899` by default)
+with start/stop/apply/config endpoints, a live log stream, and the
+same `app_config.json` the full app uses. Opening
 `http://127.0.0.1:8899/` in a browser while it's running serves the
-committed `frontend/dist/` build — a small page with connection
-status, a live preview, and start/stop/apply/theme/port/brightness
-controls, talking to that same API. Don't run this alongside `python
+committed `frontend/dist/` build — the same UI the app's own window
+shows, talking to that same API. Don't run this alongside `python
 app.py` against the same COM port — same as running two copies of the
-GUI, they'll fight over the panel.
+app, they'll fight over the panel.
 
 Only touching `frontend/src/` requires Node — rebuild and re-commit
 the bundle with:
@@ -150,23 +156,26 @@ exactly when that's the case.
 python app.py
 ```
 
-A GUI (Tkinter, ships with Python already) that wraps all four themes
-below: pick the panel's port (or leave it on auto-detect), pick a theme
-tab, fill in that theme's settings, hit Start. Stop switches themes or
-lets you quit cleanly. Settings are remembered between runs
-(`app_config.json`, created next to `app.py`).
+A system tray icon plus a window (React UI, shown in a native webview)
+wrapping all four themes below: pick the panel's port (or leave it on
+auto-detect), pick a theme tab, fill in that theme's settings, hit
+Start. Stop switches themes or lets you quit cleanly. Settings are
+remembered between runs (`app_config.json`, created next to `app.py`).
+Closing the window dismisses it to the tray rather than quitting —
+right-click the tray icon for Show / Stop screen / Quit.
 
 Nothing personal is bundled -- the Dashboard tab's "nothing playing"
 image and the Video tab's clip are both things you pick yourself with
-the file-browser buttons; leave the Dashboard one unset and you get a
+the file-picker controls; leave the Dashboard one unset and you get a
 plain drawn placeholder icon instead, no file needed.
 
 It needs whatever the theme you actually use needs (see that theme's
-section below for its own `pip install` line) -- the GUI itself adds no
-extra dependencies beyond Tkinter. If you only ever plan to use one
-theme, `pip install`-ing just that theme's requirements is enough; a
-theme that's missing a dependency reports it in the log when you hit
-Start for that tab, it doesn't block the others.
+section below for its own `pip install` line) -- the app itself adds
+`pywebview` (the window) and, optionally, `pystray` (the tray icon) on
+top of that. If you only ever plan to use one theme, `pip install`-ing
+just that theme's requirements is enough; a theme that's missing a
+dependency reports it in the log when you hit Start for that tab, it
+doesn't block the others.
 
 Brightness always applies live, immediately, while something is
 running -- no Stop/Start needed. On the Dashboard tab specifically, the
@@ -178,10 +187,6 @@ effect, since those mean rebuilding the static background or reopening
 a different file/connection -- hit **Apply (restart)** next to Start/Stop
 instead of doing Stop then Start yourself; it does both in one click
 and comes back up on the same theme with your new settings.
-
-The window's height now sizes itself to whatever's actually in it
-(so the Log panel is never hidden below the fold); if you resize it
-smaller, drag it back rather than assuming content is missing.
 
 The Dashboard tab's live web mirror (lets you watch the panel from a
 phone on the same network) is off by default -- turning it on opens a
@@ -219,11 +224,12 @@ a real icon to double-click instead of a generic script file. Pass
 
 ### Running automatically at Windows startup
 
-Tick "Launch at Windows startup" near the top of the window (Windows
-only). This writes a small hidden-window launcher script into your
-Startup folder that runs `pythonw app.py --autostart` at login -- no
-console window, no need to log in and click Start yourself. It selects
-the Dashboard tab and starts it using whatever settings you last saved.
+Tick "Launch at Windows startup" in the app's settings (Windows only).
+This registers a Task Scheduler task, triggered at your logon, that
+runs `app.py --autostart` hidden, no console window, no need to log in
+and click Start yourself. It resumes whatever theme was last running
+(or starts the Dashboard tab if nothing was), using whatever settings
+you last saved.
 
 For that to run with no window/taskbar entry at all (a proper
 background/system-tray app instead of an open window), also install:
@@ -234,14 +240,15 @@ pip install pystray
 
 With `pystray` installed, `--autostart` hides straight into a system
 tray icon (right-click it for Show / Stop screen / Quit) instead of
-leaving an open window in the taskbar. Without it, the window just
-minimizes instead -- still runs, but stays visible in the taskbar.
+opening a window. Without it, the window opens anyway -- still runs,
+but visible, since running with no window and no way to bring one back
+would just look broken.
 
 You can also run autostart mode by hand:
 
 ```
-python app.py --autostart                  # Dashboard tab
-python app.py --autostart --theme video     # a different tab
+python app.py --autostart                  # resumes last theme, or Dashboard
+python app.py --autostart --theme video     # forces a specific tab
 ```
 
 ## Setup

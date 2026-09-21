@@ -1,17 +1,13 @@
 """
-controller.py -- AppController: the same start/stop/apply/config logic
-the Tkinter App class drives (see app.py), with no Tkinter dependency
-at all. Built for control_server.py's HTTP API (ROADMAP.md Phase 2),
-and the shape the eventual webview UI's backend is meant to run on.
+controller.py -- AppController: the start/stop/apply/config logic
+behind control_server.py's HTTP API, which backend_app.py's tray +
+webview UI runs on. No UI toolkit dependency at all -- fully headless
+and fully testable without a display.
 
-The Tkinter app is NOT wired to this yet -- it keeps its own inline
-copy of this logic for now (see theme_kwargs.py's docstring for why),
-including its own ThemeWorker-based start/stop. This class is
-additive: a second, independent way to drive the same underlying
-modules (config_store, theme_kwargs, the driver), fully headless and
-fully testable without a display -- and, unlike the Tkinter app, built
-on ScreenEngine (screen_engine.py) instead of ThemeWorker, so switching
-themes here reuses one persistent connection instead of reconnecting.
+Built on ScreenEngine (screen_engine.py), not a per-start worker
+thread, so switching themes reuses one persistent connection instead
+of reconnecting each time -- see screen_engine.py's own docstring for
+why that's the design.
 """
 import io
 import json
@@ -93,9 +89,8 @@ class AppController:
         )
 
     # ------------------------------------------------------------------ #
-    # logging / pub-sub -- ThemeWorker calls this exactly like the
-    # Tkinter app's self._log does; SSE clients get every line pushed to
-    # them live, plus the last LOG_HISTORY lines on first connect.
+    # logging / pub-sub -- SSE clients get every line pushed to them
+    # live, plus the last LOG_HISTORY lines on first connect.
     # ------------------------------------------------------------------ #
     def _log(self, msg):
         msg = str(msg)
@@ -149,11 +144,9 @@ class AppController:
             return dict(self.cfg)
 
     def update_config(self, patch: dict):
-        """Shallow-merges `patch` into the config and saves it -- same
-        "last write wins, per top-level key" shape app_config.json
-        already has (e.g. a `dashboard` patch replaces the whole
-        `dashboard` sub-dict, matching how the Tkinter app's own
-        _save_current_config() writes it)."""
+        """Shallow-merges `patch` into the config and saves it -- "last
+        write wins, per top-level key" (e.g. a `dashboard` patch
+        replaces the whole `dashboard` sub-dict)."""
         if not isinstance(patch, dict):
             raise ValueError("config patch must be a JSON object")
         with self._lock:
@@ -163,9 +156,9 @@ class AppController:
 
     def set_brightness(self, value):
         """Brightness is special-cased instead of going through
-        update_config(): app.py's own slider applies it *live*, with no
-        restart, by calling screen.set_brightness() directly on the
-        running HongtaiScreen the moment the slider moves (it's just a
+        update_config(): this applies it *live*, with no restart, by
+        calling screen.set_brightness() directly on the running
+        HongtaiScreen the moment the slider moves (it's just a
         per-frame software dim -- see the driver's set_brightness()
         docstring -- so there's nothing to reconnect). A generic config
         patch only takes effect on the next Start/Apply, which would
@@ -192,11 +185,10 @@ class AppController:
     # ------------------------------------------------------------------ #
     # Windows integration -- "Launch at Windows startup" / desktop
     # shortcut. Thin wrappers around startup_registration.py/
-    # desktop_shortcut.py (Phase 1's extraction already made these
-    # Tkinter-independent); routed through here rather than called
+    # desktop_shortcut.py, routed through here rather than called
     # directly from control_server.py so every controller action is
     # logged/handled the same way, and so a future caller other than
-    # the HTTP API (a future in-process UI, say) gets the same surface.
+    # the HTTP API gets the same surface.
     # ------------------------------------------------------------------ #
     def system_info(self, log=None):
         """`log`: pass self._log to have the schtasks /query this runs
@@ -267,8 +259,8 @@ class AppController:
     def upload_dashboard_image(self, filename, data_b64):
         """Saves a browser-picked image (base64-encoded, since a
         browser file input can only hand back the file's *content*, not
-        a real filesystem path the way Tkinter's Browse dialog can) into
-        this app's own managed image folder (image_store.py) and
+        a real filesystem path) into this app's own managed image
+        folder (image_store.py) and
         returns its stored path -- the caller then saves THAT path
         through save_dashboard_background()/save_dashboard_now_playing()/
         save_dashboard_elements(), same as if it had been typed in
@@ -291,9 +283,9 @@ class AppController:
         without needing Start/Apply or even Save. Only ever reads a
         path already under image_store.IMAGES_DIR (image_store.
         is_managed()): the canvas only ever hands this back a path IT
-        was given by upload_dashboard_image()/Tkinter's Browse dialog in
-        the first place, never anything the browser typed in itself, but
-        this is still the one place a client-supplied filesystem path
+        was given by upload_dashboard_image() in the first place, never
+        anything the browser typed in itself, but this is still the one
+        place a client-supplied filesystem path
         reaches disk, so it's checked regardless. Raises ValueError for
         anything outside that folder or that doesn't exist."""
         if not path or not image_store.is_managed(path):
@@ -556,8 +548,7 @@ class AppController:
         next frame). Doesn't validate image_path exists or mode/scheme
         are known keys -- dashboard_theme.py already falls back to the
         default background silently if the image can't be opened or a
-        key is unrecognized, same tolerance app.py's own Tkinter picker
-        has always relied on."""
+        key is unrecognized."""
         if not isinstance(background, dict):
             raise ValueError("background must be an object")
         with self._lock:
@@ -584,8 +575,7 @@ class AppController:
         track title -- same merge-into-"dashboard" shape as
         save_dashboard_background(), but unlike the background these
         two are live settings dashboard_theme.py re-reads every frame
-        (see set_default_art_path()/set_not_playing_message()), the
-        same way app.py's Tkinter Dashboard tab has always applied them
+        (see set_default_art_path()/set_not_playing_message()), applied
         as you type, no Stop/Start needed -- so this applies them to
         the running dashboard_theme module immediately too, not just on
         the next Start/Apply. Only `default_art_path`/
@@ -966,9 +956,7 @@ class AppController:
         """Scans for Hongtai-family panels right now (driver.
         find_hongtai_ports() -- matches on USB VID, so it finds any
         rebrand of this same hardware, not just XTRM Lab's), for the web
-        UI's "Detect screens" button. Same underlying scan app.py's own
-        "Refresh" button next to its port Combobox already uses -- this
-        is that scan, exposed over HTTP for the headless controller.
+        UI's "Detect screens" button, exposed over HTTP.
 
         Each returned port's `value` is exactly what should be saved as
         `cfg["port"]` (a ScreenPort.label -- see _selected_port()'s
@@ -997,19 +985,15 @@ class AppController:
         """app_config.json's "port" is a human-readable *label* (e.g.
         "COM3  (VID 33C3:7804 -- ...)  USB Serial Device (COM3)"), not
         an openable device path -- see ScreenPort.label in the driver.
-        app.py's own _selected_port() never opens that string directly
-        either: it rescans find_hongtai_ports() and looks up the
-        matching candidate's real .device (e.g. "COM3") by comparing
-        labels, because the only thing worth persisting across restarts
-        is *which physical port the user picked*, not a device name
-        that can shift across reboots/replugs. This does the same
-        lookup, so a saved selection behaves identically whether it's
-        driven from the Tkinter GUI or this headless controller.
+        This never opens that string directly: it rescans
+        find_hongtai_ports() and looks up the matching candidate's real
+        .device (e.g. "COM3") by comparing labels, because the only
+        thing worth persisting across restarts is *which physical port
+        the user picked*, not a device name that can shift across
+        reboots/replugs.
 
         Returns None (auto-detect) if the saved label doesn't match any
-        port currently plugged in -- same fallback app.py's
-        _refresh_ports() does when the saved selection isn't in the
-        current port list any more."""
+        port currently plugged in."""
         label = self.cfg.get("port", config_store.AUTO_DETECT)
         if not label or label == config_store.AUTO_DETECT:
             return None
@@ -1023,10 +1007,9 @@ class AppController:
         return None
 
     # ------------------------------------------------------------------ #
-    # start / stop / apply -- mirrors app.py's _on_start()/_on_stop()/
-    # _on_apply()/_on_theme_finished(), minus every Tk widget touch.
+    # start / stop / apply
     #
-    # There is no "already running" guard on start() any more: calling
+    # There is no "already running" guard on start(): calling
     # it while another theme is active is exactly what live-switching
     # means, and ScreenEngine.switch() handles interrupting whatever
     # was running and reusing the existing connection for the new one
@@ -1093,11 +1076,10 @@ class AppController:
 
     def apply(self):
         """Re-reads the currently-active theme's settings from config
-        and switches to it again -- same one-click "pick up my config
-        changes" the Tkinter app's Apply button does. Under the old
-        ThemeWorker-per-theme design this meant a full stop+reconnect;
-        now it's just another switch() on the same connection, same as
-        picking a different theme from the dropdown."""
+        and switches to it again -- one-click "pick up my config
+        changes". Just another switch() on the same connection, same as
+        picking a different theme from the dropdown -- see
+        screen_engine.py for why that's cheap (no stop+reconnect)."""
         with self._lock:
             if self.running_theme is None:
                 raise RuntimeError("nothing running to restart -- use start() instead")

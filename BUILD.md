@@ -24,11 +24,28 @@ If you use `webpage_theme.py` (Playwright), also run
 `playwright install chromium` in this environment first -- see the
 Playwright note below, though, before assuming it belongs in the exe.
 
-## 2. Build
+## 2. Build the frontend
+
+The exe bundles the React UI as static files, not as source -- build
+it once (needs Node; this step doesn't need to happen in the Python
+build_venv above):
+
+```
+cd frontend
+npm install
+npm run build      # writes frontend/dist/
+cd ..
+```
+
+Skip this only if `frontend/dist/` is already present and up to date
+(e.g. you haven't touched `frontend/src/` since the last build) --
+`git status` will show it as unmodified in that case.
+
+## 3. Build the exe
 
 Run this from the **repo root** (not from inside `packaging\`) — the
-spec's paths (`app.py`, `assets\icon.ico`, the `src` pathex) are all
-relative to wherever `pyinstaller` is invoked from:
+spec's paths (`app.py`, `assets\icon.ico`, `frontend\dist`, the `src`
+pathex) are all relative to wherever `pyinstaller` is invoked from:
 
 ```
 pyinstaller packaging\hongtai_screen.spec
@@ -36,9 +53,12 @@ pyinstaller packaging\hongtai_screen.spec
 
 This reads `packaging\hongtai_screen.spec` (already in this repo, see
 there for what it does and why) and produces `dist\Hongtai Screen.exe`
-— a single, no-console, icon-bearing executable.
+— a single, no-console, icon-bearing executable that bundles both
+halves of the app (backend/tray and the webview window -- see
+`app.py`'s own docstring for the `--ui` dispatch that makes one exe
+cover both).
 
-## 3. Test it
+## 4. Test it
 
 Run `dist\Hongtai Screen.exe` directly. Things worth specifically
 checking, since none of this was testable from here (a Linux sandbox
@@ -58,7 +78,13 @@ built the spec, but never ran the actual .exe):
   testable outside real Windows, so double-check it works.
 - **The system tray icon** (needs `pystray`, already in
   `requirements.txt`) — closing the window should dismiss to tray, not
-  quit.
+  quit, and clicking "Show" should spawn the window process again
+  (`--ui`, see `app.py`'s docstring) rather than trying to run
+  `run_ui.py` as a separate script, which won't exist next to a frozen
+  build.
+- **The webview window itself** — if WebView2 isn't present on the
+  build/test machine, `ui_window.py` should show a clear message box
+  with a download link, not a silent failure or a raw traceback.
 - **The Dashboard tab's background image picker and web mirror.**
 - Windows Defender / SmartScreen may flag a brand-new, unsigned exe on
   first run ("Windows protected your PC") — this is normal for any
@@ -87,8 +113,8 @@ built the spec, but never ran the actual .exe):
   — expect the exe to be a few hundred MB once numpy/opencv/pycairo are
   all in it. That's normal for a bundled Python + native-library app,
   not a packaging mistake.
-- The spec disables UPX compression on purpose — UPX-packed
-  Tkinter/opencv builds are a common source of Windows Defender false
+- The spec disables UPX compression on purpose — UPX-packed opencv/
+  webview builds are a common source of Windows Defender false
   positives, and the size savings aren't worth that headache for a
   release build.
 

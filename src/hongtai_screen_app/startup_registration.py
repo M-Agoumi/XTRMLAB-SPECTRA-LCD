@@ -1,12 +1,8 @@
 """
 startup_registration.py -- the "Launch at Windows startup" feature: a
-Task Scheduler entry (trigger: at this user's logon) that launches
-scripts/run_v2_app.py --autostart hidden, no console. Split out of
-app.py (Phase 1 of ROADMAP.md's v2.0 rewrite) -- nothing here touches
-Tkinter, it's pure Windows/filesystem plumbing.
-
-Registers scripts/run_v2_app.py --autostart (the backend + webview UI),
-not app.py -- see enable_startup()'s docstring.
+Task Scheduler entry (trigger: at this user's logon) that launches the
+app with `--autostart`, hidden, no console. Pure Windows/filesystem
+plumbing.
 
 Was a hidden-window VBScript dropped in the Startup folder until a user
 report ("takes over a minute to show up, the AIO screen's own vendor
@@ -321,34 +317,27 @@ def _launch_command():
     VBScript. Reused as-is by enable_startup() for schtasks' /tr.
 
     Deliberately does NOT resolve the app path via
-    `sys.modules["__main__"].__file__` (the way this function used to,
-    and the way desktop_shortcut.py's create_desktop_shortcut() still
-    briefly did): this is reachable from more than one __main__ -- the
-    exact same control_server.py REST endpoint the web frontend's
-    "Launch at Windows startup" checkbox hits regardless of whether the
-    control server behind it happens to be scripts/run_v2_app.py (the
-    real thing), scripts/run_backend.py (a headless dev/test server),
-    or app.py (the old Tkinter GUI, kept for manual use). Ticking this
+    `sys.modules["__main__"].__file__`: this is reachable from more
+    than one __main__ -- the exact same control_server.py REST endpoint
+    the web frontend's "Launch at Windows startup" checkbox hits
+    regardless of whether the control server behind it happens to be
+    scripts/run_v2_app.py (the real thing) or scripts/run_backend.py (a
+    headless dev/test server with no window of its own). Ticking this
     checkbox while the wrong one was __main__ silently baked THAT
-    script into the startup entry instead -- which, since only
-    run_v2_app.py opens the real app window, could leave "Launch at
-    Windows startup" pointing at something that can never show anything
-    a later double-click of the desktop icon could find. Resolving via
-    `_app_base_dir()` instead (anchored on this package's own on-disk
-    location, not on whichever script happened to be running) always
-    means the one real scripts/run_v2_app.py, regardless of which entry
-    point's UI this was called from.
+    script into the startup entry instead -- which could leave "Launch
+    at Windows startup" pointing at something that can never show
+    anything a later double-click of the desktop icon could find.
+    Resolving via `_app_base_dir()` instead (anchored on this package's
+    own on-disk location, not on whichever script happened to be
+    running) always means the one real scripts/run_v2_app.py,
+    regardless of which entry point's UI this was called from.
 
     Uses pythonw.exe (no console window) when it's sitting next to
     whatever interpreter is actually running this, same fallback as
     before if it isn't there."""
     if getattr(sys, "frozen", False):
         # Frozen build: sys.executable IS the app -- one self-contained
-        # .exe, no separate interpreter to pick. NOTE: the current
-        # PyInstaller spec (packaging/hongtai_screen.spec) still
-        # packages app.py, not run_v2_app.py + the webview UI -- see
-        # desktop_shortcut.py's create_desktop_shortcut() docstring.
-        # This branch is future Phase 7 packaging work.
+        # .exe, no separate interpreter to pick.
         return f'"{sys.executable}" --autostart'
     app_path = os.path.join(_app_base_dir(), "scripts", "run_v2_app.py")
     py_dir = os.path.dirname(sys.executable)

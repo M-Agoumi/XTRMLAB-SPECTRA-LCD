@@ -2,12 +2,20 @@
 #
 # PyInstaller build spec for the desktop app -- produces a single
 # "Hongtai Screen.exe" with no console window, the app icon baked in,
-# and assets/icon.ico bundled as a resource (paths.py's
-# _resource_path() finds it inside sys._MEIPASS at runtime).
+# and assets/icon.ico + the built React frontend bundled as resources
+# (paths.py's _resource_path() / control_server.py's frontend lookup
+# find them inside sys._MEIPASS at runtime).
+#
+# This ONE .exe is both halves of the app: launched plain or with
+# --autostart it's the backend + tray icon; launched with --ui (which
+# only backend_app.py itself ever does, spawning a second copy of this
+# same .exe as a child process) it's the webview window instead -- see
+# app.py's own docstring for why a single-file frozen build needs that
+# dispatch rather than two separate scripts.
 #
 # Build (Windows only, from the REPO ROOT -- not from this packaging/
 # folder -- so the relative paths below resolve correctly; see
-# BUILD.md):
+# BUILD.md, which also covers building frontend/dist/ first):
 #
 #   pip install pyinstaller
 #   pyinstaller packaging/hongtai_screen.spec
@@ -16,7 +24,8 @@
 # app_config.json is created next to whatever folder you put the exe
 # in (see paths.py's _app_base_dir()), so it's fine to move the exe
 # around after building; nothing else needs to travel with it -- the
-# app package (src/) and icon are both baked in.
+# app package (src/), the built frontend, and the icon are all baked
+# in.
 
 import sys
 
@@ -30,7 +39,12 @@ hidden_imports = [
     "winsdk.windows.media.control",
     "winsdk.windows.storage.streams",
     "pystray._win32",      # pystray picks its backend at import time
-    "PIL._tkinter_finder",
+    # pywebview (ui_window.py) picks its rendering backend at import
+    # time too, same reasoning as pystray above -- edgechromium is the
+    # one that actually matters on Windows (WebView2), winforms is its
+    # fallback on an older pywebview/no WebView2 install.
+    "webview.platforms.edgechromium",
+    "webview.platforms.winforms",
 ]
 
 a = Analysis(
@@ -60,6 +74,16 @@ a = Analysis(
         ("assets/fonts/*.ttf", "assets/fonts"),
         ("assets/fonts/*-OFL.txt", "assets/fonts"),
         ("assets/fonts/LICENSES.md", "assets/fonts"),
+        # The built React frontend (see BUILD.md/README.md -- `cd
+        # frontend && npm install && npm run build` before running
+        # pyinstaller) -- control_server.py serves this out of
+        # paths.py's frontend_dist_path(), which resolves to
+        # frontend/dist/ next to the repo root when running from
+        # source, or sys._MEIPASS/frontend/dist when frozen (same
+        # split as the assets above). Without this a frozen build
+        # would fall back to the plain-HTML placeholder page instead
+        # of the real UI.
+        ("frontend/dist", "frontend/dist"),
     ],
     hiddenimports=hidden_imports,
     hookspath=[],
@@ -85,7 +109,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,          # UPX-compressing a Tkinter/opencv/playwright build
+    upx=False,          # UPX-compressing an opencv/webview/playwright build
                          # is a common source of false-positive AV flags;
                          # leave it off for a release build
     console=False,       # no console window -- same effect as pythonw.exe

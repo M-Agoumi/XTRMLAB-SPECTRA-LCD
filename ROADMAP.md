@@ -3201,28 +3201,40 @@ now point at `scripts/run_v2_app.py` (backend_app.py: the control API
 silently pointed at whichever script happened to be running the
 control server the one time either button was clicked, which is how
 the desktop icon ended up doing nothing at all (see CHANGELOG.md).
-`backend_app.py` gained its own version of app.py's "show yourself on
-a second launch" mechanism (`BackendApp.start_show_watcher()`, a
-daemon thread polling `SHOW_TRIGGER_PATH` since this process has no Tk
-event loop to piggyback a poll onto) -- without it, double-clicking
-the icon while already running would still do nothing, just like the
-bug this was meant to fix. `pywebview` is now a required (not
-commented-out) line in requirements.txt. `app.py`'s Tkinter GUI is
-untouched and still works for manual/headless use (`python app.py`),
-it's simply not what gets launched automatically any more.
+`backend_app.py` gained its own version of "show yourself on a second
+launch" (`BackendApp.start_show_watcher()`, a daemon thread polling
+`SHOW_TRIGGER_PATH` since this process has no UI event loop to
+piggyback a poll onto) -- without it, double-clicking the icon while
+already running would still do nothing, just like the bug this was
+meant to fix. `pywebview` is now a required (not commented-out) line
+in requirements.txt.
 
-Still outstanding, now that source-run cutover is done:
+**Full cutover done.** The old Tkinter GUI (`app.py`'s original
+implementation, `theme_worker.py`) is deleted rather than left around
+as unreachable dead code -- see CHANGELOG.md's [2.0.0] entry for the
+full list. Root `app.py` is now the new stack's own single entry
+point, for both source and frozen runs:
 
-- PyInstaller spec bundles the built frontend as data files
-  (`_resource_path()` already handles `sys._MEIPASS`) **and packages
-  `scripts/run_v2_app.py` + the webview UI, not `app.py`** -- the
-  frozen-build branches in `desktop_shortcut.py`/
-  `startup_registration.py` still point at the old Tkinter .exe until
-  this is done.
+- PyInstaller spec bundles the built frontend as a data file and
+  packages `app.py` itself (which now dispatches to the backend or the
+  webview window process depending on `--ui`, rather than to the old
+  Tkinter GUI) -- see the spec's own comments and `app.py`'s
+  docstring for the `--ui` re-invocation mechanism a single-file
+  frozen build needs. `desktop_shortcut.py`/`startup_registration.py`'s
+  frozen-build branches already pointed at `sys.executable` generically
+  (not hardcoded to the old GUI), so they needed no change once the
+  spec itself was fixed.
+- `control_server.py`'s frontend lookup was actually broken for a
+  frozen build until this pass -- it resolved `frontend/dist` via
+  `_app_base_dir()`, which for a frozen build means "next to the
+  .exe", not inside the PyInstaller bundle where the spec's `datas`
+  actually puts it. Fixed via a new `paths.py` function,
+  `frontend_dist_path()`, mirroring `_resource_path()`'s existing
+  `sys._MEIPASS`-aware resolution.
 - WebView2 presence check with a clear message + download link if
-  missing.
-- BUILD.md gains the frontend build step.
-- Tag v2.0.0.
+  missing -- `ui_window.py`.
+- BUILD.md gained the frontend build step.
+- Tag v2.0.0 -- see CHANGELOG.md.
 
 ## Risks and open questions
 

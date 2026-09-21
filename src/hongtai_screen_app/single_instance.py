@@ -1,10 +1,7 @@
 """
-single_instance.py -- refuses to let a second copy of this app start, and
-brings the already-running one to the front instead. Split out of app.py
-(Phase 1 of ROADMAP.md's v2.0 rewrite) -- the mutex check itself has
-nothing to do with Tkinter; only the "bring to front" fallback's error
-box borrows tkinter.messagebox, and only if FindWindowW can't even
-locate the other instance's window.
+single_instance.py -- refuses to let a second copy of this app start,
+and brings the already-running one to the front instead. Pure
+Windows/ctypes plumbing, no UI toolkit dependency.
 """
 import sys
 
@@ -88,13 +85,12 @@ def _bring_existing_window_to_front():
        to the front, or nothing visible happens at all) with no
        reliable way to detect that from here.
     2. Touching SHOW_TRIGGER_PATH's mtime -- picked up by the *running*
-       instance's own 100ms log-queue poll (see app.py's
-       App._poll_show_trigger()), which then raises its own window from
-       its own Tk main thread. Windows never gets a say in that, so
-       unlike FindWindowW this always works, just up to ~100ms slower.
-       Done unconditionally (not only when FindWindowW fails) since it's
-       the one guaranteed path and costs nothing extra when the other
-       one also worked."""
+       instance's own watcher thread (see backend_app.py's
+       start_show_watcher()), which then spawns/focuses its own window.
+       Windows never gets a say in that, so unlike FindWindowW this
+       always works, just up to ~200ms slower. Done unconditionally (not
+       only when FindWindowW fails) since it's the one guaranteed path
+       and costs nothing extra when the other one also worked."""
     import ctypes
     from .paths import SHOW_TRIGGER_PATH
 

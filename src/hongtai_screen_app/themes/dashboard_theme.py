@@ -1280,10 +1280,11 @@ def _gauge_box(g):
 # ---------------------------------------------------------------- Phase 4 --
 # elements: slots -> elements (ROADMAP.md Phase 4).
 #
-# DEFAULT_SLOTS/SLOT_KINDS above are still what app.py's Tkinter Dashboard
-# tab reads/writes (its 8 named dropdowns) and are kept exactly as they
-# were -- nothing here changes that UI or its config shape. What changes
-# is the *renderer*: build_static_background()/render_frame() no longer
+# DEFAULT_SLOTS/SLOT_KINDS above are the old (pre-Phase-4) 8-named-slot
+# config shape, kept exactly as they were for backward compatibility --
+# an app_config.json saved before "elements" existed still loads and
+# renders. What changes is the *renderer*: build_static_background()/
+# render_frame() no longer
 # compute 8 fixed gauge positions from a formula keyed by slot name; they
 # walk an arbitrary list of "elements" instead, each with its own
 # position/size/color/opacity (and a stored-but-not-yet-rendered rotation,
@@ -5035,8 +5036,7 @@ def _draw_image_element(img, el, width, height):
     opacity. Baked into the static background since it's a fixed
     picture, not a live reading -- a bad/missing/unreadable path is
     skipped silently rather than erroring the whole theme out, same
-    tolerance the background image and app.py's Tkinter background
-    picker already have."""
+    tolerance the background image picker already has."""
     path = el.get("image_path")
     if not path:
         return
@@ -7256,11 +7256,12 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     passing neither still renders today's default layout exactly as
     before.
 
-    `slots` is the old way (app.py's Tkinter Dashboard tab still reads/
-    writes this shape, and still calls this with `slots=`, never
-    `elements=` -- it's unaffected by any of this): picks which stat
-    each of the 4 big gauges (plus the 4 smaller ones) shows -- see
-    STAT_DEFS/DEFAULT_SLOTS/SLOT_KINDS. Defaults to DEFAULT_SLOTS if not
+    `slots` is the old (pre-"elements") way of picking which stat each
+    of the 4 big gauges (plus the 4 smaller ones) shows -- see
+    STAT_DEFS/DEFAULT_SLOTS/SLOT_KINDS. Kept for backward compatibility
+    with an app_config.json saved before "elements" existed --
+    theme_kwargs.py falls back to slots_to_elements(slots) whenever the
+    config has no "elements" key yet. Defaults to DEFAULT_SLOTS if not
     given (or only partially given), and is ignored entirely if
     `elements` is given.
 

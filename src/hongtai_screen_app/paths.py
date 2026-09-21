@@ -1,11 +1,8 @@
 """
-paths.py -- where this app's files live, on disk.
-
-Split out of app.py (Phase 1 of ROADMAP.md's v2.0 rewrite) because every
-future UI -- the current Tkinter one, and eventually the webview/React
-one -- needs the exact same answers to "where's the config", "where's
-the icon", "where's the startup-debug log", and none of that has
-anything to do with Tkinter.
+paths.py -- where this app's files live, on disk. Every entry point
+(app.py, scripts/run_backend.py, the tray/webview process) needs the
+exact same answers to "where's the config", "where's the icon",
+"where's the startup-debug log".
 """
 import os
 import sys
@@ -20,23 +17,21 @@ def _app_base_dir():
     Anchored on THIS file's own location (three parents up from
     src/hongtai_screen_app/paths.py is always the repo root), not on
     whatever script Python happened to be run as. It used to be
-    resolved via sys.modules["__main__"].__file__ instead -- fine back
-    when root app.py was the only legitimate entry point, but Phase 2
-    added a second one (scripts/run_backend.py, which runs the backend
-    with no Tkinter at all) that lives a directory below the repo root.
-    Resolving via __main__ made that script write its own separate
+    resolved via sys.modules["__main__"].__file__ instead -- that made
+    a second entry point (scripts/run_backend.py, which lives a
+    directory below the repo root) write its own separate
     scripts/app_config.json instead of sharing the real one next to
-    app.py -- exactly the "same app_config.json" run_backend.py's own
+    app.py, exactly the "same app_config.json" run_backend.py's own
     docstring promises. Anchoring on this file's location instead means
-    every entry point (app.py, scripts/run_backend.py, and whatever
-    Phase 2c's webview backend turns out to be) agrees on the same
-    directory, without needing to know about each other.
+    every entry point (app.py, scripts/run_backend.py, the tray/webview
+    process) agrees on the same directory, without needing to know
+    about each other.
 
-    startup_registration.py and desktop_shortcut.py still use
-    sys.modules["__main__"].__file__ directly, deliberately -- they're
-    solving a different problem (what command line actually points at
-    the real running script, for a Windows Startup/.lnk launcher),
-    where the __main__ script's own identity is exactly what's wanted.
+    startup_registration.py's _launch_command() and desktop_shortcut.py's
+    create_desktop_shortcut() also resolve their source-run target via
+    this same function now, for the same reason -- see their own
+    docstrings for the report that traced a broken Startup entry back to
+    trusting __main__ instead.
 
     Under a frozen PyInstaller build, this file's own location points
     inside a temporary extraction folder instead (a fresh one every
@@ -54,6 +49,21 @@ def _resource_path(*parts):
     inside the repo root's assets/ folder otherwise."""
     base = getattr(sys, "_MEIPASS", None) or _app_base_dir()
     return os.path.join(base, "assets", *parts)
+
+
+def frontend_dist_path():
+    """Path to the built React frontend's frontend/dist/ folder --
+    same sys._MEIPASS-vs-repo-root resolution as _resource_path()
+    above, just rooted one level higher (frontend/dist, not
+    assets/...) since hongtai_screen.spec bundles it under its own
+    top-level datas entry rather than inside assets/. Used by
+    control_server.py to find the static frontend build; without this,
+    a frozen build would look next to the .exe (where _app_base_dir()
+    alone points) instead of inside the extraction dir where
+    hongtai_screen.spec actually puts it, and silently fall back to
+    the plain-HTML placeholder page."""
+    base = getattr(sys, "_MEIPASS", None) or _app_base_dir()
+    return os.path.join(base, "frontend", "dist")
 
 
 # Public alias -- dashboard_theme.py's bundled background images
@@ -79,17 +89,17 @@ STARTUP_LOG_PATH = os.path.join(_app_base_dir(), "startup_debug.log")
 
 # A plain empty file next to app_config.json whose *mtime* is the whole
 # point -- see single_instance.py's _bring_existing_window_to_front()
-# and app.py's App._poll_show_trigger(). Touched by a second launch that
-# finds the app already running, polled by the first (real) instance's
-# existing 100ms log-queue timer; when its mtime moves forward, that
+# and backend_app.py's start_show_watcher(). Touched by a second launch
+# that finds the app already running, polled by the first (real)
+# instance's own watcher thread; when its mtime moves forward, that
 # instance shows/raises its own window. This is the RELIABLE way to
 # bring the running instance to front -- FindWindowW + SetForegroundWindow
 # is attempted first as a same-instant bonus (feels snappier when it
 # works) but Windows' foreground-window-stealing restrictions can
 # silently no-op it from another process with no way to detect that it
 # failed; this file-touch path always works within one poll tick
-# (<=100ms) because it's the app itself, on its own Tk main thread,
-# deciding to raise its own window -- nothing for Windows to block.
+# (<=200ms) because it's the app itself deciding to raise its own
+# window -- nothing for Windows to block.
 SHOW_TRIGGER_PATH = os.path.join(_app_base_dir(), "show_request.trigger")
 
 

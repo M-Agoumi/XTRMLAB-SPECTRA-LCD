@@ -1,9 +1,7 @@
 """
-config_store.py -- app_config.json load/save, and the couple of constants
-every UI needs to agree on (the auto-detect sentinel, the fixed theme-tab
-order). Split out of app.py (Phase 1 of ROADMAP.md's v2.0 rewrite) --
-none of this is Tkinter, and the future webview UI reads/writes the same
-file through the same functions.
+config_store.py -- app_config.json load/save, and the couple of
+constants every caller needs to agree on (the auto-detect sentinel,
+the fixed theme-tab order).
 """
 import json
 

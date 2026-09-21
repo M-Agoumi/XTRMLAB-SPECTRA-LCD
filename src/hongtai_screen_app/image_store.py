@@ -15,11 +15,10 @@ Not everyone browsing to a file realizes they're handing the app a
 *reference* to it rather than a copy either, so this isn't just an
 edge case.
 
-The fix: the moment an image is picked -- Tkinter's Browse dialog, or
-the web UI's upload -- a copy lands in this app's own managed folder,
-and it's THAT copy's path that ends up in app_config.json. The
-original file can move, get renamed, or get deleted afterward with no
-effect at all.
+The fix: the moment an image is picked -- the web UI's upload -- a copy
+lands in this app's own managed folder, and it's THAT copy's path that
+ends up in app_config.json. The original file can move, get renamed,
+or get deleted afterward with no effect at all.
 """
 import hashlib
 import io
@@ -90,16 +89,6 @@ def store_image_bytes(data, original_name):
     return dest
 
 
-def store_image_file(source_path):
-    """Copies an image already on disk (Tkinter's Browse dialog gives a
-    real path, unlike a browser) into IMAGES_DIR and returns the stored
-    copy's absolute path -- same validation/dedup as store_image_bytes,
-    just reading the source file first instead of taking bytes
-    directly. Raises ValueError on a missing/unreadable/non-image file,
-    or FileNotFoundError if `source_path` itself doesn't exist."""
-    with open(source_path, "rb") as f:
-        data = f.read()
-    return store_image_bytes(data, os.path.basename(source_path))
 
 
 def is_managed(path):

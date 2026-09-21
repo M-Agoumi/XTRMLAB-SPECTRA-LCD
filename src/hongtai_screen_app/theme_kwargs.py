@@ -1,27 +1,12 @@
 """
 theme_kwargs.py -- turns app_config.json's saved settings into the
-(theme_name, target, kwargs) tuple needed to actually start a theme --
-ThemeWorker for app.py's Tkinter UI, ScreenEngine.switch() for
-controller.py's headless backend.
-
-This is the one piece Phase 1 didn't extract: the Tkinter App class
-still builds these straight from its own tk.StringVar/BooleanVar
-widgets (see app.py's _dashboard_kwargs() etc.), not from the config
-dict. controller.py (the new headless backend -- see ROADMAP.md Phase
-2) has no widgets to read, only the same JSON shape
-config_store.load_config()/save_config() round-trip -- so these
-functions read straight from that dict instead. Every field here is
-already stored in its canonical form (dashboard.slots values are
-STAT_DEFS keys, not display labels; background.mode/scheme are preset
-keys) because that's what the Tkinter app itself already persists, so
-no label-to-key translation is needed here.
-
-The Tkinter app's own inline kwarg-builders aren't switched over to
-call these (yet) -- that would mean reordering when self.cfg gets
-synced from widget state, which is exactly the kind of GUI behavior
-change this backend-only pass is deliberately avoiding. Unifying them
-is expected once the GUI itself is wired to the same backend instance
-these functions were built for.
+(theme_name, target, kwargs) tuple ScreenEngine.switch() (screen_engine.py,
+driven by controller.py) needs to actually start a theme. Reads
+straight from the config dict config_store.load_config()/save_config()
+round-trips -- every field here is already stored in its canonical
+form (dashboard.slots values are STAT_DEFS keys, not display labels;
+background.mode/scheme are preset keys), so no label-to-key
+translation is needed here.
 """
 from .themes import dashboard_theme, video_theme, webpage_theme, demo_clock
 
@@ -117,8 +102,7 @@ BUILDERS = {
 def build(theme_name, cfg, port, brightness):
     """Raises ValueError for an unknown theme name, or for a theme
     that's missing settings it needs (no video file / URL picked yet)
-    -- same class of error the Tkinter app already shows in a message
-    box, just without the message box."""
+    -- the web UI surfaces this as an error message, not a crash."""
     try:
         builder = BUILDERS[theme_name]
     except KeyError:

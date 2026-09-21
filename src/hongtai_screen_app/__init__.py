@@ -2,14 +2,15 @@
 hongtai_screen_app -- the desktop app's actual implementation.
 
 Everything that isn't a standalone diagnostic/setup script (those live
-in scripts/, one level up) lives in this package: the Tkinter GUI
-(app.py), the app-shell modules it's built from (config, startup
-registration, desktop shortcut, single-instance, tray, worker thread),
-the panel protocol driver (driver/), and the theme renderers
-(themes/).
+in scripts/, one level up) lives in this package: the backend
+(controller.py, control_server.py, backend_app.py), the tray icon and
+webview window (tray_icon.py, ui_window.py), the app-shell modules
+they're built from (config, startup registration, desktop shortcut,
+single-instance), the panel protocol driver (driver/), and the theme
+renderers (themes/). The React frontend that talks to the backend over
+HTTP lives separately, in frontend/ at the repo root.
 
-Run the app with `python app.py` from the repo root -- that's a thin
-launcher that puts src/ on sys.path and calls into this package's
-app.main(). See ROADMAP.md for where this is headed (a webview/React
-UI over the same modules, minus app.py itself).
-"""
+Run the app with `python app.py` from the repo root -- a thin launcher
+that puts src/ on sys.path and dispatches into this package's
+backend_app.main() (or ui_window.main() for its own spawned window
+process -- see app.py's own docstring)."""

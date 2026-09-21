@@ -27,9 +27,9 @@ State machine, run on one dedicated background thread (`_loop`):
     same thread) -- switch()/stop() interrupt it via its stop_event
   - recovering (run() raised, not from an intentional stop) -- closes
     the dead screen, fires a real firmware restart (blind_restart, not
-    just a reconnect -- see theme_worker.py's docstring for why that
-    distinction matters), reconnects, retries -- up to RECOVERY_ATTEMPTS
-    times, mirroring ThemeWorker's own recovery logic
+    just a reconnect -- a wedged panel can need the actual restart
+    command to come back at all, see the driver's blind_restart()),
+    reconnects, retries -- up to RECOVERY_ATTEMPTS times
 
 switch() and stop() never block the caller waiting for the old theme
 to finish tearing down -- they just set the current run's stop_event
@@ -45,22 +45,21 @@ import time
 from .driver import hongtai_screen
 from .driver.hongtai_screen import HongtaiScreen
 
-RECOVERY_ATTEMPTS = 3  # same figure and same reasoning as theme_worker.py
+RECOVERY_ATTEMPTS = 3
 
 
 class ScreenEngine:
     """One instance = one persistent connection's worth of state.
     controller.py creates exactly one of these for the process's whole
-    lifetime (unlike the old per-start ThemeWorker) and calls switch()
+    lifetime and calls switch()
     every time the user picks a different theme or hits Start/Apply --
     there is no separate "already running" guard any more, because
     switching *while* something is running is exactly the point.
 
     Thread-safety: switch()/stop()/close() and the read-only accessors
-    are all safe to call from any thread (HTTP handler threads, the
-    Tkinter UI thread, etc.) -- only `_loop` (the engine's own
-    background thread) ever calls into a theme's run() or touches the
-    HongtaiScreen directly.
+    are all safe to call from any thread (HTTP handler threads, etc.)
+    -- only `_loop` (the engine's own background thread) ever calls
+    into a theme's run() or touches the HongtaiScreen directly.
     """
 
     def __init__(self, screen_factory=HongtaiScreen, log=print,
@@ -81,7 +80,7 @@ class ScreenEngine:
         #   as "nothing to auto-resume next launch" -- which would be
         #   wrong here, since something *was* still running right up
         #   until the process quit and should come back on the next
-        #   launch, exactly like app.py's Tkinter app already preserves.
+        #   launch (see backend_app.py's resume-on-launch logic).
         # on_finished(label): fired when the given theme's run() returns
         #   on its own (e.g. a non-looping video reaching its last
         #   frame) rather than being interrupted by switch()/stop().
@@ -194,8 +193,7 @@ class ScreenEngine:
         there's nothing left to auto-resume next launch. Firing it here
         was wiping that resume marker on every clean quit/restart, so
         quitting while something was running "forgot" it by the next
-        launch instead of coming back up the way app.py's Tkinter app
-        always has."""
+        launch instead of resuming on its own."""
         with self._lock:
             screen = self._screen
             self._screen = None
@@ -274,8 +272,7 @@ class ScreenEngine:
                     self._busy = False
                 if stop_event.is_set():
                     # An explicit stop()/switch() landed mid-error -- not
-                    # a fault to recover from, just noise (same reasoning
-                    # as theme_worker.py's identical check).
+                    # a fault to recover from, just noise.
                     self.log(f"(stopped: {e})")
                     return
                 self.log(f"ERROR: {e}")

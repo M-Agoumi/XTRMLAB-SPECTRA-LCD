@@ -1,13 +1,12 @@
 """
-desktop_shortcut.py -- the "Create Desktop Shortcut" feature. Split out
-of app.py (Phase 1 of ROADMAP.md's v2.0 rewrite) -- pure Windows/
-filesystem plumbing, no Tkinter involved.
+desktop_shortcut.py -- the "Create Desktop Shortcut" feature. Pure
+Windows/filesystem plumbing, no UI toolkit involved.
 
-Points at scripts/run_v2_app.py (backend_app.py's CLI shim), not
-app.py, since the React frontend + webview window is the actual
-shipped UI now (an early, partial Phase 7 cutover -- see
-backend_app.py's docstring). `python app.py` still works for
-manual/headless use, it's just not what the icon launches any more.
+Frozen build: the shortcut points straight at the packaged .exe (see
+create_desktop_shortcut() below). Source run: it points at
+scripts/run_v2_app.py (backend_app.py's CLI shim -- equivalent to
+`python app.py`, see that module's own docstring) via a hidden
+VBScript launcher (write_run_vbs() below).
 """
 import os
 import subprocess
@@ -79,19 +78,15 @@ def create_desktop_shortcut():
 
     Frozen build (the standalone .exe from BUILD.md): the shortcut
     points straight at the exe -- it's already windowless and already
-    carries its own icon (baked in at build time via hongtai_screen.spec).
-    NOTE: that spec still packages app.py (the Tkinter GUI), not
-    scripts/run_v2_app.py + the webview UI -- a frozen build of the new
-    stack is real future packaging work (ROADMAP.md Phase 7's PyInstaller
-    spec/WebView2-bundling concern), not something this early cutover
-    covers. This branch only matters once that packaging exists.
+    carries its own icon (baked in at build time via
+    hongtai_screen.spec), and launching it plain (no args) opens the
+    backend + window the same way `python app.py` does from source.
 
     Running from source (`pip install -r requirements.txt`, no build
     step): points at the same hidden "Launch Hongtai Screen.vbs"
     launcher write_run_vbs() above writes (written fresh here if
-    missing), targeting scripts/run_v2_app.py -- the backend + webview
-    UI, the actual shipped app now -- using icon.ico for the icon since
-    a .vbs file can't carry a custom one itself -- see
+    missing), targeting scripts/run_v2_app.py -- using icon.ico for the
+    icon since a .vbs file can't carry a custom one itself -- see
     scripts/make_launcher.py's own docstring for why a second .lnk file
     is needed for that.
 

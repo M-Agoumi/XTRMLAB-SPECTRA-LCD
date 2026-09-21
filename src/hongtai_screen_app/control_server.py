@@ -1,12 +1,12 @@
 """
-control_server.py -- the backend's local HTTP control API (ROADMAP.md
-Phase 2). Generalizes the driver's existing web-mirror server (a single
-/frame.jpg + one HTML page, tied to whichever HongtaiScreen happens to
-be connected) into the always-available API surface a UI process talks
-to: state, config get/set, start/stop/apply, a live log stream, and the
-frame feed -- all backed by one AppController instance (controller.py),
-which has no Tkinter dependency and works whether or not a screen is
-currently connected.
+control_server.py -- the backend's local HTTP control API. Generalizes
+the driver's existing web-mirror server (a single /frame.jpg + one
+HTML page, tied to whichever HongtaiScreen happens to be connected)
+into the always-available API surface the UI process talks to: state,
+config get/set, start/stop/apply, a live log stream, and the frame
+feed -- all backed by one AppController instance (controller.py),
+which has no UI toolkit dependency and works whether or not a screen
+is currently connected.
 
 **Binds to 127.0.0.1 only, on purpose.** Unlike the opt-in, LAN-facing
 web mirror (see hongtai_screen.py's enable_web_mirror()), this API can
@@ -20,12 +20,11 @@ stream) is plain HTTP/1.0: no Content-Length, the connection just
 stays open and the handler keeps writing `data: ...` lines to it until
 the client disconnects or the server shuts down.
 
-**Also serves the built frontend (ROADMAP.md Phase 2b), same origin.**
-Any GET that isn't one of the API routes above falls through to
-frontend/dist/ (Vite's build output -- see frontend/vite.config.js).
-This is deliberate, not just convenient: the whole point of the
-Phase 2 architecture is a UI process that talks to this backend over
-HTTP, and serving the UI from the same process/port it's already
+**Also serves the built frontend, same origin.** Any GET that isn't
+one of the API routes above falls through to frontend/dist/ (Vite's
+build output -- see frontend/vite.config.js). This is deliberate, not
+just convenient: the UI process (ui_window.py) talks to this backend
+over HTTP, and serving the UI from the same process/port it's already
 calling means there's no cross-origin request to worry about in
 production at all (dev-mode `npm run dev` uses Vite's own proxy
 instead, see vite.config.js). If frontend/dist/ hasn't been built yet,
@@ -41,11 +40,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .controller import AppController
-from .paths import _app_base_dir
+from .paths import frontend_dist_path
 
 DEFAULT_PORT = 8899
 
-FRONTEND_DIST = os.path.join(_app_base_dir(), "frontend", "dist")
+FRONTEND_DIST = frontend_dist_path()
 
 
 def _make_handler(controller: AppController):
@@ -301,7 +300,9 @@ def _make_handler(controller: AppController):
                 "<!doctype html><html><body style=\"font-family:sans-serif\">"
                 "<h3>Hongtai Screen -- control API</h3>"
                 "<p>This is the backend's local control API (127.0.0.1 only). "
-                "The real frontend isn't wired up yet -- see ROADMAP.md Phase 2."
+                "The built frontend (frontend/dist/) isn't present -- run "
+                "<code>npm install &amp;&amp; npm run build</code> in frontend/ "
+                "to get the real UI here instead of this placeholder."
                 "</p><ul>"
                 "<li><a href=\"/api/state\">/api/state</a></li>"
                 "<li><a href=\"/api/config\">/api/config</a></li>"

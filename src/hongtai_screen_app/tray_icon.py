@@ -1,11 +1,12 @@
 """
-tray_icon.py -- the system tray icon (Windows + pystray only). Split out
-of app.py (Phase 1 of ROADMAP.md's v2.0 rewrite): this class only ever
-talks back to its caller through the three callbacks it's given, so it
-carries no Tkinter dependency at all -- the caller is responsible for
-hopping back onto its own UI thread inside those callbacks (pystray runs
-its own background thread; see the on_show/on_stop_screen/on_quit
-docstrings below).
+tray_icon.py -- the system tray icon (Windows + pystray only). This
+class only ever talks back to its caller through the three callbacks
+it's given, so it carries no UI toolkit dependency at all -- a caller
+that needs to hop back onto its own UI thread inside those callbacks
+is responsible for doing so itself (pystray runs its own background
+thread; see the on_show/on_stop_screen/on_quit docstrings below --
+backend_app.py's callbacks don't need this at all since nothing there
+touches a UI toolkit either, the window lives in a separate process).
 """
 import sys
 import threading
@@ -37,9 +38,9 @@ class TrayIcon:
 
     `on_show`, `on_stop_screen` and `on_quit` are called with no
     arguments from pystray's own background thread, not whatever thread
-    started this -- a Tkinter caller needs to hop back via
-    `self.after(0, ...)` inside each one, exactly like the tray menu
-    callbacks used to do directly in app.py before this was split out.
+    started this -- a caller built on a UI toolkit with its own event
+    loop would need to hop back onto it inside each one; backend_app.py
+    doesn't, since it has no UI toolkit in this process at all.
     """
 
     def __init__(self, on_show, on_stop_screen, on_quit):

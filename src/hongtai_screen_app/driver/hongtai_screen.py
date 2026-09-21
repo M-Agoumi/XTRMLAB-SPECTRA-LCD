@@ -569,10 +569,10 @@ class HongtaiScreen:
         flush marker and the restart command, then closes.
 
         `log` defaults to `print` (the CLI-friendly behavior this always
-        had) but a GUI caller can pass its own log function instead --
-        see theme_worker.py's ThemeWorker._run_safely(), which calls this
-        mid-recovery from a background thread where plain print() would
-        go nowhere the user can see it.
+        had) but a caller can pass its own log function instead -- see
+        screen_engine.py's recovery path, which calls this mid-recovery
+        from a background thread where plain print() would go nowhere
+        the user can see it.
 
         Safe to call directly too (from the repo root):
             python -c "import sys; sys.path.insert(0, 'src'); from hongtai_screen_app.driver.hongtai_screen import HongtaiScreen; HongtaiScreen('COM3').blind_restart()"
@@ -722,9 +722,9 @@ class HongtaiScreen:
         affects what the browser sees, and vice versa.
 
         `log`: where the status/diagnostic lines below go -- defaults to
-        plain print() for command-line use, but the GUI passes its own
-        log callback (app.py's self._log, which lands in the on-screen
-        Log panel) instead. This matters more than it looks like it
+        plain print() for command-line use, but the app passes its own
+        log callback (controller.py's _log(), which lands in the web
+        UI's Log panel) instead. This matters more than it looks like it
         should: a bare print() here writes to a console window that
         simply doesn't exist when launched via pythonw.exe (see
         make_launcher.py's docstring) -- the message wasn't wrong, it

@@ -2,11 +2,57 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased] — v2.0 rewrite in progress
+## [2.0.0] — 2026-09-21
 
-Internal reorganization, no user-visible feature change. See
-`ROADMAP.md` for the full v2.0 plan (webview/React UI, free-form
-dashboard designer) this is laying groundwork for.
+The v2.0 rewrite (`ROADMAP.md`) is complete and this is the shipped
+version: a system tray icon + webview window showing a React UI,
+driving the panel over a local control API, replacing the old Tkinter
+desktop GUI entirely.
+
+### Removed
+- **The Tkinter GUI** (`src/hongtai_screen_app/app.py`, and
+  `theme_worker.py`, which only it used) -- superseded by
+  `backend_app.py`/`control_server.py`/`ui_window.py` and the React
+  frontend. The desktop shortcut and "Launch at Windows startup" entry
+  already pointed at the new stack; this removes the old one instead
+  of leaving it around as unreachable dead code. Root `app.py` is now
+  the new stack's own entry point (see below), not a launcher for the
+  old GUI -- `python app.py` still works exactly as always, it just
+  runs something different now. A repo-wide sweep also cleaned up
+  comments and docstrings across the codebase that narrated the
+  Tkinter-vs-new-stack migration in present tense (stale now that
+  there's only one stack), and removed `image_store.store_image_file()`,
+  which only the deleted Browse-dialog code path called.
+
+### Fixed
+- **The frozen build (`packaging/hongtai_screen.spec`) now packages
+  the actual shipped app**, not the just-removed Tkinter GUI. Root
+  `app.py` is a single dispatching entry point for both source and
+  frozen runs: `python app.py` (or the built .exe) is the backend +
+  tray icon; `app.py --ui ...` is the webview window process, spawned
+  by the backend as a child of *itself* when frozen (`sys.executable`
+  re-invoked with `--ui`) since a single-file frozen build has no
+  separate `run_ui.py` script sitting next to it the way a source
+  checkout does. `ui_window.py` is `scripts/run_ui.py`'s logic moved
+  into the package so both paths (source: point an interpreter at the
+  script; frozen: re-invoke the one .exe) work. The spec now also
+  bundles the built `frontend/dist/` as a data file and resolves it at
+  runtime through a proper `sys._MEIPASS`-aware path
+  (`paths.py`'s new `frontend_dist_path()` -- `control_server.py` was
+  previously resolving it via `_app_base_dir()`, which for a frozen
+  build means "next to the .exe", not inside the bundle, so a frozen
+  build would have silently served the plain-HTML placeholder page
+  instead of the real UI).
+- **A missing WebView2 runtime now shows a clear message with a
+  download link**, instead of a silent failure or a raw traceback with
+  no console attached to see it on (`ui_window.py`).
+
+### Changed
+- `BUILD.md` gained the frontend build step (`npm install && npm run
+  build` before running `pyinstaller`) and a few frozen-build-specific
+  things worth testing (the tray icon's "Show" re-spawning the window
+  process correctly; the WebView2-missing message).
+- `pyproject.toml`'s version bumped to 2.0.0.
 
 ### Changed
 - **Restructured into a proper `src/` layout.** What used to be ~20

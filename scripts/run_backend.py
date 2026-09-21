@@ -1,7 +1,7 @@
 """
-run_backend.py -- run the Phase 2 control API standalone, no Tkinter/GUI
-at all. This is the thing to use to actually try the new backend: it
-loads the same app_config.json the GUI uses, exposes it over HTTP on
+run_backend.py -- run the control API standalone, with no tray icon or
+window at all. Handy for driving/testing the backend directly: it
+loads the same app_config.json the app uses, exposes it over HTTP on
 127.0.0.1, and lets you drive Start/Stop/Apply with curl (or a browser
 for the GET endpoints) instead of clicking through the app.
 
@@ -19,11 +19,11 @@ Try it (from another terminal, while this is running):
 
 Ctrl+C stops the server cleanly (also stops whatever theme is running).
 
-Note: this and the Tkinter app (`python app.py`) are two independent
-ways to drive the same underlying config/driver right now -- running
-both at once against the same COM port will fight over it, same as
-running two copies of the GUI would. Don't run both at the same time
-against real hardware.
+Note: this and the full app (`python app.py`) are two independent ways
+to drive the same underlying config/driver -- running both at once
+against the same COM port will fight over it, same as running two
+copies of the app would. Don't run both at the same time against real
+hardware.
 """
 import argparse
 import os

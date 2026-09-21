@@ -1,29 +1,28 @@
 """
-backend_app.py -- the desktop entry point (ROADMAP.md Phase 2c/7,
-cut over early at the user's request): the control API
+backend_app.py -- the desktop app itself: the control API
 (control_server.py, the same server scripts/run_backend.py runs
 standalone), a system tray icon, and spawning/killing the separate UI
-process (scripts/run_ui.py -- see its own docstring for why it has to
-be a separate process) when "Show" is clicked.
+process (ui_window.py -- see its own docstring for why it has to be a
+separate process) when "Show" is clicked.
 
 Desktop shortcuts and the "Launch at Windows startup" entry
-(desktop_shortcut.py, startup_registration.py) now point at
-scripts/run_v2_app.py (this module's CLI shim), not app.py -- the
-React frontend is the actual shipped UI; app.py's Tkinter GUI is kept
-around for manual/headless use (`python app.py`) but nothing launches
-it automatically any more.
+(desktop_shortcut.py, startup_registration.py) point at the repo-root
+`app.py` (source run) or the packaged .exe (frozen build) -- either
+way that's this module's main(), reached via app.py's dispatch or
+scripts/run_v2_app.py's CLI shim. The React frontend is the only UI;
+there is no other GUI in this app any more.
 
-    python scripts/run_v2_app.py                    # opens the window immediately
-    python scripts/run_v2_app.py --autostart         # resumes last theme, tray only, no window
-    python scripts/run_v2_app.py --autostart --theme video
+    python app.py                                    # opens the window immediately
+    python app.py --autostart                         # resumes last theme, tray only, no window
+    python app.py --autostart --theme video
+    python scripts/run_v2_app.py                      # same thing, explicit script form
 
 Needs Windows for the tray icon and the single-instance mutex, and the
 UI process needs a real desktop with WebView2 -- none of this is
 testable end-to-end from a sandbox with no display, no WebView2 and no
 tray daemon. What headless testing can and does cover: BackendApp's
 own logic (resume-on-launch, server start/stop, show/quit bookkeeping)
-against a stubbed-out tray and a stubbed subprocess spawn -- see the
-module's test notes in ROADMAP.md Phase 2c.
+against a stubbed-out tray and a stubbed subprocess spawn.
 """
 import argparse
 import os
@@ -51,9 +50,9 @@ class BackendApp:
     most one live UI subprocess. `_on_show`/`_on_stop_screen`/`_on_quit`
     are handed straight to TrayIcon as its three callbacks -- see
     tray_icon.py's docstring: they run on pystray's own background
-    thread, but nothing here touches any UI toolkit, so there's no
-    "hop back to the right thread" step needed the way app.py's
-    Tkinter callbacks require."""
+    thread, but nothing here touches any UI toolkit at all (the window
+    lives entirely in the separate UI process), so there's no "hop back
+    to the right thread" step needed."""
 
     def __init__(self, autostart=False, autostart_theme=None, port=DEFAULT_PORT):
         self.autostart = autostart
@@ -72,15 +71,14 @@ class BackendApp:
         # even started never causes a spurious self-show the moment
         # this instance's own watcher starts -- only a touch that
         # happens *after* this line runs counts as "someone just asked
-        # to be shown". Same reasoning as app.py's App.__init__.
+        # to be shown".
         try:
             self._show_trigger_mtime = os.path.getmtime(SHOW_TRIGGER_PATH)
         except OSError:
             self._show_trigger_mtime = None
 
-        # Same "what should come back up automatically" logic as
-        # app.py's App.__init__ (see its docstring/comments around
-        # resume_theme): an explicit --theme always wins; otherwise
+        # What should come back up automatically: an explicit --theme
+        # always wins; otherwise
         # resume whatever was last actually streaming; --autostart with
         # neither falls back to Dashboard; a plain launch with nothing
         # to resume and no --autostart just starts idle.
@@ -119,13 +117,12 @@ class BackendApp:
     # ------------------------------------------------------------------ #
     def start_tray(self):
         """Returns False (not fatal) if a tray icon can't be started at
-        all here -- same as app.py's _start_tray(): a nice-to-have, not
-        required to run. Logs *why* (missing pystray, wrong platform, or
-        whatever pystray's own init raised) through the controller, the
-        same way app.py's _start_tray() already does -- silently
-        returning False here made a failed tray indistinguishable from
-        "worked, icon just isn't visible" the first time this was tried
-        on the real machine."""
+        all here -- a nice-to-have, not required to run. Logs *why*
+        (missing pystray, wrong platform, or whatever pystray's own
+        init raised) through the controller -- silently returning False
+        here made a failed tray indistinguishable from "worked, icon
+        just isn't visible" the first time this was tried on the real
+        machine."""
         if not tray_icon.available():
             reason = ("not on Windows" if sys.platform != "win32"
                        else "pystray isn't installed (pip install pystray)")
@@ -144,24 +141,22 @@ class BackendApp:
     # "show yourself" watcher -- for a second launch while already running
     # ------------------------------------------------------------------ #
     def start_show_watcher(self):
-        """Mirrors app.py's App._poll_show_trigger() -- see
-        single_instance.py's _bring_existing_window_to_front() for the
-        other half of this. Double-clicking the desktop icon (or the
-        .lnk) while this is already running -- now the single most
+        """See single_instance.py's _bring_existing_window_to_front()
+        for the other half of this. Double-clicking the desktop icon
+        (or the .lnk) while this is already running -- the single most
         common way that happens, since the desktop icon and "Launch at
         Windows startup" both point here -- touches SHOW_TRIGGER_PATH's
         mtime; single_instance.py's own FindWindowW attempt is a no-op
-        for this process (it looks for a Tkinter window this process
-        never creates), so this watcher is what actually makes a second
-        launch do something useful: it notices the touched file within
-        one poll tick and calls _on_show(), the exact same thing the
-        tray icon's own "Show" menu item does.
+        for this process (the window it looks for lives in the separate
+        UI process, not this one), so this watcher is what actually
+        makes a second launch do something useful: it notices the
+        touched file within one poll tick and calls _on_show(), the
+        exact same thing the tray icon's own "Show" menu item does.
 
-        A plain daemon thread with a sleep loop, not Tkinter's after()
-        (app.py's mechanism) -- this process has no Tk event loop to
-        ride. `self.quit_event.wait(...)` doubles as the sleep and as
-        an immediate wakeup on shutdown, so this thread doesn't linger
-        or delay process exit."""
+        A plain daemon thread with a sleep loop -- this process has no
+        UI event loop to ride. `self.quit_event.wait(...)` doubles as
+        the sleep and as an immediate wakeup on shutdown, so this
+        thread doesn't linger or delay process exit."""
         def _watch():
             while not self.quit_event.is_set():
                 try:
@@ -176,44 +171,55 @@ class BackendApp:
         self._show_watcher_thread.start()
 
     # ------------------------------------------------------------------ #
-    # UI process spawn/kill -- the actual Phase 2c mechanic
+    # UI process spawn/kill
     # ------------------------------------------------------------------ #
-    def _run_ui_script_path(self):
-        # _app_base_dir() (paths.py) is anchored on this package's own
-        # location, so it's the repo root regardless of which script
-        # started this process -- see paths.py's docstring for why that
-        # matters. Under a frozen build this would need its own answer
-        # (ROADMAP.md Phase 7's concern, not this phase's).
-        return os.path.join(_app_base_dir(), "scripts", "run_ui.py")
+    def _ui_process_command(self):
+        """The argv to spawn the UI process with. Two cases, because a
+        frozen build is one single .exe with no separate run_ui.py
+        script sitting alongside it to point an interpreter at:
+
+        - Frozen (`sys.frozen`): re-invoke this same .exe
+          (`sys.executable`) with `--ui` -- app.py's dispatch (see its
+          own docstring) is what tells that freshly spawned copy of
+          itself to run the window half instead of the backend half.
+        - Source run: `sys.executable` is a real Python interpreter, so
+          it's pointed at scripts/run_ui.py directly, same as any other
+          script under scripts/. `_app_base_dir()` (paths.py) is
+          anchored on this package's own location, so it resolves to
+          the repo root regardless of which script started this
+          process."""
+        url = f"http://127.0.0.1:{self.port}/"
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "--ui", "--url", url, "--title", UI_WINDOW_TITLE]
+        else:
+            script = os.path.join(_app_base_dir(), "scripts", "run_ui.py")
+            cmd = [sys.executable, script, "--url", url, "--title", UI_WINDOW_TITLE]
+        if os.path.isfile(ICON_PATH):
+            cmd += ["--icon", ICON_PATH]
+        return cmd
 
     def _on_show(self):
         """Spawns the UI process if none is currently alive; if one
         already is, brings its window to the front instead of doing
         nothing.
 
-        Phase 2c's first version deliberately skipped refocusing here
-        ("it's already open" was judged enough) -- a real report from
-        actually using the tray icon day to day disagreed: clicking
-        "Show window" while the window was already open but sitting
-        behind another one visibly did nothing, which reads as the
-        tray icon being broken rather than as "it was already open,
-        nothing to do" (the two look identical to someone who can't
-        see the window either way). Fixed via _focus_ui_window() --
-        same FindWindowW + SetForegroundWindow mechanism
-        single_instance.py already uses for the old Tkinter app's
-        second-launch case, pointed at the webview window's title
-        instead."""
+        An earlier version deliberately skipped refocusing here ("it's
+        already open" was judged enough) -- a real report from actually
+        using the tray icon day to day disagreed: clicking "Show
+        window" while the window was already open but sitting behind
+        another one visibly did nothing, which reads as the tray icon
+        being broken rather than as "it was already open, nothing to
+        do" (the two look identical to someone who can't see the
+        window either way). Fixed via _focus_ui_window() -- same
+        FindWindowW + SetForegroundWindow mechanism single_instance.py
+        already uses for the second-launch case, pointed at the webview
+        window's title instead."""
         with self._ui_lock:
             if self._ui_process is not None and self._ui_process.poll() is None:
                 self._focus_ui_window()
                 return
-            script = self._run_ui_script_path()
-            url = f"http://127.0.0.1:{self.port}/"
-            cmd = [sys.executable, script, "--url", url, "--title", UI_WINDOW_TITLE]
-            if os.path.isfile(ICON_PATH):
-                cmd += ["--icon", ICON_PATH]
             try:
-                self._ui_process = subprocess.Popen(cmd)
+                self._ui_process = subprocess.Popen(self._ui_process_command())
             except Exception as e:  # noqa: BLE001 -- surfaced in the log either way
                 self.controller._log(f"(couldn't open the UI window: {e})")
 
@@ -295,15 +301,14 @@ def main(argv=None):
     app = BackendApp(autostart=args.autostart, autostart_theme=args.theme, port=args.port)
     app.start_server()
     # Through the controller's own _log() (visible in the web UI's Log
-    # panel, and mirrored to STARTUP_LOG_PATH for --autostart -- see
-    # app.py's _log() for the exact same reasoning), not print(): this
-    # is launched via pythonw.exe with no console attached once it's
-    # what the desktop icon points at, where a bare print() either
-    # goes nowhere or can raise outright with no console streams to
-    # write to. A manual `python scripts/run_v2_app.py` from a terminal
-    # loses console echo of these two lines as a result, but gets
-    # everything else the same way (stdout when run manually anyway,
-    # the Log panel once the window's open).
+    # panel, and mirrored to STARTUP_LOG_PATH for --autostart), not
+    # print(): this is launched via pythonw.exe (or the frozen .exe)
+    # with no console attached once it's what the desktop icon points
+    # at, where a bare print() either goes nowhere or can raise
+    # outright with no console streams to write to. A manual `python
+    # app.py` from a terminal loses console echo of these two lines as
+    # a result, but gets everything else the same way (stdout when run
+    # manually anyway, the Log panel once the window's open).
     startup_msg = f"Control API listening on http://127.0.0.1:{args.port}/ (localhost only)"
     app.controller._log(startup_msg)
     have_tray = app.start_tray()
@@ -316,11 +321,9 @@ def main(argv=None):
                             "System tray icon: NOT started")
     app.start_show_watcher()
 
-    # A plain launch opens the window right away, same as app.py
-    # showing its window on a normal (non-autostart) run. --autostart
-    # starts hidden UNLESS there's no tray to bring it back with later
-    # -- same fallback app.py's own autostart path uses -- in which
-    # case showing it anyway beats running invisibly forever.
+    # A plain launch opens the window right away. --autostart starts
+    # hidden UNLESS there's no tray to bring it back with later, in
+    # which case showing it anyway beats running invisibly forever.
     if not args.autostart or not have_tray:
         app._on_show()
 

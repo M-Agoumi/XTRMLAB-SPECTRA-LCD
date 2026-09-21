@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hongtai-screen-app"
-version = "1.0.0"
-description = "Custom driver + desktop GUI for the XTRM Lab / Hongtai-family integrated LCD panel."
+version = "2.0.0"
+description = "Custom driver + desktop app (control API, tray icon, React UI) for the XTRM Lab / Hongtai-family integrated LCD panel."
 requires-python = ">=3.9"
 # Kept in sync with requirements.txt by hand -- see there for the
 # authoritative, commented list (this file exists for editor/IDE
