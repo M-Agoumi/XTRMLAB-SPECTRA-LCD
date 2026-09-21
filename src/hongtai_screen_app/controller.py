@@ -16,6 +16,7 @@ import queue
 import re
 import sys
 import threading
+import time
 from collections import deque
 
 import base64
@@ -263,11 +264,26 @@ class AppController:
         the *process*, not the panel connection, is what's missing the
         privilege.
 
-        Only spawns the new copy -- does NOT quit this one.
-        control_server.py's /api/relaunch_elevated handler does that
-        itself, a moment after this returns, so the HTTP response for
-        this call reaches the browser before this process (and the
-        port it's answering on) goes away.
+        Releases BOTH the COM port and the single-instance mutex before
+        spawning the new copy, not after -- the first version of this
+        only released the mutex first and left the port for this
+        process's own (slower, delayed) shutdown to close afterward.
+        That worked for the single-instance check but not for the
+        port: the new copy auto-resumes whatever theme was running
+        (same auto_resume_tab logic any launch uses) and tries to
+        reconnect right at startup, so it landed in a race against
+        this process's own teardown and usually lost -- two processes
+        alive at once, only one of which could actually reach the
+        panel (the bug this rewrite fixes). Stopping the engine here
+        (not closing it) means this process can put the connection
+        right back if the launch below is declined or fails, instead
+        of being left both disconnected AND not actually restarted.
+
+        Still does NOT quit this process -- control_server.py's
+        /api/relaunch_elevated handler does that itself, once this
+        returns without raising, the same way tray_icon's Quit does
+        (BackendApp.shutdown(), which also kills the UI window
+        subprocess -- something this method has no handle on).
 
         Raises RuntimeError on anything but Windows, and if the UAC
         prompt is declined or the launch otherwise fails (ShellExecuteW
@@ -278,22 +294,34 @@ class AppController:
         if sys.platform != "win32":
             raise RuntimeError("Restarting elevated is Windows-only.")
         import ctypes
+
+        self.engine.stop()
+        # stop() only *asks* -- wait for the engine to actually finish
+        # tearing down (screen.close(), the real COM port release)
+        # before handing off, instead of just hoping it beat the new
+        # process's own connect attempt.
+        deadline = time.time() + 5.0
+        while self.engine.is_running() and time.time() < deadline:
+            time.sleep(0.05)
+
         target, args = _elevated_relaunch_target()
-        # Release *before* spawning, not after -- see
-        # single_instance._release_single_instance()'s docstring for
-        # why this ordering is the whole point: it's what keeps the
-        # elevated copy's own single-instance check from racing this
-        # process's eventual exit and losing.
         single_instance._release_single_instance()
         SW_SHOWNORMAL = 1
         result = ctypes.windll.shell32.ShellExecuteW(
             None, "runas", target, args, None, SW_SHOWNORMAL)
         if result <= 32:
             # Didn't actually launch (declined UAC prompt, or something
-            # else went wrong) -- this process is carrying on as normal,
-            # so it needs its single-instance protection back rather
-            # than staying unprotected until it eventually exits.
+            # else went wrong) -- put this process back exactly how it
+            # was: single-instance protection re-armed, and whatever
+            # was running restarted the normal way (start() re-derives
+            # the theme from cfg's active_tab, same as a fresh launch's
+            # own resume would) instead of being left stopped for no
+            # reason.
             single_instance._ensure_single_instance()
+            try:
+                self.start()
+            except Exception as e:  # noqa: BLE001 -- best-effort recovery
+                self._log(f"(system: couldn't resume after a declined/failed elevation: {e})")
             raise RuntimeError(
                 "The elevation prompt was declined, or the relaunch failed to start.")
         self._log("(system: relaunching elevated for CPU temperature -- this window will close)")

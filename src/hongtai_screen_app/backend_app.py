@@ -107,7 +107,13 @@ class BackendApp:
     # control API
     # ------------------------------------------------------------------ #
     def start_server(self):
-        handler = _make_handler(self.controller)
+        # quit_callback=self._on_quit: lets POST /api/relaunch_elevated
+        # (control_server.py) shut this whole process down the exact
+        # same way the tray icon's own Quit does -- UI window subprocess
+        # killed, engine closed, server stopped -- instead of a bare
+        # os._exit() that skipped all of that and left the UI window an
+        # orphan (see controller.py's relaunch_elevated() docstring).
+        handler = _make_handler(self.controller, quit_callback=self._on_quit)
         self.server = ControlServer(("127.0.0.1", self.port), handler)
         self._server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self._server_thread.start()

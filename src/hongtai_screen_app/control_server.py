@@ -47,7 +47,17 @@ DEFAULT_PORT = 8899
 FRONTEND_DIST = frontend_dist_path()
 
 
-def _make_handler(controller: AppController):
+def _make_handler(controller: AppController, quit_callback=None):
+    """`quit_callback`: a zero-arg function that fully shuts this
+    process down (BackendApp._on_quit -- the exact same path the tray
+    icon's Quit already uses: kills the UI window subprocess, closes
+    the engine, stops the HTTP server, then lets main() return so the
+    process exits normally). Only /api/relaunch_elevated uses it, and
+    only when one was actually given -- run()'s standalone/headless
+    server (scripts/run_backend.py, no tray, no UI subprocess) has
+    nothing to call it with, so that endpoint there just does the
+    engine/mutex release relaunch_elevated() already does and leaves
+    the process running, same as declining the relaunch would."""
     class ControlHandler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.0"
 
@@ -137,24 +147,24 @@ def _make_handler(controller: AppController):
                     body = self._read_json_body()
                     self._send_json(200, controller.set_keep_active_when_locked(body.get("value")))
                 elif path == "/api/relaunch_elevated":
-                    # relaunch_elevated() already released the
-                    # single-instance mutex before spawning the elevated
-                    # copy (see single_instance._release_single_instance()),
-                    # so there's no race to worry about here -- this
-                    # process quitting a moment later is only about
-                    # letting the 200 below actually reach the browser
-                    # first, and releasing the COM port (controller.
-                    # close()) before this process is gone rather than
-                    # leaving that to whatever cleanup a bare os._exit()
-                    # would skip.
+                    # relaunch_elevated() already stopped the engine
+                    # (releasing the COM port) and released the
+                    # single-instance mutex *before* spawning the
+                    # elevated copy -- both had to happen before the
+                    # spawn, not after, or the new copy's own startup
+                    # reconnect/single-instance check could race this
+                    # process's teardown and lose (see its docstring
+                    # for the bug report that made this the design).
+                    # All that's left here is quitting this process,
+                    # through the real shutdown path (quit_callback --
+                    # same as tray_icon's Quit) so the UI window
+                    # subprocess actually gets killed too, not just
+                    # this one -- a bare os._exit() here skipped that
+                    # and left an orphaned window behind.
                     controller.relaunch_elevated()
                     self._send_json(200, {"ok": True})
-
-                    def _quit_soon():
-                        controller.close()
-                        os._exit(0)
-
-                    threading.Timer(0.75, _quit_soon).start()
+                    if quit_callback is not None:
+                        threading.Timer(0.5, quit_callback).start()
                 elif path == "/api/dashboard/upload_image":
                     body = self._read_json_body()
                     self._send_json(200, controller.upload_dashboard_image(
