@@ -719,6 +719,20 @@ _lhm_unavailable = False
 # help someone paste back for debugging, except there was nothing to
 # see, only "--".
 _lhm_failure_reason = None
+# Set the first time a read (not just setup) actually returns a
+# temperature -- lets _warn_if_cpu_temp_unavailable() tell "never
+# worked at all" apart from "setup succeeded, but every read since has
+# come back empty", which is its own distinct failure mode -- see the
+# read-phase except block below and _warn_if_cpu_temp_unavailable()'s
+# docstring for the real-machine bug this was added to catch: reads
+# failing completely silently after a successful setup.
+_lhm_ever_read_ok = False
+# Set the first time a read (post-setup) raises, alongside
+# _lhm_failure_reason -- unlike _lhm_unavailable, this does NOT stop
+# future attempts (a transient read failure shouldn't permanently
+# disable the stat the way a setup failure does), it's purely for
+# _warn_if_cpu_temp_unavailable() to have something to report.
+_lhm_read_failure_logged = False
 
 
 def _lhm_cpu_temp():
@@ -734,6 +748,7 @@ def _lhm_cpu_temp():
     "one persistent handle, not reopened every read" shape
     screen_engine.py already uses for the panel connection."""
     global _lhm_computer, _lhm_unavailable, _lhm_failure_reason
+    global _lhm_ever_read_ok, _lhm_read_failure_logged
     if _lhm_unavailable:
         return None
     if _lhm_computer is None:
@@ -785,11 +800,26 @@ def _lhm_cpu_temp():
                 # single core" preference the vendor helper's own
                 # "checked" sensor used to encode.
                 if "Package" in str(sensor.Name):
+                    _lhm_ever_read_ok = True
                     return float(sensor.Value)
                 if best is None:
                     best = float(sensor.Value)
+        if best is not None:
+            _lhm_ever_read_ok = True
         return best
-    except Exception:  # noqa: BLE001 -- best-effort; "--" beats a crash
+    except Exception as e:  # noqa: BLE001 -- best-effort; "--" beats a crash,
+                             # but this used to be a bare `except: return
+                             # None` with no record of *why* at all -- a
+                             # real report had setup succeed (no warning
+                             # logged) while every actual reading, from
+                             # here on, silently came back empty for the
+                             # rest of the process's life. Recording the
+                             # first one lets _warn_if_cpu_temp_
+                             # unavailable() actually say something about
+                             # it instead of staying quiet forever.
+        if not _lhm_read_failure_logged:
+            _lhm_read_failure_logged = True
+            _lhm_failure_reason = f"{type(e).__name__}: {e} (reading sensors)"
         return None
 
 
@@ -7319,12 +7349,39 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
         # runtime, opening the sensor driver), not worth delaying
         # startup for.
         def _warn_if_cpu_temp_unavailable():
-            if _lhm_cpu_temp() is None:
+            # Deliberately does NOT call _lhm_cpu_temp() itself up
+            # front any more. That used to make THIS throwaway thread
+            # the one that creates LibreHardwareMonitorLib's Computer()
+            # object (whichever thread calls _lhm_cpu_temp() first
+            # does the one-time setup) -- fine for the object itself,
+            # but a real machine (pythonnet + the DLL + Administrator
+            # all genuinely correct) showed CPU Temp reading fine once,
+            # right here on this thread, and then silently empty
+            # forever afterward on every real per-frame read, which
+            # happens on the render loop's own (different) thread.
+            # Nothing here proves LibreHardwareMonitorLib's Computer
+            # object is thread-affine -- but the fix either way is the
+            # same: let whichever thread actually needs the reading
+            # repeatedly (the render loop, if the running preset even
+            # has a CPU Temp element) be the one that sets it up, so
+            # setup and every read stay on one consistent thread for
+            # the rest of the run, instead of racing this one-shot
+            # thread to be first.
+            deadline = time.time() + 3.0
+            while time.time() < deadline and _lhm_computer is None and not _lhm_unavailable:
+                time.sleep(0.1)
+            if _lhm_computer is None and not _lhm_unavailable:
+                # Nobody else has tried in that window -- e.g. the
+                # running preset has no CPU Temp element at all, so the
+                # render loop never calls this on its own. Do the one
+                # check here so a genuinely missing pythonnet/DLL/
+                # Administrator still gets logged at startup, same as
+                # before this change.
+                _lhm_cpu_temp()
+            if _lhm_unavailable:
+                # Setup itself failed (or never had the DLL/pythonnet
+                # to begin with).
                 if _lhm_failure_reason:
-                    # Setup actually raised -- pythonnet/the DLL are
-                    # present but something specific about loading them
-                    # failed, so say what rather than repeating the
-                    # generic checklist that doesn't apply here.
                     log(f"  (CPU Temp unavailable -- {_lhm_failure_reason})")
                 else:
                     # No exception at all: pythonnet + the DLL loaded
@@ -7335,6 +7392,16 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
                     log("  (CPU Temp unavailable -- needs pythonnet + LibreHardwareMonitorLib.dll"
                         " (see BUILD.md's \"Hardware sensors\") and Administrator to load its"
                         " driver. The web UI's System section has a one-click restart for that.)")
+            elif _lhm_computer is not None and not _lhm_ever_read_ok:
+                # Setup succeeded (Computer object exists) but nothing
+                # has produced an actual reading yet -- give the real
+                # reader (whichever thread that ended up being) a
+                # little longer, then report the read-phase failure
+                # specifically, which used to be entirely silent.
+                time.sleep(2.0)
+                if not _lhm_ever_read_ok:
+                    reason = _lhm_failure_reason or "no temperature sensor reported"
+                    log(f"  (CPU Temp: setup succeeded but no reading has come back yet -- {reason})")
         threading.Thread(target=_warn_if_cpu_temp_unavailable, daemon=True).start()
     if not _GPU_OK:
         log("  (no NVIDIA GPU / nvidia-ml-py not available -- GPU load/temp/VRAM/power unavailable)")
