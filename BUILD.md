@@ -74,9 +74,12 @@ Run `dist\Hongtai Screen.exe` directly. Things worth specifically
 checking, since none of this was testable from here (a Linux sandbox
 built the spec, but never ran the actual .exe):
 
-- **First run creates `app_config.json` next to the exe.** Move the
-  exe to wherever you actually want it to live *before* configuring
-  anything, since settings are saved next to it.
+- **Settings live in `%LOCALAPPDATA%\HongtaiScreen\app_config.json`,
+  not next to the exe.** That's the same per-user folder uploaded
+  Dashboard images already live in (`...\HongtaiScreen\images\`) —
+  moving or reinstalling the exe doesn't reset your settings, and you
+  don't need to pick a final install location before configuring
+  anything the way earlier builds required.
 - **The window icon and taskbar icon** both show the app icon, not a
   generic one.
 - **Panel connection, all four theme tabs, Start/Stop/Apply.**

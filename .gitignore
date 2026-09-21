@@ -27,7 +27,10 @@ drawlab_output.log
 # --- Personal settings & media (never commit) --------------------------
 # app_config.json holds your own port, brightness, and local file paths
 # (video/image locations on your machine) -- machine-specific, not source.
-# The app creates it fresh on first run if it's missing.
+# The app now creates/reads it under %LOCALAPPDATA%\HongtaiScreen (see
+# paths.py's USER_DATA_DIR), not in the repo/exe folder -- this entry is
+# just a leftover safety net in case a source checkout someone runs
+# `python app.py` from directly ever writes one here.
 app_config.json
 
 # Nothing here ships with a bundled video or "nothing playing" image on

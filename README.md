@@ -160,9 +160,12 @@ A system tray icon plus a window (React UI, shown in a native webview)
 wrapping all four themes below: pick the panel's port (or leave it on
 auto-detect), pick a theme tab, fill in that theme's settings, hit
 Start. Stop switches themes or lets you quit cleanly. Settings are
-remembered between runs (`app_config.json`, created next to `app.py`).
-Closing the window dismisses it to the tray rather than quitting —
-right-click the tray icon for Show / Stop screen / Quit.
+remembered between runs (`app_config.json`, under
+`%LOCALAPPDATA%\HongtaiScreen\` -- the same per-user folder your
+uploaded Dashboard images live in, not next to `app.py`/the exe, so
+settings survive moving or reinstalling the app). Closing the window
+dismisses it to the tray rather than quitting — right-click the tray
+icon for Show / Stop screen / Quit.
 
 Nothing personal is bundled -- the Dashboard tab's "nothing playing"
 image and the Video tab's clip are both things you pick yourself with
