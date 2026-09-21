@@ -27,13 +27,13 @@ import re
 
 from PIL import Image
 
-# %LOCALAPPDATA% (not %APPDATA%/Roaming) on purpose -- these are copies
-# of binary image files, not small settings worth syncing across
-# machines via a roaming profile. Falls back to the home directory on
-# any other OS, or if LOCALAPPDATA isn't set (a stripped-down
-# environment) -- still a writable, per-user location, just not the
-# "proper" Windows spot.
-USER_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "HongtaiScreen")
+from .paths import USER_DATA_DIR
+
+# %LOCALAPPDATA%\HongtaiScreen (not %APPDATA%/Roaming) on purpose --
+# these are copies of binary image files, not small settings worth
+# syncing across machines via a roaming profile. USER_DATA_DIR itself
+# is defined in paths.py (see its own comment there) since
+# app_config.json now lives in this same folder too, alongside images/.
 IMAGES_DIR = os.path.join(USER_DATA_DIR, "images")
 
 MAX_IMAGE_BYTES = 25 * 1024 * 1024  # 25MB -- generous for a photo/logo, not for an accidental video

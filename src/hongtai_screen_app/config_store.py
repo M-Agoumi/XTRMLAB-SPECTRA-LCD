@@ -4,6 +4,7 @@ constants every caller needs to agree on (the auto-detect sentinel,
 the fixed theme-tab order).
 """
 import json
+import os
 
 from .paths import CONFIG_PATH
 
@@ -25,6 +26,7 @@ def load_config():
 
 def save_config(cfg):
     try:
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
     except Exception:  # noqa: BLE001 -- best-effort, never block on this

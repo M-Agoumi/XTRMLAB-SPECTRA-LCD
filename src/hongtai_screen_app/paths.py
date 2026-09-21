@@ -74,7 +74,25 @@ def frontend_dist_path():
 # precomputed path.
 resource_path = _resource_path
 
-CONFIG_PATH = os.path.join(_app_base_dir(), "app_config.json")
+# %LOCALAPPDATA%\HongtaiScreen -- the same per-user, non-roaming folder
+# image_store.py already uses for uploaded background images. Settings
+# live here rather than next to the exe (via _app_base_dir() above) so
+# saving never depends on the install folder being writable (Program
+# Files, a read-only network share, a zipped release folder browsers
+# extract read-only), and moving/reinstalling the exe doesn't leave
+# app_config.json behind.
+#
+# Falls back to the home directory on any other OS, or if LOCALAPPDATA
+# isn't set (a stripped-down environment) -- still a writable, per-user
+# location, just not the "proper" Windows spot. Duplicated here rather
+# than imported from image_store.py (which imports PIL) so that every
+# module importing paths.py -- most of the app -- doesn't pull PIL in
+# just to resolve a path; image_store.py imports USER_DATA_DIR from
+# here instead, so this stays the one definition.
+USER_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "HongtaiScreen")
+
+CONFIG_PATH = os.path.join(USER_DATA_DIR, "app_config.json")
+
 ICON_PATH = _resource_path("icon.ico")
 
 # A plain text file next to app_config.json, written to ONLY for
