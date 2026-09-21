@@ -24,6 +24,10 @@ If you use `webpage_theme.py` (Playwright), also run
 `playwright install chromium` in this environment first -- see the
 Playwright note below, though, before assuming it belongs in the exe.
 
+If you want CPU Temp, see "Hardware sensors (CPU Temp)" below before
+building -- it's a manual, one-time file placement, not something
+`pip install -r requirements.txt` can do for you.
+
 ## 2. Build the frontend
 
 The exe bundles the React UI as static files, not as source -- build
@@ -93,6 +97,44 @@ built the spec, but never ran the actual .exe):
   anyway" gets past it, and telling people that up front in your
   release notes saves them a scare.
 
+## Hardware sensors (CPU Temp)
+
+CPU Temp reads via [LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+(MIT-licensed, open source) instead of any vendor-supplied binary --
+see `dashboard_theme.py`'s `_lhm_cpu_temp()` docstring for the full
+reasoning. Setting it up is two manual steps, deliberately not
+automated by `pip install` or this build:
+
+1. `pip install pythonnet` (already in `requirements.txt`, so this is
+   covered by step 1 above if you installed the full file).
+2. Download a release from LibreHardwareMonitor's own
+   [GitHub Releases page](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
+   (the `LibreHardwareMonitor-net472.zip` asset), pull
+   `LibreHardwareMonitorLib.dll` out of it, and place that one file at:
+
+   ```
+   assets\hardware\LibreHardwareMonitorLib.dll
+   ```
+
+   in this repo (source run: `python app.py` finds it there directly;
+   frozen build: `hongtai_screen.spec`'s `datas` bundles that same
+   folder into the exe the same way it already bundles `assets\icon.ico`
+   and the backgrounds/fonts -- build the exe *after* placing the DLL,
+   not before).
+
+Getting the DLL straight from its own maintainers rather than this repo
+fetching or bundling a copy of it is the point, not an inconvenience --
+that's exactly the trust boundary this replaced the vendor helper to
+get. Skip this entirely and CPU Temp just reads "--", same as any
+other optional stat with a missing dependency.
+
+Either way (source or frozen), CPU Temp additionally needs
+Administrator to actually load LibreHardwareMonitorLib's own sensor
+driver -- a Windows platform limitation, not something this app or
+that library can work around. The web UI's System section shows a
+one-click "Restart as Administrator" for exactly this once pythonnet
+and the DLL are both in place.
+
 ## Notes on what's bundled
 
 - **`pystray`, `nvidia-ml-py` (pynvml), `winsdk`** are optional at
@@ -109,6 +151,12 @@ built the spec, but never ran the actual .exe):
   build environment entirely (the tab just reports the theme
   unavailable, same as any other missing optional dependency) rather
   than trying to bundle a whole browser into the exe.
+- **`pythonnet`** (CPU Temp) needs the .NET runtime PyInstaller's
+  analyzer can't always fully trace through `clr`'s dynamic assembly
+  loading -- if the exe's CPU Temp doesn't work even though
+  `python app.py` from source does, see "If something doesn't work in
+  the exe" below and check the console for a `clr`/`Python.Runtime`
+  import error specifically.
 - **`opencv-python-headless`** is a large dependency (`video_theme.py`)
   — expect the exe to be a few hundred MB once numpy/opencv/pycairo are
   all in it. That's normal for a bundled Python + native-library app,
@@ -129,41 +177,3 @@ traceback is visible rather than silently swallowed, the same lesson
 that's already bitten this project once with windowless launches — see
 the Log panel and console output for the actual error, then report
 back with that text.
-
-## Automated builds (CI/CD)
-
-You don't have to run any of the steps above by hand for a real
-release — `.github/workflows/build.yml` does it on GitHub's own
-Windows runners and attaches the resulting `Hongtai Screen.exe` to a
-GitHub Release automatically. It runs the test suite first
-(`tests/`, on a quick Linux job); the Windows build only starts if
-that passes.
-
-**`develop` -> beta.** Every push to `develop` re-builds the exe and
-re-publishes it to a single rolling **"beta"** prerelease (the `beta`
-git tag is force-moved to whatever commit triggered the build, so it
-always points at the latest one). This is where in-progress/unfinished
-features land — grab the latest beta exe straight from the repo's
-Releases page instead of building locally.
-
-**`main` + a version tag -> production.** Pushing a tag like `v2.1.0`
-builds the exe and publishes it as a normal (non-prerelease) GitHub
-Release named after that tag, marked "Latest". To cut a production
-release:
-
-```
-git checkout main
-git merge develop          # or reset/fast-forward, whichever main's workflow is
-git push origin main
-git tag v2.1.0
-git push origin v2.1.0
-```
-
-Only the tag push actually triggers a production build — pushing to
-`main` on its own does not (there's no CI reason to rebuild `main`
-every time it moves; only a version tag means "ship this").
-
-Playwright's Chromium (`webpage_theme.py` / the Webpage Mirror theme)
-is installed in every automated build, unlike a bare local build per
-this file's Playwright note above — so a beta or production exe from
-CI always has that theme available.

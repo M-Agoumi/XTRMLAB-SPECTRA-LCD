@@ -2,6 +2,43 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Changed
+- **CPU Temp now reads via [LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+  (MIT-licensed, open source) instead of the XTRM lab app's own bundled
+  `SystemInfos.exe`.** That helper was a closed-source binary from an
+  unaudited rebrand vendor, wrapping a licensed HWiNFO sensor DLL, run
+  with Administrator and its own kernel driver -- a security trade-off
+  this project no longer wants to make for one stat. Needs
+  `pip install pythonnet` and `LibreHardwareMonitorLib.dll` placed by
+  hand (BUILD.md's "Hardware sensors" section; deliberately not
+  bundled or auto-downloaded, so the DLL always comes straight from
+  its own maintainers) and Administrator to load its own driver --
+  same Windows platform requirement either way, just auditable code
+  doing it now. Missing either dependency, or not elevated, degrades
+  to "--" the same as any other optional stat.
+- **GPU Load/Temp are NVIDIA-only now (`pynvml`), with no fallback for
+  other GPUs.** They used to fall back to the same `SystemInfos.exe`
+  feed CPU temp did; dropped for the same reason. GPU Power and VRAM
+  Usage were already NVIDIA-only and are unaffected.
+
+### Added
+- **Desktop app: a one-click "Restart as Administrator"** in the
+  System section, shown whenever CPU Temp can't read because this
+  process isn't elevated. Relaunches with a UAC prompt and quits this
+  copy -- releasing the panel connection and the single-instance lock
+  *before* spawning the new copy (not after), so the two processes
+  never fight over the COM port or the single-instance mutex, and
+  properly kills the old UI window subprocess rather than orphaning
+  it. Declining the prompt puts this process back exactly as it was
+  (theme resumed, single-instance protection re-armed) instead of
+  leaving the panel stopped for nothing.
+- **CI/CD** (`.github/workflows/build.yml`): runs the test suite, then
+  builds the Windows exe. Every push to `develop` re-publishes a
+  rolling "beta" prerelease; pushing a `vX.Y.Z` tag publishes a
+  production release. See `BUILD.md`'s "Automated builds" section.
+
 ## [2.0.0] — 2026-09-21
 
 The v2.0 rewrite (`ROADMAP.md`) is complete and this is the shipped

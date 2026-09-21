@@ -256,12 +256,12 @@ class AppController:
 
     def relaunch_elevated(self):
         """Launches a fresh, elevated copy of this app (UAC prompt via
-        ShellExecuteW's "runas" verb) so the SystemInfos.exe helper's
+        ShellExecuteW's "runas" verb) so LibreHardwareMonitorLib's own
         sensor driver can actually load -- see dashboard_theme.
-        get_cpu_temp_c()'s docstring: without Administrator, that
-        helper writes one frame and exits, and CPU Temp is stuck at
-        "--" no matter how many times the theme is restarted, because
-        the *process*, not the panel connection, is what's missing the
+        _lhm_cpu_temp()'s docstring: without Administrator, its
+        Sensors list just stays empty, and CPU Temp is stuck at "--"
+        no matter how many times the theme is restarted, because the
+        *process*, not the panel connection, is what's missing the
         privilege.
 
         Releases BOTH the COM port and the single-instance mutex before

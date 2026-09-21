@@ -78,32 +78,34 @@ What each panel needs to work, and what happens if it's missing:
 Refresh rate: the main loop targets 10Hz (redraws every ~100ms) and
 times itself (like screen.run() does), sleeping only whatever's left
 of that 100ms budget after everything else that frame needed -- CPU/GPU
-reads, the SystemInfos.exe file read, rendering, and the JPEG
-encode/send -- so one slow frame doesn't push every frame after it
-late. 10Hz is a target, not a guarantee: a frame that's too large to
-encode+transmit within ~100ms over the panel's 2 Mbaud link just makes
-that one frame take longer, and the loop picks the pace back up on the
-next one rather than trying to catch up.
+reads, rendering, and the JPEG encode/send -- so one slow frame doesn't
+push every frame after it late. 10Hz is a target, not a guarantee: a
+frame that's too large to encode+transmit within ~100ms over the
+panel's 2 Mbaud link just makes that one frame take longer, and the
+loop picks the pace back up on the next one rather than trying to
+catch up.
 
 CPU temperature (why it showed N/A):
     psutil.sensors_temperatures() is basically Linux-only -- Windows
     doesn't expose CPU temp through the API psutil uses at all, so
     "N/A" there wasn't a bug, it was Windows not offering the number.
 
-    The XTRM lab app itself doesn't read it through Windows either --
-    it ships its own helper, `SystemInfos.exe` (found inside the app's
-    own install folder, under SDK/VC#/SystemInfos/.../Release/), which
-    wraps CPUID's hardware SDK + a licensed HWiNFO sensor DLL and
-    writes live sensor readings to a small file in %TEMP% once a
-    second. This script spawns that exact helper itself and reads the
-    same file -- no third-party monitoring tool needed, since the
-    right tool was already installed on this machine the whole time.
-    It's found automatically at the app's default install path; if
-    yours is installed somewhere else, set SYSTEMINFOS_DIR below.
-    Needs the script to run as Administrator the first time (same as
-    the vendor app does) so its driver can load. If that helper can't
-    be found or spawned, CPU temp falls back to psutil, which on
-    Windows means it'll just show "--".
+    An earlier version of this file read it the way the XTRM lab app
+    itself does: shelling out to their own bundled `SystemInfos.exe`
+    helper, a closed-source binary (wrapping CPUID's hardware SDK + a
+    licensed HWiNFO sensor DLL) from an unaudited rebrand vendor,
+    running with Administrator and its own kernel driver. That's not
+    something this project wants to depend on, security-wise, so CPU
+    temp now comes from LibreHardwareMonitorLib instead -- a
+    well-known, MIT-licensed, open-source project (see
+    _lhm_cpu_temp()'s own docstring and BUILD.md's "Hardware sensors"
+    section for the DLL and why it isn't bundled here). Real hardware
+    sensor access on Windows still needs Administrator to load a
+    driver either way -- that's a Windows platform limitation, not
+    something specific to either helper -- but at least now it's
+    Administrator for auditable, open code instead of an unknown
+    binary. Without it (pythonnet/the DLL missing, or not elevated),
+    CPU temp just reads "--", same as any other optional stat here.
 
 Install everything this theme can use:
 
@@ -126,10 +128,8 @@ import json
 import math
 import os
 import random
-import struct
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import datetime
@@ -187,9 +187,9 @@ def _get_cpu_util():
 def get_cpu_stats():
     """CPU load only now -- CPU temp used to live here too, but it's
     gone from this dashboard on purpose: the AIO panel shows CPU temp
-    of its own, so duplicating it here was redundant (and see
-    read_systeminfos()'s docstring for a real bug that used to make it
-    show a frozen, wrong number half the time anyway)."""
+    of its own, so duplicating it here was redundant (see
+    get_cpu_temp_c() for the actual CPU Temp stat this app exposes
+    elsewhere)."""
     return {"util": _get_cpu_util()}
 
 
@@ -676,123 +676,105 @@ def get_battery_percent():
     return battery.percent if battery else None
 
 
-# ------------------------------------------------------ SystemInfos.exe ---
-# The XTRM lab app's own bundled sensor helper. It writes a small JSON
-# blob to %TEMP%\<name>.bin (4-byte little-endian length prefix, then
-# UTF-8 JSON) about once a second, keyed by app name -- this is exactly
-# what the vendor app itself reads to show CPU/GPU temperature. See the
-# module docstring for how this was found.
+# ----------------------------------------------- LibreHardwareMonitor --
+# CPU temperature, open-source. Replaces an earlier version of this
+# file that shelled out to XTRM lab's own bundled SystemInfos.exe (a
+# closed-source rebrand-vendor binary wrapping a licensed HWiNFO
+# sensor DLL) for exactly this one number -- see the module docstring.
+# GPU stats no longer have (or need) a vendor-helper fallback either;
+# see get_gpu_stats() below, pynvml-only now, same as get_gpu_power_w()
+# and get_vram_percent() already were.
+#
+# Needs pythonnet (`pip install pythonnet`) to load the .NET assembly,
+# and the DLL itself placed at
+# assets/hardware/LibreHardwareMonitorLib.dll (resolved the same way
+# every other bundled asset is, via paths.resource_path()) -- get it
+# from the project's own official releases:
+# https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases
+# (MIT-licensed). Deliberately NOT auto-downloaded or bundled by this
+# repo: the whole point of moving off the vendor helper was trusting a
+# binary's own maintainers over an unverified copy of it, so getting
+# the DLL is a manual step documented in BUILD.md's "Hardware sensors"
+# section, the same way BUILD.md already treats Playwright's Chromium
+# download as the user's own step rather than something pip installs
+# for them.
+#
+# Missing pythonnet, missing the DLL, or not running elevated (real
+# hardware sensor access on Windows needs Administrator to load a
+# driver no matter whose code is doing it -- see controller.py's
+# relaunch_elevated()) all degrade this stat to "--", the same as any
+# other optional dependency in this file.
 
-SYSTEMINFOS_DIR = r"C:\Program Files\XTRM lab\resources\main\SDK\VC#\SystemInfos\vs2008\bin\x64\Release"
-SYSTEMINFOS_EXE = os.path.join(SYSTEMINFOS_DIR, "SystemInfos.exe")
-SYSTEMINFOS_APP_NAME = "XTRM_lab"  # must match the vendor app's package.json "name"
-SYSTEMINFOS_SHM_PATH = os.path.join(tempfile.gettempdir(), f"{SYSTEMINFOS_APP_NAME}.bin")
-
-_systeminfos_proc = None
-
-
-def start_systeminfos():
-    """Spawn the vendor's own sensor-reading helper in the background,
-    the same way their app does. Safe to call even if it's already
-    running (e.g. because the XTRM lab app is also open) -- if the
-    output file is already being updated, we just don't bother
-    launching a second copy."""
-    global _systeminfos_proc
-    if _systeminfos_proc is not None or not os.path.exists(SYSTEMINFOS_EXE):
-        return
-
-    try:
-        if time.time() - os.path.getmtime(SYSTEMINFOS_SHM_PATH) < 3.0:
-            return  # something is already feeding this file
-    except OSError:
-        pass
-
-    try:
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        _systeminfos_proc = subprocess.Popen(
-            [SYSTEMINFOS_EXE, SYSTEMINFOS_APP_NAME],
-            cwd=SYSTEMINFOS_DIR,
-            creationflags=creationflags,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception:  # noqa: BLE001
-        _systeminfos_proc = None
+_lhm_computer = None
+_lhm_unavailable = False
 
 
-def stop_systeminfos():
-    global _systeminfos_proc
-    if _systeminfos_proc is not None:
+def _lhm_cpu_temp():
+    """CPU package temperature in °C via LibreHardwareMonitorLib, or
+    None if pythonnet/the DLL aren't available, this process isn't
+    elevated (Sensors just stays empty -- LibreHardwareMonitorLib
+    doesn't raise for that), or no temperature sensor is reported.
+    Caches a setup FAILURE (not just a reading) in _lhm_unavailable so
+    a missing DLL/pythonnet doesn't retry the same failing import on
+    every single frame -- only a fresh process (after actually
+    installing pythonnet/the DLL) tries again. A successful Computer()
+    is kept open and reused for the rest of the process's life, same
+    "one persistent handle, not reopened every read" shape
+    screen_engine.py already uses for the panel connection."""
+    global _lhm_computer, _lhm_unavailable
+    if _lhm_unavailable:
+        return None
+    if _lhm_computer is None:
         try:
-            _systeminfos_proc.terminate()
-        except Exception:  # noqa: BLE001
-            pass
-        _systeminfos_proc = None
-
-
-def read_systeminfos():
-    """Read+parse the current frame. Returns None if the helper isn't
-    running yet, hasn't written anything, isn't installed at the
-    expected path, or -- and this is the case that actually matters
-    here -- HAS written something before but has since stopped updating
-    it (e.g. it needs Administrator to load its sensor driver and this
-    app isn't running elevated, so it wrote one valid frame at startup
-    and then silently exited): without a freshness check, a stopped
-    helper's last frame just sits on disk and reads back as if it were
-    live forever, showing a frozen, increasingly-wrong number (the
-    literal "CPU temp always at 41C" bug) instead of "no data". The file
-    is meant to update about once a second either way, so anything more
-    than a few seconds stale is treated as no reading at all."""
-    try:
-        if time.time() - os.path.getmtime(SYSTEMINFOS_SHM_PATH) > 3.0:
+            dll_path = resource_path("hardware", "LibreHardwareMonitorLib.dll")
+            if not os.path.isfile(dll_path):
+                _lhm_unavailable = True
+                return None
+            import clr  # pythonnet -- pip install pythonnet
+            clr.AddReference(dll_path)
+            from LibreHardwareMonitor.Hardware import Computer  # noqa: E402
+            computer = Computer()
+            computer.IsCpuEnabled = True
+            computer.Open()
+            _lhm_computer = computer
+        except Exception:  # noqa: BLE001 -- no pythonnet, no .NET runtime,
+                            # DLL failed to load, whatever else.
+            _lhm_unavailable = True
             return None
-        with open(SYSTEMINFOS_SHM_PATH, "rb") as f:
-            head = f.read(4)
-            if len(head) < 4:
-                return None
-            n = struct.unpack("<I", head)[0]
-            if n == 0 or n > 65532:
-                return None
-            return json.loads(f.read(n).decode("utf-8"))
-    except Exception:  # noqa: BLE001
-        return None
 
-
-def _sensor_value(frame, section_key, list_key):
-    """Pull a value out of a SystemInfos frame the same way the vendor
-    app does: frame[section_key][f"{list_key}_list"], preferring the
-    sensor flagged "checked" and falling back to the first one."""
-    if not frame:
+    try:
+        best = None
+        for hw in _lhm_computer.Hardware:
+            if str(hw.HardwareType) != "Cpu":
+                continue
+            hw.Update()
+            for sensor in hw.Sensors:
+                if str(sensor.SensorType) != "Temperature" or sensor.Value is None:
+                    continue
+                # "Package" (the whole-die reading) beats any one
+                # individual core's sensor -- same "package over a
+                # single core" preference the vendor helper's own
+                # "checked" sensor used to encode.
+                if "Package" in str(sensor.Name):
+                    return float(sensor.Value)
+                if best is None:
+                    best = float(sensor.Value)
+        return best
+    except Exception:  # noqa: BLE001 -- best-effort; "--" beats a crash
         return None
-    section = frame.get(section_key) or {}
-    sensors = section.get(f"{list_key}_list") or []
-    if not sensors:
-        return None
-    for s in sensors:
-        if s.get("checked"):
-            return s.get("value")
-    return sensors[0].get("value")
 
 
 _cpu_temp_state = {"value": None, "sampled_at": 0.0}
 CPU_TEMP_REFRESH = 1.0
-
-# Where a CPU package temperature hides in a SystemInfos frame. The
-# vendor's helper groups sensors by hardware section, and the GPU one
-# ("graphics") was the only section this app had ever needed, so the
-# CPU side is matched by trying the names that section plausibly goes
-# by rather than by hard-coding one -- if a machine spells it
-# differently the reading degrades to "--" instead of raising, and
-# scripts/check_sensors.py prints the frame's real section names so it
-# takes one run to find out.
-_CPU_TEMP_SECTIONS = ("cpu", "processor", "central", "mainboard")
 
 
 def _psutil_cpu_temp():
     """psutil's own sensor reading, which is Linux-only in practice --
     Windows doesn't expose CPU temperature through the API psutil uses
     at all. Kept as the fallback so this stat is real on Linux and so
-    a Windows machine degrades to "--" rather than to an exception."""
+    a Windows machine degrades to "--" rather than to an exception
+    (falling through to _lhm_cpu_temp() there instead -- see
+    get_cpu_temp_c())."""
     getter = getattr(psutil, "sensors_temperatures", None)
     if getter is None:
         return None
@@ -812,36 +794,23 @@ def _psutil_cpu_temp():
     return None
 
 
-def get_cpu_temp_c(sysinfo_frame=None):
+def get_cpu_temp_c():
     """CPU package temperature in °C, or None if this machine won't say.
-
-    On Windows this comes from the vendor's own SystemInfos.exe helper
-    (the same feed GPU temp already used) rather than from Windows,
-    which doesn't offer the number -- see the module docstring. That
-    helper needs to load a sensor driver, which needs Administrator:
-    without it, it writes one frame and exits, read_systeminfos()'s
-    freshness check drops the stale frame, and this reads None. So on
-    a non-elevated run this stat is "--" by design, not by accident,
-    and no amount of retrying here changes that.
-
-    `sysinfo_frame` is the frame the render loop already read this
-    tick, passed in so a frame isn't parsed twice per stat -- same
-    arrangement get_gpu_stats() has. Cached for CPU_TEMP_REFRESH
-    otherwise."""
+    Linux: psutil.sensors_temperatures(). Windows: LibreHardwareMonitorLib
+    (_lhm_cpu_temp() above) -- Windows doesn't expose this through any
+    API psutil uses at all, so there's no psutil-only path there the
+    way there is on Linux; see the module docstring for why this isn't
+    the vendor helper any more. Cached for CPU_TEMP_REFRESH since
+    either source is real I/O, not worth doing on every single frame."""
     now = time.time()
     state = _cpu_temp_state
-    if sysinfo_frame is None and now - state["sampled_at"] < CPU_TEMP_REFRESH:
+    if now - state["sampled_at"] < CPU_TEMP_REFRESH:
         return state["value"]
     state["sampled_at"] = now
 
-    frame = sysinfo_frame if sysinfo_frame is not None else read_systeminfos()
-    value = None
-    for section in _CPU_TEMP_SECTIONS:
-        value = _sensor_value(frame, section, "temperature")
-        if value is not None:
-            break
-    if value is None:
-        value = _psutil_cpu_temp()
+    value = _psutil_cpu_temp()
+    if value is None and sys.platform == "win32":
+        value = _lhm_cpu_temp()
     try:
         state["value"] = None if value is None else float(value)
     except (TypeError, ValueError):
@@ -861,22 +830,21 @@ except Exception:  # noqa: BLE001 -- no nvidia GPU, no driver, lib missing, etc.
     _GPU_OK = False
 
 
-def get_gpu_stats(sysinfo_frame=None):
-    if _GPU_OK:
-        try:
-            util = pynvml.nvmlDeviceGetUtilizationRates(_gpu_handle).gpu
-            temp = pynvml.nvmlDeviceGetTemperature(_gpu_handle, pynvml.NVML_TEMPERATURE_GPU)
-            return {"util": util, "temp": temp}
-        except Exception:  # noqa: BLE001
-            pass
-
-    # Fall back to the same SystemInfos.exe feed used for CPU temp --
-    # this also covers non-NVIDIA GPUs, since it's not NVML-specific.
-    util = _sensor_value(sysinfo_frame, "graphics", "utilization")
-    temp = _sensor_value(sysinfo_frame, "graphics", "temperature")
-    if util is None and temp is None:
+def get_gpu_stats():
+    """{"util": ..., "temp": ...} from pynvml, or None on anything but
+    an NVIDIA GPU/driver. Used to fall back to XTRM lab's own
+    SystemInfos.exe for non-NVIDIA hardware; dropped for the same
+    reason CPU temp stopped using it (see the module docstring) --
+    this stat is just "--" on non-NVIDIA hardware now, same as
+    get_gpu_power_w()/get_vram_percent() already were."""
+    if not _GPU_OK:
         return None
-    return {"util": util, "temp": temp}
+    try:
+        util = pynvml.nvmlDeviceGetUtilizationRates(_gpu_handle).gpu
+        temp = pynvml.nvmlDeviceGetTemperature(_gpu_handle, pynvml.NVML_TEMPERATURE_GPU)
+        return {"util": util, "temp": temp}
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def get_vram_percent():
@@ -897,10 +865,9 @@ GPU_POWER_MAX_W = 350.0  # gauge ceiling -- a reasonable high-end-card TDP;
 
 
 def get_gpu_power_w():
-    """Live GPU power draw in watts -- pynvml-only (no SystemInfos.exe
-    fallback; the vendor feed this theme otherwise falls back to for
-    non-NVIDIA GPUs doesn't expose this), so this is None on anything
-    but an NVIDIA card, same graceful "--" as any other missing stat."""
+    """Live GPU power draw in watts -- pynvml-only, so this is None on
+    anything but an NVIDIA card, same graceful "--" as any other
+    missing stat."""
     if not _GPU_OK:
         return None
     try:
@@ -7138,9 +7105,9 @@ def render_preset_thumbnail(elements, background, width=480, height=240):
 def render_live_preview(elements, background, width=REFERENCE_WIDTH, height=REFERENCE_HEIGHT):
     """Same render_frame() pipeline as render_preset_thumbnail() just
     above, but with this machine's actual CURRENT stats (the same
-    psutil/SystemInfos.exe/pynvml/winsdk calls run()'s own render loop
-    makes every frame) in place of _THUMBNAIL_STATS' fixed illustrative
-    numbers.
+    psutil/LibreHardwareMonitorLib/pynvml/winsdk calls run()'s own
+    render loop makes every frame) in place of _THUMBNAIL_STATS' fixed
+    illustrative numbers.
 
     This is what backs the design canvas's "preview what I'm currently
     editing" backdrop (controller.py's render_dashboard_live_preview())
@@ -7167,26 +7134,24 @@ def render_live_preview(elements, background, width=REFERENCE_WIDTH, height=REFE
     the actual running panel's own graph (which does keep real
     history) does.
 
-    start_systeminfos()/start_media_polling() are idempotent (safe to
-    call even if the dashboard theme -- or a different one entirely --
-    already has them running) and are called here so GPU/media stats
-    are actually available even when this is invoked while nothing (or
-    some other theme) is running; the first call or two right after the
-    design canvas opens may still come back with a None GPU/media
-    reading until SystemInfos.exe's helper process has written its
-    first frame, same cold-start gap the real panel has."""
-    start_systeminfos()
+    start_media_polling() is idempotent (safe to call even if the
+    dashboard theme -- or a different one entirely -- already has it
+    running) and is called here so media stats are actually available
+    even when this is invoked while nothing (or some other theme) is
+    running; the first call or two right after the design canvas opens
+    may still come back with a None media reading until the media
+    session subscription has actually connected, same cold-start gap
+    the real panel has."""
     start_media_polling()
     fonts = _thumbnail_fonts()
     bg_image, layout = build_static_background(width, height, fonts, elements, background)
-    sysinfo_frame = read_systeminfos()
     media = get_media_info()
-    gpu = get_gpu_stats(sysinfo_frame)
+    gpu = get_gpu_stats()
     stats = {
         "cpu_load": get_cpu_stats()["util"],
         "gpu_load": gpu["util"] if gpu else None,
         "gpu_temp": gpu["temp"] if gpu else None,
-        "cpu_temp": get_cpu_temp_c(sysinfo_frame),
+        "cpu_temp": get_cpu_temp_c(),
         "ram": get_ram_percent(),
         "network": get_network_rate_mb_s(),
         "cpu_freq": get_cpu_freq_ghz(),
@@ -7315,26 +7280,23 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
     if enable_web:
         screen.enable_web_mirror(port=web_port, log=log)
 
-    start_systeminfos()
     start_media_polling()
-    if not os.path.exists(SYSTEMINFOS_EXE):
-        log(f"  (SystemInfos.exe not found at {SYSTEMINFOS_DIR} -- CPU/GPU temp may be limited)")
-    else:
-        # The helper needs Administrator to load its sensor driver. On
-        # a normal run it writes one frame and quietly exits, which
-        # reads back as "no sensors" -- worth saying out loud, because
-        # the symptom (CPU Temp showing "--") looks like a bug in this
-        # app rather than a missing privilege. Checked a moment after
-        # start_systeminfos() so the helper has had a chance to write.
-        def _warn_if_sensors_silent():
-            time.sleep(4.0)
-            if read_systeminfos() is None:
-                log("  (no sensor frames from SystemInfos.exe -- CPU temp will read '--'."
-                    " Its driver needs Administrator: run this app as administrator once"
-                    " to get hardware temperatures.)")
-        threading.Thread(target=_warn_if_sensors_silent, daemon=True).start()
+    if sys.platform == "win32":
+        # Worth saying out loud, because the symptom (CPU Temp showing
+        # "--") looks like a bug in this app rather than a missing
+        # dependency/privilege -- see _lhm_cpu_temp()'s docstring for
+        # what each of those actually means. Off the main thread since
+        # the first call does real work (loading pythonnet's .NET
+        # runtime, opening the sensor driver), not worth delaying
+        # startup for.
+        def _warn_if_cpu_temp_unavailable():
+            if _lhm_cpu_temp() is None:
+                log("  (CPU Temp unavailable -- needs pythonnet + LibreHardwareMonitorLib.dll"
+                    " (see BUILD.md's \"Hardware sensors\") and Administrator to load its"
+                    " driver. The web UI's System section has a one-click restart for that.)")
+        threading.Thread(target=_warn_if_cpu_temp_unavailable, daemon=True).start()
     if not _GPU_OK:
-        log("  (no NVIDIA GPU / nvidia-ml-py not available -- falling back to SystemInfos.exe for GPU stats)")
+        log("  (no NVIDIA GPU / nvidia-ml-py not available -- GPU load/temp/VRAM/power unavailable)")
     if not _MEDIA_OK:
         log("  (winsdk not available -- install it for Spotify album art: pip install winsdk)")
 
@@ -7429,14 +7391,13 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
             # call, so a locked machine doesn't keep burning CPU on
             # stats/rendering nobody's watching either.
             if not power_state.should_pause():
-                sysinfo_frame = read_systeminfos()
                 media = get_media_info()
-                gpu = get_gpu_stats(sysinfo_frame)
+                gpu = get_gpu_stats()
                 stats = {
                     "cpu_load": get_cpu_stats()["util"],
                     "gpu_load": gpu["util"] if gpu else None,
                     "gpu_temp": gpu["temp"] if gpu else None,
-        "cpu_temp": get_cpu_temp_c(sysinfo_frame),
+                    "cpu_temp": get_cpu_temp_c(),
                     "ram": get_ram_percent(),
                     "network": get_network_rate_mb_s(),
                     "cpu_freq": get_cpu_freq_ghz(),
@@ -7473,7 +7434,6 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
             log("Stopped, disconnected cleanly.")
         else:
             log("Stopped.")
-        stop_systeminfos()
 
 
 def main():

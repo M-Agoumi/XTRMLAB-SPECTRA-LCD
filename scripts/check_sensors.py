@@ -80,28 +80,28 @@ def main():
     except Exception:  # noqa: BLE001 -- not Windows
         elevated = None
     print(f"running as administrator:    {elevated}")
-    print(f"SystemInfos.exe present:     {os.path.exists(dt.SYSTEMINFOS_EXE)}")
-    dt.start_systeminfos()
-    time.sleep(3.0)
-    frame = dt.read_systeminfos()
-    if frame is None:
-        print("sensor frame:                none (helper not running, or it exited)")
-        print("                             Its driver needs Administrator -- run this")
-        print("                             script (and the app) elevated to get CPU temp.")
-    else:
-        print("sensor frame sections:      ", ", ".join(sorted(frame)))
-        for section, body in sorted(frame.items()):
-            if not isinstance(body, dict):
-                continue
-            lists = [k for k in body if k.endswith("_list")]
-            if lists:
-                print(f"    {section}: {', '.join(sorted(lists))}")
-    temp = dt.get_cpu_temp_c(frame)
+    try:
+        import clr  # noqa: F401 -- pythonnet
+        pythonnet_installed = True
+    except Exception:  # noqa: BLE001
+        pythonnet_installed = False
+    print(f"pythonnet installed:         {pythonnet_installed}"
+          + ("" if pythonnet_installed else "  -- pip install pythonnet"))
+    dll_path = dt.resource_path("hardware", "LibreHardwareMonitorLib.dll")
+    dll_present = os.path.isfile(dll_path)
+    print(f"LibreHardwareMonitorLib.dll: {dll_present}")
+    if not dll_present:
+        print(f"                             expected at: {dll_path}")
+        print("                             get it from https://github.com/LibreHardwareMonitor/"
+              "LibreHardwareMonitor/releases -- see BUILD.md's \"Hardware sensors\" section.")
+    temp = dt.get_cpu_temp_c()
     print("get_cpu_temp_c():           ", "unavailable" if temp is None else f"{temp:.0f} C")
-    if frame is not None and temp is None:
-        print("                             The frame is live but no CPU temperature was found")
-        print("                             in it -- send the section names above and the")
-        print("                             lookup can be pointed at the right one.")
+    if pythonnet_installed and dll_present and temp is None:
+        print("                             pythonnet and the DLL are both there but no reading")
+        print("                             came back -- if not elevated, that's expected (its")
+        print("                             driver needs Administrator); if already elevated,")
+        print("                             something else is off (no CPU sensor reported, a")
+        print("                             driver load failure, etc).")
 
     # Every active playback device, with what each one actually
     # reports -- the answer to "volume always shows zero" is usually

@@ -27,6 +27,7 @@
 # app package (src/), the built frontend, and the icon are all baked
 # in.
 
+import glob
 import sys
 
 block_cipher = None
@@ -45,7 +46,33 @@ hidden_imports = [
     # fallback on an older pywebview/no WebView2 install.
     "webview.platforms.edgechromium",
     "webview.platforms.winforms",
+    # pythonnet (CPU Temp, dashboard_theme.py's _lhm_cpu_temp()) loads
+    # its .NET runtime dynamically via clr_loader -- PyInstaller's
+    # static scanner can't follow that either. Untested from this
+    # Linux sandbox (pythonnet is Windows-only at runtime); if CPU
+    # Temp works with `python app.py` but not the built exe, check the
+    # exe's console output (see BUILD.md's "If something doesn't work
+    # in the exe") for a clr/clr_loader import error first.
+    "clr",
+    "clr_loader",
 ]
+
+# LibreHardwareMonitorLib.dll (CPU Temp, dashboard_theme.py's
+# _lhm_cpu_temp()) -- NOT committed to this repo, see BUILD.md's
+# "Hardware sensors" section for why (get it straight from its own
+# maintainers) and where to place it before building. Genuinely
+# optional, unlike the other datas entries below: PyInstaller hard-
+# fails the *entire build* (SystemExit) on a datas glob that matches
+# zero files -- it does NOT just skip a missing one the way this app's
+# own optional dependencies degrade gracefully at runtime -- so this
+# has to be built up conditionally in Python here rather than listed
+# as a plain tuple like everything else.
+optional_datas = []
+if glob.glob("assets/hardware/*.dll"):
+    optional_datas.append(("assets/hardware/*.dll", "assets/hardware"))
+else:
+    print('NOTE: assets/hardware/*.dll not found -- building without CPU Temp '
+          'support. See BUILD.md\'s "Hardware sensors" section.')
 
 a = Analysis(
     ["app.py"],
@@ -84,7 +111,7 @@ a = Analysis(
         # would fall back to the plain-HTML placeholder page instead
         # of the real UI.
         ("frontend/dist", "frontend/dist"),
-    ],
+    ] + optional_datas,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},

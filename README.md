@@ -349,7 +349,7 @@ the theme modules, since those double as library code the GUI imports).
   | CPU Load | `psutil` | overall utilization |
   | CPU Load (Peak Core) | `psutil` | busiest single core, not the average — catches single-threaded spikes the overall number hides |
   | CPU Freq | `psutil` | current clock speed. On Windows this reads from WMI and many CPUs only report their fixed rated speed there rather than the true live boost/throttle clock — a flat reading (e.g. always 3.4GHz) is a Windows/WMI limitation, not a bug in this app |
-  | GPU Load | NVIDIA via `pynvml`, else the vendor sensor helper | see GPU note below |
+  | GPU Load | NVIDIA via `pynvml` | NVIDIA only; N/A otherwise -- see GPU note below |
   | GPU Temp | same as GPU Load | |
   | GPU Power (W) | NVIDIA via `pynvml` | NVIDIA only; N/A otherwise |
   | RAM Usage | `psutil` | |
@@ -362,19 +362,24 @@ the theme modules, since those double as library code the GUI imports).
   | Battery | `psutil` | laptops only; N/A on a desktop |
 
   - CPU temp specifically: Windows doesn't expose it through the API
-    `psutil` uses (that's why it showed blank/N/A). Instead of a
-    separate monitoring tool, this script spawns the XTRM lab app's
-    *own* bundled sensor helper (`SystemInfos.exe`, found inside its
-    install folder) and reads the same live sensor feed the vendor app
-    itself uses to show CPU/GPU temp — no extra install needed. Needs
-    to run as Administrator (same as the vendor app) so its driver can
-    load; if that helper can't be found or spawned, it falls back to
-    psutil, which on Windows usually means "–" instead of a number.
-  - GPU stats: try an NVIDIA GPU first via `pip install nvidia-ml-py`
-    (importable as `pynvml`); load/temp fall back to the same
-    `SystemInfos.exe` feed above (also covers non-NVIDIA GPUs) if
-    unavailable — VRAM and GPU power are NVIDIA-only and show N/A on
-    anything else.
+    `psutil` uses (that's why it showed blank/N/A). Reads via
+    [LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+    instead — a well-known, MIT-licensed, open-source project, not a
+    vendor-supplied binary (an earlier version of this app used the
+    XTRM lab app's own bundled `SystemInfos.exe` helper for this; moved
+    off it deliberately — see BUILD.md's "Hardware sensors" section).
+    Needs `pip install pythonnet` plus `LibreHardwareMonitorLib.dll`
+    placed by hand (BUILD.md has the exact steps) and Administrator to
+    load its sensor driver — same Windows platform requirement any
+    real hardware sensor access needs, regardless of whose code is
+    doing it. Missing either dependency, or not elevated, just reads
+    "–", same as any other optional stat. The desktop app's System
+    section has a one-click "Restart as Administrator" for this.
+  - GPU stats: NVIDIA only, via `pip install nvidia-ml-py` (importable
+    as `pynvml`) — load, temp, VRAM and GPU power all show N/A without
+    an NVIDIA GPU/driver. An earlier version of this app fell back to
+    the same vendor `SystemInfos.exe` helper for non-NVIDIA GPU load/
+    temp; dropped for the same reason CPU temp moved off it.
   - Album art (middle): reads Windows' own now-playing info (the same
     thing the volume flyout shows) via `pip install winsdk` — no
     Spotify API key needed, works with the Spotify desktop app. Needs
@@ -530,12 +535,6 @@ Never open this device with `rtscts=True` — it hangs pyserial indefinitely.
   `python app.py`.
 - `packaging/hongtai_screen.spec` — the PyInstaller spec `BUILD.md` uses.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed release to release.
-- `.github/workflows/build.yml` — CI/CD. Every push to `develop` tests
-  the app and re-publishes a rolling **beta** prerelease with a fresh
-  `Hongtai Screen.exe` attached; pushing a `vX.Y.Z` tag (from `main`,
-  once `main` is caught up to the commit you're shipping) cuts a
-  **production** release the same way. See BUILD.md's "Automated
-  builds" section.
 
 ## Status
 
