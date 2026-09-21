@@ -707,6 +707,18 @@ def get_battery_percent():
 
 _lhm_computer = None
 _lhm_unavailable = False
+# Set alongside _lhm_unavailable whenever setup fails with an actual
+# exception (as opposed to "just not elevated", which LibreHardware-
+# MonitorLib doesn't raise for -- see below), so _warn_if_cpu_temp_
+# unavailable() can log something more useful than the same generic
+# "check pythonnet/the DLL/Administrator" line every time. Without
+# this, a real setup failure (wrong DLL bitness, .NET runtime missing,
+# a typo'd file) was previously indistinguishable in the log from
+# "everything's fine, just needs Administrator" -- exactly the kind of
+# silently-swallowed error this app's own "Copy logs" button exists to
+# help someone paste back for debugging, except there was nothing to
+# see, only "--".
+_lhm_failure_reason = None
 
 
 def _lhm_cpu_temp():
@@ -721,7 +733,7 @@ def _lhm_cpu_temp():
     is kept open and reused for the rest of the process's life, same
     "one persistent handle, not reopened every read" shape
     screen_engine.py already uses for the panel connection."""
-    global _lhm_computer, _lhm_unavailable
+    global _lhm_computer, _lhm_unavailable, _lhm_failure_reason
     if _lhm_unavailable:
         return None
     if _lhm_computer is None:
@@ -729,6 +741,7 @@ def _lhm_cpu_temp():
             dll_path = resource_path("hardware", "LibreHardwareMonitorLib.dll")
             if not os.path.isfile(dll_path):
                 _lhm_unavailable = True
+                _lhm_failure_reason = f"DLL not found at {dll_path}"
                 return None
             import clr  # pythonnet -- pip install pythonnet
             clr.AddReference(dll_path)
@@ -737,9 +750,10 @@ def _lhm_cpu_temp():
             computer.IsCpuEnabled = True
             computer.Open()
             _lhm_computer = computer
-        except Exception:  # noqa: BLE001 -- no pythonnet, no .NET runtime,
-                            # DLL failed to load, whatever else.
+        except Exception as e:  # noqa: BLE001 -- no pythonnet, no .NET runtime,
+                                 # DLL failed to load, whatever else.
             _lhm_unavailable = True
+            _lhm_failure_reason = f"{type(e).__name__}: {e}"
             return None
 
     try:
@@ -7291,9 +7305,21 @@ def run(port=None, web_port=8765, enable_web=True, default_art_path=None,
         # startup for.
         def _warn_if_cpu_temp_unavailable():
             if _lhm_cpu_temp() is None:
-                log("  (CPU Temp unavailable -- needs pythonnet + LibreHardwareMonitorLib.dll"
-                    " (see BUILD.md's \"Hardware sensors\") and Administrator to load its"
-                    " driver. The web UI's System section has a one-click restart for that.)")
+                if _lhm_failure_reason:
+                    # Setup actually raised -- pythonnet/the DLL are
+                    # present but something specific about loading them
+                    # failed, so say what rather than repeating the
+                    # generic checklist that doesn't apply here.
+                    log(f"  (CPU Temp unavailable -- {_lhm_failure_reason})")
+                else:
+                    # No exception at all: pythonnet + the DLL loaded
+                    # fine, LibreHardwareMonitorLib just isn't reporting
+                    # any sensors -- almost always means not elevated,
+                    # since it doesn't raise for that, it just leaves
+                    # Sensors empty.
+                    log("  (CPU Temp unavailable -- needs pythonnet + LibreHardwareMonitorLib.dll"
+                        " (see BUILD.md's \"Hardware sensors\") and Administrator to load its"
+                        " driver. The web UI's System section has a one-click restart for that.)")
         threading.Thread(target=_warn_if_cpu_temp_unavailable, daemon=True).start()
     if not _GPU_OK:
         log("  (no NVIDIA GPU / nvidia-ml-py not available -- GPU load/temp/VRAM/power unavailable)")
