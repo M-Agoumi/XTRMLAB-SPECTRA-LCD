@@ -122,6 +122,24 @@ automated by `pip install` or this build:
    and the backgrounds/fonts -- build the exe *after* placing the DLL,
    not before).
 
+   **Unblock the file after placing it.** Windows tags anything
+   downloaded from the internet -- including a file pulled out of a
+   downloaded zip -- with a "Mark of the Web" flag, and pythonnet's
+   .NET Framework runtime refuses to load a DLL carrying that flag
+   from a local path (it treats it like loading from a network share).
+   The symptom is a `FileLoadException` /
+   `System.NotSupportedException` mentioning `loadFromRemoteSources` in
+   the app's log, not a missing-file error, which makes it look like
+   something's wrong with the DLL itself rather than a file attribute.
+   Clear it with:
+
+   ```
+   Unblock-File assets\hardware\LibreHardwareMonitorLib.dll
+   ```
+
+   or right-click the file → Properties → General tab → check
+   "Unblock" → OK.
+
 Getting the DLL straight from its own maintainers rather than this repo
 fetching or bundling a copy of it is the point, not an inconvenience --
 that's exactly the trust boundary this replaced the vendor helper to
