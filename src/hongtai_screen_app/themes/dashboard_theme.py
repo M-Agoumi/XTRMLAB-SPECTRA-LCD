@@ -4419,10 +4419,10 @@ BUILTIN_DASHBOARD_PRESETS["Sakura Ink"] = {
                    "dim": 0, "widget_style": "default", "image_path": None},
     "elements": [
         *_ink_row("cpu", "cpu_load", "CPU", 0.16, 0.40, 10),
-        *_ink_row("ram", "ram", "RAM", 0.16, 0.56, 13),
-        *_ink_row("dsk", "disk_usage", "DISK", 0.16, 0.72, 16),
+        *_ink_row("cputmp", "cpu_temp", "CPU TEMP", 0.16, 0.56, 13),
+        *_ink_row("ram", "ram", "RAM", 0.16, 0.72, 16),
         *_ink_row("gpu", "gpu_load", "GPU", 0.84, 0.40, 19),
-        *_ink_row("tmp", "gpu_temp", "TEMP", 0.84, 0.56, 22),
+        *_ink_row("gputmp", "gpu_temp", "TEMP", 0.84, 0.56, 22),
         *_ink_row("net", "network", "NET", 0.84, 0.72, 25),
         {"id": "ink_vol", "type": "text", "stat": "volume",
          "template": "VOL  {value}", "x": 0.5, "y": 0.90, "font_size": 0.03,
