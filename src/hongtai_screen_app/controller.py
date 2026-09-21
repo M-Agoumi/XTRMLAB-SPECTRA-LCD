@@ -295,6 +295,19 @@ class AppController:
             raise RuntimeError("Restarting elevated is Windows-only.")
         import ctypes
 
+        # Captured before stopping: engine.stop() below tears the
+        # connection down, which fires _on_screen_disconnected() --
+        # same as any other disconnect, that clears auto_resume_tab to
+        # None, since normally "nothing's connected any more" really
+        # does mean "nothing to resume". This isn't that case (it's a
+        # restart, not a real stop), so what was actually running gets
+        # put back once the port's released, before the new elevated
+        # copy starts up and reads this same config to decide what to
+        # resume. Without this, restarting elevated silently dropped
+        # whatever was running -- the new window came up idle, looking
+        # like the resume feature itself was broken.
+        resume_tab = self.cfg.get("auto_resume_tab")
+
         self.engine.stop()
         # stop() only *asks* -- wait for the engine to actually finish
         # tearing down (screen.close(), the real COM port release)
@@ -303,6 +316,11 @@ class AppController:
         deadline = time.time() + 5.0
         while self.engine.is_running() and time.time() < deadline:
             time.sleep(0.05)
+
+        if resume_tab is not None and self.cfg.get("auto_resume_tab") is None:
+            with self._lock:
+                self.cfg["auto_resume_tab"] = resume_tab
+                config_store.save_config(self.cfg)
 
         target, args = _elevated_relaunch_target()
         single_instance._release_single_instance()
