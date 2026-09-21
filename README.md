@@ -530,6 +530,12 @@ Never open this device with `rtscts=True` — it hangs pyserial indefinitely.
   `python app.py`.
 - `packaging/hongtai_screen.spec` — the PyInstaller spec `BUILD.md` uses.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed release to release.
+- `.github/workflows/build.yml` — CI/CD. Every push to `develop` tests
+  the app and re-publishes a rolling **beta** prerelease with a fresh
+  `Hongtai Screen.exe` attached; pushing a `vX.Y.Z` tag (from `main`,
+  once `main` is caught up to the commit you're shipping) cuts a
+  **production** release the same way. See BUILD.md's "Automated
+  builds" section.
 
 ## Status
 

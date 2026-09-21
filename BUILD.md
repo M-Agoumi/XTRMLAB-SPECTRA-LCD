@@ -129,3 +129,41 @@ traceback is visible rather than silently swallowed, the same lesson
 that's already bitten this project once with windowless launches — see
 the Log panel and console output for the actual error, then report
 back with that text.
+
+## Automated builds (CI/CD)
+
+You don't have to run any of the steps above by hand for a real
+release — `.github/workflows/build.yml` does it on GitHub's own
+Windows runners and attaches the resulting `Hongtai Screen.exe` to a
+GitHub Release automatically. It runs the test suite first
+(`tests/`, on a quick Linux job); the Windows build only starts if
+that passes.
+
+**`develop` -> beta.** Every push to `develop` re-builds the exe and
+re-publishes it to a single rolling **"beta"** prerelease (the `beta`
+git tag is force-moved to whatever commit triggered the build, so it
+always points at the latest one). This is where in-progress/unfinished
+features land — grab the latest beta exe straight from the repo's
+Releases page instead of building locally.
+
+**`main` + a version tag -> production.** Pushing a tag like `v2.1.0`
+builds the exe and publishes it as a normal (non-prerelease) GitHub
+Release named after that tag, marked "Latest". To cut a production
+release:
+
+```
+git checkout main
+git merge develop          # or reset/fast-forward, whichever main's workflow is
+git push origin main
+git tag v2.1.0
+git push origin v2.1.0
+```
+
+Only the tag push actually triggers a production build — pushing to
+`main` on its own does not (there's no CI reason to rebuild `main`
+every time it moves; only a version tag means "ship this").
+
+Playwright's Chromium (`webpage_theme.py` / the Webpage Mirror theme)
+is installed in every automated build, unlike a bare local build per
+this file's Playwright note above — so a beta or production exe from
+CI always has that theme available.

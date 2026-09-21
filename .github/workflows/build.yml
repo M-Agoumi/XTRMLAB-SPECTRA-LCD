@@ -1,0 +1,99 @@
+name: Build
+
+# main + a `v*.*.*` tag -> a production release (not a prerelease).
+# develop -> a rolling "beta" prerelease, re-published on every push.
+# Pull requests only run the test job -- no exe is built for them.
+on:
+  push:
+    branches: [develop]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps for pycairo
+        run: sudo apt-get update && sudo apt-get install -y libcairo2-dev pkg-config
+
+      - name: Install Python test dependencies
+        run: pip install pytest pyserial pillow numpy pycairo psutil
+
+      - name: Run test suite
+        env:
+          PYTHONPATH: src
+        run: pytest tests/ -q
+
+  build:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Determine release channel
+        id: channel
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "channel=prod" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=beta" >> "$GITHUB_OUTPUT"
+            echo "tag=beta" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Move the floating "beta" tag to this commit
+        if: steps.channel.outputs.channel == 'beta'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f beta
+          git push -f origin beta
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Install Playwright Chromium (webpage-mirror theme)
+        run: playwright install chromium
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build the exe with PyInstaller
+        run: pyinstaller packaging/hongtai_screen.spec
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.channel.outputs.tag }}
+          name: ${{ steps.channel.outputs.channel == 'prod' && format('Hongtai Screen {0}', steps.channel.outputs.tag) || 'Beta build' }}
+          prerelease: ${{ steps.channel.outputs.channel == 'beta' }}
+          make_latest: ${{ steps.channel.outputs.channel == 'prod' }}
+          files: "dist/Hongtai Screen.exe"
+          body: ${{ steps.channel.outputs.channel == 'beta' && format('Automatic beta build from `develop` @ `{0}`.', github.sha) || format('Production release built from tag `{0}`.', steps.channel.outputs.tag) }}
