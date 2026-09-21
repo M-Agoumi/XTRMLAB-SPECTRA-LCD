@@ -743,8 +743,23 @@ def _lhm_cpu_temp():
                 _lhm_unavailable = True
                 _lhm_failure_reason = f"DLL not found at {dll_path}"
                 return None
+            # clr.AddReference() given the DLL's *full path* (with the
+            # .dll extension) loads the assembly -- confirmed working
+            # by a real report, no exception here -- but doesn't
+            # reliably register it with pythonnet's own import hook,
+            # so the `from LibreHardwareMonitor.Hardware import
+            # Computer` right after it can still raise
+            # ModuleNotFoundError even though the assembly loaded
+            # fine. Adding the DLL's directory to sys.path and
+            # referencing it by its bare assembly name instead (no
+            # path, no extension) is pythonnet's own documented
+            # pattern for this and is what actually makes the import
+            # hook pick it up.
+            dll_dir = os.path.dirname(dll_path)
+            if dll_dir not in sys.path:
+                sys.path.append(dll_dir)
             import clr  # pythonnet -- pip install pythonnet
-            clr.AddReference(dll_path)
+            clr.AddReference("LibreHardwareMonitorLib")
             from LibreHardwareMonitor.Hardware import Computer  # noqa: E402
             computer = Computer()
             computer.IsCpuEnabled = True
