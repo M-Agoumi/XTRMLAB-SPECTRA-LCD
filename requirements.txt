@@ -25,7 +25,18 @@ psutil>=5.9
 numpy>=1.24          # required -- gauge rendering + background gradients
 pycairo>=1.24        # required -- gauge rendering (prebuilt wheel on Windows)
 nvidia-ml-py>=12.0   # optional -- NVIDIA GPU/VRAM/power stats; degrades gracefully without one
-winsdk>=1.0.4        # optional -- Spotify/now-playing album art (Windows 10 1809+)
+winsdk>=1.0.0b1      # optional -- Spotify/now-playing album art (Windows 10 1809+).
+                     # winsdk has never published a stable release past
+                     # 1.0.0 betas (only 1.0.0b1..b10 exist on PyPI as of
+                     # this writing) -- a `>=1.0.4` constraint here used
+                     # to be simply unsatisfiable (confirmed by a real CI
+                     # failure: "No matching distribution found"), which
+                     # silently aborted this WHOLE file's install, taking
+                     # playwright/pycaw/pythonnet/pystray/pywebview down
+                     # with it. Pinning to a pre-release version number
+                     # like this is what tells pip to actually consider
+                     # winsdk's pre-releases for this one requirement
+                     # (PEP 440) without needing a blanket --pre flag.
 pycaw>=20240210      # optional -- the "Volume" stat (Windows master output level); without it
                      #             that one stat reads "--" and nothing else is affected
 pythonnet>=3.0        # optional -- CPU Temp, via the open-source LibreHardwareMonitorLib

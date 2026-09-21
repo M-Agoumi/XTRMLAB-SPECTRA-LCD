@@ -75,11 +75,22 @@ jobs:
         # `python -m pip install`, not bare `pip install` -- the
         # windows-latest runner can have more than one Python on PATH,
         # and bare `pip` isn't guaranteed to be the same interpreter
-        # `python` resolves to right after. Confirmed by a real CI
-        # failure: this step passed (pip install genuinely succeeded),
-        # but `python -m playwright install chromium` right after it
-        # still hit "No module named playwright" -- it had installed
-        # into a different Python than the one actually running later.
+        # `python` resolves to right after.
+        #
+        # `shell: bash`, not this job's default pwsh -- confirmed by a
+        # real CI failure: requirements.txt's install genuinely failed
+        # outright (an unsatisfiable winsdk constraint aborted the
+        # whole file, taking playwright/pycaw/pythonnet/pystray/
+        # pywebview down with it -- see requirements.txt's own comment
+        # on that line for the fix), and this step still showed green.
+        # pwsh doesn't fail a multi-line `run:` block just because one
+        # of its lines exited non-zero (no bash-style `set -e`), so the
+        # second line (`pip install pyinstaller`, which had nothing
+        # wrong with it) running fine was enough to mark the whole step
+        # a pass. GitHub Actions' bash steps run with `-e` on by
+        # default, so the same silent-failure shape can't happen here
+        # again.
+        shell: bash
         run: |
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller
@@ -92,10 +103,17 @@ jobs:
         # playwright` resolves the installed module directly instead of
         # depending on pip's Scripts/ dir having been picked up by
         # PATH, so it doesn't have that problem.
+        shell: bash
         run: python -m playwright install chromium
 
       - name: Build frontend
         working-directory: frontend
+        # shell: bash for the same reason as "Install Python
+        # dependencies" above -- pwsh's default multi-line `run:`
+        # doesn't stop after `npm ci` fails, so a broken `npm ci` could
+        # let `npm run build` run against a half-installed
+        # node_modules and still show the step as green.
+        shell: bash
         run: |
           npm ci
           npm run build
