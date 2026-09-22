@@ -4,9 +4,14 @@ Defaults are merged before rendering; element fields remain the final overrides.
 This module has no hardware or application state and never modifies saved data.
 """
 
+import functools
 import math
+import os
 
 from PIL import Image, ImageDraw, ImageOps
+
+from .. import image_store
+from ..paths import resource_path
 
 
 STYLES = {
@@ -199,12 +204,45 @@ def _point(cx, cy, r, degrees):
     return (cx + math.cos(a)*r, cy + math.sin(a)*r)
 
 
+def skin_path(name):
+    """Where a skin or dial-face picture lives, or None. Either a bundled one,
+    named by file name (assets/skins/<name>), or one the user uploaded, which
+    image_store keeps under its own folder. Any other path is refused, same
+    rule preset import applies to image_path: a preset from someone else must
+    not be able to point the renderer at an arbitrary file on this disk."""
+    if not name:
+        return None
+    if os.path.isabs(name):
+        return name if image_store.is_managed(name) else None
+    return resource_path("skins", name) if os.path.basename(name) == name else None
+
+
+@functools.lru_cache(maxsize=16)
+def _face_image(name, size):
+    """A dial face picture (see skin_path(), transparent PNG) fitted to
+    a `size`-pixel circle, or None when there's none or it can't be read,
+    so the style's own drawn face is used instead."""
+    path = skin_path(name)
+    if not path:
+        return None
+    try:
+        face = Image.open(path).convert("RGBA")
+    except OSError:
+        return None
+    return ImageOps.contain(face, (size, size), Image.Resampling.LANCZOS)
+
+
 def draw_gauge_static(img, el, g, title, font_loader):
     tile, cx, cy, r = _dial_canvas(g)
     d = ImageDraw.Draw(tile)
     metal, muted = color(el, "ornament_color"), color(el, "muted_color")
     style = el.get("widget_style", "gothic")
-    if style == "cyberpunk":
+    face = _face_image(el.get("face_image"), round(r * 2))
+    if face is not None:
+        # A picture for the face (a sword guard, a cockpit dial...); the
+        # track, ticks and live needle still draw over it.
+        tile.alpha_composite(face, (round(cx - face.width / 2), round(cy - face.height / 2)))
+    elif style == "cyberpunk":
         bezel = [_point(cx,cy,r,22.5+i*45) for i in range(8)]
         d.polygon(bezel,fill=color(el,"face_color"),outline=metal,width=2)
         for start in (135,230,325):

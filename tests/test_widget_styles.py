@@ -97,5 +97,25 @@ class WidgetStyleTests(unittest.TestCase):
         self.assertEqual(dashboard.load_font(24, family="unifraktur").getname()[0], "UnifrakturCook")
 
 
+    def test_bar_skin_reveals_the_lit_picture_up_to_the_value(self):
+        self.assertIsNone(dashboard._bar_skin_tiles("no_such_skin.png", 200, 30, (255, 0, 0)))
+        dim, lit = dashboard._bar_skin_tiles("katana.png", 200, 30, (255, 0, 0))
+        self.assertEqual(dim.size, lit.size)
+        self.assertLessEqual(dim.width, 200)
+        box = {"x0": 10, "y0": 10, "w": 200, "h": 30, "cx": 110, "cy": 25}
+        el = {"stat": "ram", "skin": "katana.png", "show_value": False}
+        frames = []
+        for value in (0, 50, 100):
+            img = Image.new("RGBA", (240, 60), (0, 0, 0, 255))
+            dashboard._draw_bar_dynamic(img, el, box, value, 0, 100, (255, 0, 0), None, str)
+            frames.append(img)
+        empty, half, full = frames
+        self.assertIsNotNone(ImageChops.difference(empty, half).getbbox())
+        self.assertIsNotNone(ImageChops.difference(half, full).getbbox())
+        # Half-full only changes the left half of the blade.
+        changed = ImageChops.difference(empty, half).getbbox()
+        self.assertLessEqual(changed[2], 10 + dim.width // 2 + 1)
+
+
 if __name__ == "__main__":
     unittest.main()
