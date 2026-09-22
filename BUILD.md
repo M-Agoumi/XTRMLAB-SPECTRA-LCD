@@ -8,6 +8,15 @@ This has to be done **on a Windows machine, by you** — a PyInstaller
 build has to run on the same OS/architecture it targets, and bundles
 whatever's actually `pip install`ed in the environment you build from.
 
+**Shortcut:** `scripts\build_local.ps1` automates steps 1-3 below
+(Python deps, Playwright's Chromium, the frontend, then PyInstaller) in
+one go -- run `.\scripts\build_local.ps1` from the repo root, or
+`.\scripts\build_local.ps1 -SkipFrontend -SkipPlaywright` for a faster
+rebuild that reuses an already-built `frontend\dist`. `Get-Help
+.\scripts\build_local.ps1 -Full` for all of its options. The manual
+steps below are what it runs; read them if you want to understand or
+adjust any individual step.
+
 ## 1. Set up a clean build environment
 
 Use a fresh virtual environment so the exe only bundles what this
