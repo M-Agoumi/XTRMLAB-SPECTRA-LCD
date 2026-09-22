@@ -140,6 +140,35 @@ jobs:
       - name: Build the exe with PyInstaller
         run: pyinstaller packaging/hongtai_screen.spec
 
+      - name: Sign the exe (SignPath)
+        # Uses SignPath's "CI Beta Signing" policy, currently backed by
+        # a self-signed TEST certificate (see BUILD.md's Smart App
+        # Control note -- a self-signed cert doesn't get SmartScreen/
+        # Smart App Control to actually trust the exe, this just proves
+        # the CI -> SignPath pipeline itself works end to end). Swap
+        # -SigningPolicySlug to a real release policy once SignPath's
+        # free OSS program issues an actual trusted certificate.
+        #
+        # Skipped for a develop -> main release PR's preview build --
+        # that artifact never ships (see the "Upload PR build" step
+        # below), so it's not worth spending SignPath's signing quota
+        # on it.
+        if: steps.channel.outputs.channel != 'pr'
+        shell: pwsh
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name SignPath -Force
+          Submit-SigningRequest `
+            -InputArtifactPath "dist\Hongtai Screen.exe" `
+            -ApiToken $env:SIGNPATH_API_TOKEN `
+            -OrganizationId "cd586646-a92e-463e-9b22-9fc099baa11c" `
+            -ProjectSlug "Hongtai_Screen" `
+            -SigningPolicySlug "CI_Beta_Signing" `
+            -OutputArtifactPath "dist\Hongtai Screen.exe" `
+            -WaitForCompletion
+
       - name: Publish release
         if: steps.channel.outputs.channel != 'pr'
         uses: softprops/action-gh-release@v2
