@@ -140,13 +140,14 @@ def _looks_like_permission_error(result):
 def _ps_quote(s):
     """Wraps `s` as a PowerShell single-quoted string literal (doubling
     any embedded `'`, PowerShell's own escape for one inside a single-
-    quoted string). Single-quoted rather than double-quoted deliberately:
-    every value this is used for (the schtasks args, including /tr's
-    value, which itself already contains literal embedded `"` chars
-    around each path) needs those inner double-quotes to survive
-    untouched, and a single-quoted PowerShell string treats `"` as
-    perfectly ordinary text -- no escaping of it needed at all, unlike
-    a double-quoted one."""
+    quoted string). Used for the *outer* elevation script's own
+    argument to Start-Process (the temporary batch file's path) --
+    single-quoted rather than double-quoted so a literal `"` or `$`
+    anywhere in that path (e.g. a system temp directory someone has
+    renamed) survives untouched, with no escaping of its own needed.
+    Not used for schtasks' own args any more -- see
+    `_run_schtasks_elevated()`'s docstring for why those go through
+    `subprocess.list2cmdline()` and a plain .bat instead."""
     return "'" + str(s).replace("'", "''") + "'"
 
 
@@ -173,10 +174,10 @@ def _run_schtasks_elevated(*args, log=_noop_log):
     both together isn't just unsupported here, PowerShell refuses to
     even attempt it, and no UAC prompt appears at all.
 
-    The fix: elevate a small temporary .ps1 script instead of schtasks
+    The fix: elevate a small temporary script instead of schtasks
     directly. The script itself runs *inside* the elevated process, so
     it can write schtasks' combined output and exit code to two plain
-    files with ordinary `Out-File` -- no cross-boundary redirection
+    files with ordinary redirection -- no cross-boundary redirection
     needed, because nothing is being redirected across the boundary;
     the elevated process is simply choosing to write its own files.
     The outer, non-elevated `Start-Process -Verb RunAs -Wait` call
@@ -185,6 +186,33 @@ def _run_schtasks_elevated(*args, log=_noop_log):
     its two output files are temporary, written fresh (a random suffix
     avoids any collision with a concurrent call) and deleted again
     before this returns either way.
+
+    That inner script is a plain **.bat run by cmd.exe**, not
+    PowerShell -- confirmed necessary by a real failure: an earlier
+    version built a PowerShell array (`$a = @(...)`) and ran
+    `& schtasks.exe @a`, which goes through PowerShell's own native-
+    command argument translation layer rather than the Win32/C-runtime
+    argv convention `subprocess.list2cmdline()` (and schtasks.exe
+    itself) actually use. That layer has a long-documented bug with an
+    array element that already contains embedded literal `"`
+    characters -- exactly what /tr's value is (a quoted exe path plus
+    ` --autostart`, built by `_launch_command()`). PowerShell 7.3+ has
+    `$PSNativeCommandArgumentPassing = 'Standard'` to fix this, but
+    `-File` here runs under Windows PowerShell 5.1, which has no such
+    setting. The real symptom: schtasks got back something like
+    `...Hongtai" "Screen.exe --autostart` -- mis-split at the space
+    *inside* the already-quoted exe path -- and reported `ERROR:
+    Invalid argument/option - 'Screen.exe --autostart'`. Routing
+    through `cmd.exe /c <batchfile>` instead sidesteps that layer
+    entirely: cmd.exe forwards a line to CreateProcess close to
+    verbatim (it does no argv re-splitting of its own), so schtasks.exe
+    parses exactly the same command line the plain (non-elevated)
+    attempt above already proves works. `_launch_command()`'s own
+    quoting already keeps every variable, user-controlled path
+    (the exe, and the script path for a non-frozen run) inside a
+    quoted region, which is also what keeps cmd.exe's shell
+    metacharacters (`&|<>^`) from being interpreted as anything but
+    literal text if a path happened to contain one.
 
     The outer PowerShell script never raises past its own try/catch: a
     `Win32Exception` there (message containing "cancel" -- what .NET
@@ -204,21 +232,28 @@ def _run_schtasks_elevated(*args, log=_noop_log):
     for that."""
     tmp = tempfile.gettempdir()
     tag = uuid.uuid4().hex
-    script_path = os.path.join(tmp, f"hongtai_schtasks_{tag}.ps1")
+    script_path = os.path.join(tmp, f"hongtai_schtasks_{tag}.bat")
     out_path = os.path.join(tmp, f"hongtai_schtasks_{tag}.out")
     exit_path = os.path.join(tmp, f"hongtai_schtasks_{tag}.exit")
     temp_paths = (script_path, out_path, exit_path)
 
-    arg_list = ", ".join(_ps_quote(a) for a in args)
+    # Build the exact command line schtasks.exe will see using Python's
+    # own Win32 argv-quoting convention -- the SAME convention the
+    # plain (non-elevated) attempt above already relies on via
+    # subprocess.run(["schtasks", *args]), and the one schtasks.exe (an
+    # ordinary C-runtime console app) actually parses its argv with.
+    # %...% is batch-file variable expansion -- double any literal `%`
+    # (e.g. from a username/profile path) so the batch file below
+    # doesn't try to expand it as one.
+    full_cmdline = subprocess.list2cmdline(["schtasks.exe", *args]).replace("%", "%%")
     # Runs INSIDE the elevated process once Start-Process below launches
-    # it -- 2>&1 merges schtasks' stderr into the same stream captured
-    # in $output, and $LASTEXITCODE is schtasks' own exit code (the
-    # last native command PowerShell ran), not this script's.
+    # it -- 2>&1 merges schtasks' stderr into the same stream redirected
+    # to out_path, and %errorlevel% is schtasks' own exit code (the
+    # last command cmd.exe ran).
     inner_script = (
-        f"$a = @({arg_list})\n"
-        f"$output = & schtasks.exe @a 2>&1\n"
-        f"$output | Out-File -FilePath {_ps_quote(out_path)} -Encoding utf8\n"
-        f'"$LASTEXITCODE" | Out-File -FilePath {_ps_quote(exit_path)} -Encoding utf8\n'
+        "@echo off\r\n"
+        f'{full_cmdline} > "{out_path}" 2>&1\r\n'
+        f'echo %errorlevel% > "{exit_path}"\r\n'
     )
     try:
         with open(script_path, "w", encoding="utf-8") as f:
@@ -229,9 +264,8 @@ def _run_schtasks_elevated(*args, log=_noop_log):
     outer_script = (
         "$ErrorActionPreference = 'Stop'; "
         "try { "
-        "Start-Process -FilePath 'powershell.exe' "
-        "-ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', "
-        f"'-File', {_ps_quote(script_path)}) "
+        "Start-Process -FilePath 'cmd.exe' "
+        f"-ArgumentList @('/c', {_ps_quote(script_path)}) "
         "-Verb RunAs -Wait -WindowStyle Hidden; "
         "Write-Output 'ELEVATION_OK' "
         "} catch { "
@@ -264,20 +298,18 @@ def _run_schtasks_elevated(*args, log=_noop_log):
             "The permission prompt was declined (or elevation otherwise "
             f"didn't happen): {reason}"
         )
-    # "utf-8-sig", not "utf-8": Windows PowerShell 5.1's `Out-File
-    # -Encoding utf8` (used above, for both files) always writes a
-    # UTF-8 byte-order-mark, unlike PowerShell 7's same-named encoding.
-    # A real run showed schtasks succeeding (printed its own "SUCCESS:
-    # ..." line) but this code logging exit code -1 anyway -- reading
-    # the BOM back as "utf-8" leaves a leading U+FEFF character glued
-    # onto the file's text content ("﻿0"), which str.strip() does
-    # NOT remove (it's not whitespace), so int("﻿0") raised
-    # ValueError and fell through to the -1 fallback below every single
-    # time, regardless of what schtasks actually returned. "utf-8-sig"
-    # strips a leading BOM automatically if present and behaves exactly
-    # like "utf-8" if it's not, so this is a strict improvement either
-    # way -- also applied to out_path so a stray BOM can't land at the
-    # front of the logged/returned output text either.
+    # "utf-8-sig", not "utf-8": belt-and-suspenders against a stray
+    # leading BOM (a batch file's `>` redirection normally writes plain
+    # ASCII/OEM-codepage text with no BOM at all, but this is cheap
+    # insurance against whatever wrote these two files -- utf-8-sig
+    # strips a leading BOM if present and behaves exactly like "utf-8"
+    # if it's not). exit_path is always pure ASCII digits (an integer
+    # exit code), so this decodes it correctly regardless of the
+    # system's OEM codepage; out_path is schtasks' own diagnostic
+    # output and could in principle contain non-ASCII text on a
+    # non-English locale, hence `errors="replace"` below rather than
+    # risking a decode exception over what's only ever logged, never
+    # parsed.
     try:
         with open(exit_path, "r", encoding="utf-8-sig", errors="replace") as f:
             returncode = int(f.read().strip())
