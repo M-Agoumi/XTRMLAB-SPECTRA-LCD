@@ -126,12 +126,59 @@ built the spec, but never ran the actual .exe):
     has it on -- which, since it's the default outcome of Windows 11's
     out-of-box evaluation on a clean install, is exactly the "brand new
     PC, brand new user" case this app is meant to run on. Code-signing
-    (still out of scope here -- a standard cert is a real yearly cost)
     is the actual fix, since Smart App Control's evaluation leans on
-    the exe's reputation/signature; a free option worth looking into
-    before assuming it has to be paid is
-    [SignPath.io](https://signpath.io)'s free signing for open-source
-    projects.
+    the exe's reputation/signature.
+
+    CI now signs every beta/prod build via
+    [SignPath.io](https://signpath.io) (see `.github/workflows/build.yml`'s
+    "Sign the exe (SignPath)" step) -- but currently under SignPath's
+    **"CI Beta Signing" policy, which is backed by a self-signed TEST
+    certificate**, not a real CA-trusted one. That's enough to prove the
+    CI -> SignPath pipeline works end to end, but it does **not** get
+    SmartScreen or Smart App Control to actually trust the exe for
+    anyone else -- a self-signed cert has no chain to a root Windows
+    already trusts, no matter how many builds get signed with it.
+
+    The real fix is [SignPath Foundation](https://signpath.org)'s free
+    OSS certificate program (a separate thing from the signpath.io
+    trial above -- see that page for the distinction), which issues an
+    actual CA-trusted cert once a project qualifies. Applying needs a
+    public-facing project presence (a real project website, some
+    search visibility) that this project doesn't have yet -- until
+    that's ready, testers can trust the current self-signed test cert
+    **on their own machine only**, which is enough to develop/test
+    signed builds without SmartScreen/Smart App Control getting in the
+    way:
+
+    ```powershell
+    # Run as Administrator. Point $exePath at whatever signed build
+    # you're testing -- the release download, or a local dist\ build.
+    $exePath = "C:\path\to\Hongtai Screen.exe"
+
+    # Pull the signing certificate straight out of the exe
+    $cert = (Get-AuthenticodeSignature $exePath).SignerCertificate
+    $certPath = "$env:TEMP\hongtai-screen-test.cer"
+    Export-Certificate -Cert $cert -FilePath $certPath
+
+    # 1) Trust it as a root -- required because it's self-signed (no
+    #    real CA chain)
+    Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\Root
+
+    # 2) Also add it as a Trusted Publisher -- this is what actually
+    #    suppresses the SmartScreen "Windows protected your PC" prompt
+    #    for this signer
+    Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\TrustedPublisher
+    ```
+
+    This only trusts the cert on the machine it's run on -- it changes
+    nothing for anyone who downloads a beta build without doing this
+    themselves, which is exactly the point: it's a local dev/test
+    convenience, not a substitute for the real Foundation cert. If
+    SignPath's beta policy ever reissues a new self-signed cert, a
+    build signed under the new cert will need this re-run against the
+    new exe. Smart App Control isn't guaranteed to honor this the same
+    documented way SmartScreen does -- verify by actually launching the
+    exe with Smart App Control on, rather than assuming it's cleared.
 
 ## Hardware sensors (CPU Temp)
 
