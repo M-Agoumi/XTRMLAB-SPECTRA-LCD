@@ -91,7 +91,28 @@ if (-not $SkipPlaywright) {
 if (-not $SkipFrontend) {
     Push-Location (Join-Path $RepoRoot "frontend")
     try {
-        Invoke-Checked -Description "Installing frontend dependencies" -Command { npm install }
+        # `npm ci` (not `npm install`) into a node_modules removed first,
+        # not reused: vite 8's bundler (rolldown) ships its native binary
+        # as a per-OS/arch optionalDependency (e.g.
+        # @rolldown/binding-win32-x64-msvc), and npm has a long-standing
+        # bug (npm/cli#4828) where an `npm install` against an existing
+        # node_modules can silently skip installing a *newly added*
+        # optional dependency -- exactly what happened when the vite
+        # 5.4.21 -> 8.3.0 bump (Dependabot #5) first pulled rolldown in.
+        # The failure only shows up later, at `vite build` time: "Cannot
+        # find native binding ... Cannot find module
+        # '@rolldown/binding-win32-x64-msvc'". Wiping node_modules first
+        # removes any chance of that stale-tree skip; `npm ci` (rather
+        # than `npm install`) then does a from-scratch install strictly
+        # from package-lock.json, which is what actually verified-fixes
+        # this bug rather than just usually avoiding it.
+        $nodeModules = Join-Path (Get-Location) "node_modules"
+        if (Test-Path $nodeModules) {
+            Invoke-Checked -Description "Removing stale frontend node_modules (npm/cli#4828 workaround)" -Command {
+                Remove-Item -Recurse -Force $nodeModules
+            }
+        }
+        Invoke-Checked -Description "Installing frontend dependencies" -Command { npm ci }
         Invoke-Checked -Description "Building frontend" -Command { npm run build }
     } finally {
         Pop-Location
