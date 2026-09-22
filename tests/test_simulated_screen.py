@@ -2,9 +2,22 @@
 picks it -- simulation mode (ROADMAP: run without a physical panel).
 """
 import sys
+import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+# controller.py -> theme_kwargs.py -> themes/video_theme.py does a hard,
+# unconditional `import cv2` at module level -- opencv-python-headless is
+# meant to be optional at runtime (see BUILD.md: "the tab just reports
+# the theme unavailable, same as any other missing optional dependency"),
+# but nothing actually guards that particular import, and CI's test job
+# deliberately doesn't install it (only pytest/pyserial/pillow/numpy/
+# pycairo/psutil -- see .github/workflows/build.yml). These are the
+# first tests in this repo to import controller.py at all, which is
+# what surfaces it. A bare stub module is enough: nothing below ever
+# calls into cv2, it just needs to exist so the import succeeds.
+sys.modules.setdefault("cv2", types.ModuleType("cv2"))
 
 from PIL import Image
 
