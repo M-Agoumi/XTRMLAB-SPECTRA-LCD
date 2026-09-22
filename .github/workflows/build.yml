@@ -178,6 +178,22 @@ jobs:
             -WaitForCompletion
           Move-Item -Path "dist\Hongtai Screen.signed.exe" -Destination "dist\Hongtai Screen.exe" -Force
 
+      - name: Delete previous beta release
+        # GitHub's "immutable releases" now refuse to let an action
+        # delete/replace an ASSET on an already-published release
+        # (real CI failure: "Cannot delete asset from an immutable
+        # release" -- softprops/action-gh-release hit this trying to
+        # swap out the old exe on the rolling "beta" release, which
+        # every push to develop republishes at the same tag). Deleting
+        # the whole release (and its tag) is still allowed, so do that
+        # first and let the next step create a fresh one -- the moved
+        # "beta" tag from the earlier step still points at this commit
+        # either way.
+        if: steps.channel.outputs.channel == 'beta'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete beta --yes --cleanup-tag=false || true
+
       - name: Publish release
         if: steps.channel.outputs.channel != 'pr'
         uses: softprops/action-gh-release@v2
