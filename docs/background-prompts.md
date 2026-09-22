@@ -389,6 +389,62 @@ Seed 22; recipe `pick-rimix-samurai` on lane `rimix-illust` (`riMixIllustrious.s
 1girl, adult woman, kitsune, fox ears, fluffy fox tail, shrine maiden, red and white miko outfit slipping off one shoulder, mature female, sly smile, DS-Illu, cowboy shot, standing at the far left edge of the image under a red torii gate, autumn maple leaves drifting, ink splash, glowing particles, very wide landscape composition, the right two thirds of the image is a calm dusk sky over misty mountains, quiet, masterpiece, best quality, very aesthetic, depth of field, adult
 ```
 
+## Shield Maiden — `shield_maiden.jpg`
+Seed 22; recipe `pick-wai-illustrious-28` on lane `wai-illustrious` (`waiIllustrious_v14.safetensors`), LoRAs: smoothdetailer_illust @ 0.4, smooth_style @ 0.8, fantasy_forge @ 0.7; euler/normal, 25 steps, cfg 4.0, hires fix.
+
+```text
+masterpiece, best quality, newest, absurdres, highres, ultra detailed, sharp focus, depth of field, (cel shading:1.3), addmicrodetails, 1girl, solo, adult woman, mature female, viking shield maiden warrior, long braided blonde hair, ornate bronze breastplate with cleavage, fur cloak, bare midriff, battle skirt, round shield and axe, confident smirk, standing on a rocky ledge at the far left of the image, very wide composition, the right two thirds of the image is a stormy fjord at dusk with dark sea and low clouds, dramatic rim light
+```
+
+## Night Nurse — `night_nurse.jpg`
+Seed 11; recipe `pick-wai-illustrious-17` on lane `wai-illustrious` (`waiIllustrious_v14.safetensors`), LoRAs: dramatic_lighting_slider_pony_illustrious @ 4.0, neurocore_anime_shadow_circuit_by_chronoknig @ 0.4, ai @ 0.15, detailer_il @ 0.4; euler/normal, 29 steps, cfg 4.0, hires fix.
+
+```text
+HDR, 8K, masterpiece, best quality, amazing quality, very aesthetic, (flat color:1.75), (haiz_ai:1), (lineart:1.5), (no outline:1), (Flat vector:1.1), 1girl, adult woman, mature female, cyberpunk nurse in a tight white nurse uniform with short skirt, white stockings, nurse cap, holding a glowing syringe, playful wink, leaning against a wall at the far right of the image, very wide composition, the left two thirds of the image is a dim empty futuristic hospital corridor with teal neon strip lights, clean flat shapes
+```
+
+## Pirate Captain — `pirate_captain.jpg`
+Seed 22; recipe `pick-krea2-nsfw-20` on lane `krea2-nsfw` (`krea2_turbo_fp8_scaled.safetensors`), LoRAs: iiyo_sumi_ukiyo_e_sumi_e_flat_art_pop_art_3d @ 1.0; euler_ancestral/normal, 11 steps, cfg 1.0, hires fix.
+
+```text
+nsfw; Anime screenshot, 2D cel-shaded illustration with painterly detail, drawn animation still, modern painterly anime, movie-quality animation, atmospheric, cinematic composition, a confident adult woman pirate captain, tricorn hat, open red coat, corset with deep neckline, tall boots, hand on a cutlass, standing at the ship's wheel at the far left of the image, very wide composition, the rest of the image is a moonlit night sea with a calm dark sky and distant ship lanterns
+```
+
+## Grid Racer — `grid_racer.jpg`
+Seed 11; recipe `pick-rimix-samurai` on lane `rimix-illust` (`riMixIllustrious.safetensors`), LoRAs: detailer_tool_illust @ 0.9, callis_dystopian_sheek_illust @ 0.85, dynamic_poses_slider_illust @ 2.0, my_color_locon @ 1.0; euler_ancestral/normal, 32 steps, cfg 4.5, hires fix.
+
+```text
+1girl, sci-fi aesthetic, cyberpunk, adult woman, mature female, beautiful motorbike racer, tight black and red leather racing suit unzipped to the chest, helmet under her arm, long ponytail, DS-Illu, cowboy shot, leaning on a futuristic motorcycle at the far left of the image, confident look, glowing particles, very wide landscape composition, the right two thirds of the image is an empty dark neon race track at night fading into dark mist, masterpiece, best quality, very aesthetic, depth of field, adult
+```
+
+## Bounty Hunter — `bounty_hunter.jpg`
+Seed 11; recipe `pick-hassaku-18` on lane `hassaku` (`hassakuXL_illust_v13a.safetensors`), LoRAs: none; euler_ancestral/normal, 30 steps, cfg 5.0, hires fix.
+
+```text
+masterpiece, best quality, good quality, very aesthetic, absurdres, newest, depth of field, focused subject, in the style of ckncore, 1girl, solo, adult woman, space bounty hunter, short silver hair, tight black bodysuit with armor plates, utility belt, holding a blaster, cables attached, leaning against a spaceship hull at the far right of the image, very wide composition, the rest of the image is a flat deep blue background with a few faint stars, simple background, adult
+```
+
+## Velvet Boudoir — `velvet_boudoir.jpg`
+Seed 11; recipe `pick-wai-illustrious-28` on lane `wai-illustrious` (`waiIllustrious_v14.safetensors`), LoRAs: smoothdetailer_illust @ 0.4, smooth_style @ 0.8, fantasy_forge @ 0.7; euler/normal, 25 steps, cfg 4.0, hires fix.
+
+```text
+masterpiece, best quality, newest, absurdres, highres, ultra detailed, sharp focus, depth of field, (cel shading:1.3), addmicrodetails, 1girl, solo, adult woman, mature female, long black hair, sheer black lace negligee, stockings, reclining on a red velvet chaise longue at the far left of the image, seductive smile, looking at viewer, very wide composition, the right two thirds of the image is a dark candlelit boudoir with deep shadow and heavy red curtains, dim warm light, quiet and dark
+```
+
+## Amber Sorceress — `amber_sorceress.jpg`
+Seed 11; one-off lane: `krea2` pipeline with checkpoint `JANK2AnimeKrea2Turbo_v10.safetensors`, no LoRAs; euler/simple, 8 steps, cfg 1.0.
+
+```text
+anime illustration, a beautiful adult sorceress with long silver hair and amber eyes, elegant dark robes with a plunging neckline and gold embroidery, casting a swirl of amber magic from her hand, standing at the far right of the image, very wide landscape composition, the left two thirds of the image is a dark ancient library hall fading into deep shadow with floating amber embers, calm and dark, cinematic lighting
+```
+
+## Neon Idol — `neon_idol.jpg`
+Seed 11; one-off lane: `krea2` pipeline with checkpoint `JANK2AnimeKrea2Turbo_v10.safetensors`, no LoRAs; euler/simple, 8 steps, cfg 1.0.
+
+```text
+anime illustration, a confident adult cyberpunk pop idol with pink twin tails, cropped holographic jacket, short skirt, thigh-high boots, microphone in hand, winking, standing on a stage at the far left of the image, very wide landscape composition, the right two thirds of the image is a dark empty concert hall with faint magenta and cyan spotlights in haze, calm and dark, cinematic lighting
+```
+
 # Widget skins — `assets/skins/`
 
 Objects rendered alone on plain white, then cut out (BiRefNet background removal, or a

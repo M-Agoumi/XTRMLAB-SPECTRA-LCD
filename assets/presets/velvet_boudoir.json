@@ -1,0 +1,416 @@
+{
+  "name": "Velvet Boudoir",
+  "bundled_background": {
+    "mode": "boudoir",
+    "file": "velvet_boudoir.jpg"
+  },
+  "background": {
+    "mode": "boudoir",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "vb_clock",
+      "type": "clock",
+      "x": 0.5,
+      "y": 0.085,
+      "font_size": 0.065,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "cinzel",
+      "color": [
+        250,
+        236,
+        232
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "vb_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.025,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        200,
+        170,
+        170
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "vb_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.175,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        250,
+        236,
+        232
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "vb_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.1,
+      "y": 0.12,
+      "width": 0.15,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        200,
+        30,
+        44
+      ],
+      "track_color": [
+        60,
+        24,
+        28
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "vb_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.205,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        200,
+        170,
+        170
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "vb_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.355,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        250,
+        236,
+        232
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "vb_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.28,
+      "y": 0.12,
+      "width": 0.15,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        200,
+        30,
+        44
+      ],
+      "track_color": [
+        60,
+        24,
+        28
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "vb_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.645,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        200,
+        170,
+        170
+      ],
+      "opacity": 1.0,
+      "z": 16
+    },
+    {
+      "id": "vb_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.795,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        250,
+        236,
+        232
+      ],
+      "opacity": 1.0,
+      "z": 17
+    },
+    {
+      "id": "vb_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.72,
+      "y": 0.12,
+      "width": 0.15,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        200,
+        30,
+        44
+      ],
+      "track_color": [
+        60,
+        24,
+        28
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 18
+    },
+    {
+      "id": "vb_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.825,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        200,
+        170,
+        170
+      ],
+      "opacity": 1.0,
+      "z": 19
+    },
+    {
+      "id": "vb_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.975,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        250,
+        236,
+        232
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "vb_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.9,
+      "y": 0.12,
+      "width": 0.15,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        200,
+        30,
+        44
+      ],
+      "track_color": [
+        60,
+        24,
+        28
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "vb_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.09,
+      "y": 0.78,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        200,
+        30,
+        44
+      ],
+      "text_color": [
+        250,
+        236,
+        232
+      ],
+      "ornament_color": [
+        190,
+        150,
+        100
+      ],
+      "muted_color": [
+        200,
+        170,
+        170
+      ],
+      "track_color": [
+        48,
+        20,
+        24
+      ],
+      "face_color": [
+        12,
+        6,
+        8
+      ],
+      "alert_color": [
+        255,
+        80,
+        80
+      ],
+      "font": "cinzel",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "vb_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.91,
+      "y": 0.78,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        200,
+        30,
+        44
+      ],
+      "text_color": [
+        250,
+        236,
+        232
+      ],
+      "ornament_color": [
+        190,
+        150,
+        100
+      ],
+      "muted_color": [
+        200,
+        170,
+        170
+      ],
+      "track_color": [
+        48,
+        20,
+        24
+      ],
+      "face_color": [
+        12,
+        6,
+        8
+      ],
+      "alert_color": [
+        255,
+        80,
+        80
+      ],
+      "font": "cinzel",
+      "opacity": 1.0,
+      "z": 4
+    },
+    {
+      "id": "vb_spotify",
+      "type": "media",
+      "x": 0.5,
+      "y": 0.27,
+      "width": 0.36,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        200,
+        30,
+        44
+      ],
+      "text_color": [
+        250,
+        236,
+        232
+      ],
+      "muted_color": [
+        200,
+        170,
+        170
+      ],
+      "font": "cinzel",
+      "track_color": [
+        60,
+        24,
+        28
+      ],
+      "opacity": 1.0,
+      "z": 2
+    }
+  ]
+}

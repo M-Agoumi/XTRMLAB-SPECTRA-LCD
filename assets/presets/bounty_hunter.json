@@ -1,0 +1,416 @@
+{
+  "name": "Bounty Hunter",
+  "bundled_background": {
+    "mode": "bounty",
+    "file": "bounty_hunter.jpg"
+  },
+  "background": {
+    "mode": "bounty",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "bh_clock",
+      "type": "clock",
+      "x": 0.62,
+      "y": 0.1,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "orbitron",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "bh_spotify",
+      "type": "media",
+      "x": 0.86,
+      "y": 0.11,
+      "width": 0.22,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        120,
+        230,
+        255
+      ],
+      "text_color": [
+        255,
+        255,
+        255
+      ],
+      "muted_color": [
+        200,
+        220,
+        250
+      ],
+      "font": "chakra",
+      "track_color": [
+        30,
+        60,
+        130
+      ],
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "bh_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.52,
+      "y": 0.66,
+      "radius": 0.11,
+      "widget_style": "cyberpunk",
+      "color": [
+        120,
+        230,
+        255
+      ],
+      "text_color": [
+        255,
+        255,
+        255
+      ],
+      "ornament_color": [
+        180,
+        200,
+        230
+      ],
+      "muted_color": [
+        200,
+        220,
+        250
+      ],
+      "track_color": [
+        26,
+        52,
+        120
+      ],
+      "face_color": [
+        10,
+        26,
+        70
+      ],
+      "alert_color": [
+        255,
+        120,
+        90
+      ],
+      "font": "chakra",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "bh_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.7,
+      "y": 0.66,
+      "radius": 0.11,
+      "widget_style": "cyberpunk",
+      "color": [
+        120,
+        230,
+        255
+      ],
+      "text_color": [
+        255,
+        255,
+        255
+      ],
+      "ornament_color": [
+        180,
+        200,
+        230
+      ],
+      "muted_color": [
+        200,
+        220,
+        250
+      ],
+      "track_color": [
+        26,
+        52,
+        120
+      ],
+      "face_color": [
+        10,
+        26,
+        70
+      ],
+      "alert_color": [
+        255,
+        120,
+        90
+      ],
+      "font": "chakra",
+      "opacity": 1.0,
+      "z": 4
+    },
+    {
+      "id": "bh_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.8,
+      "y": 0.5,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        200,
+        220,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "bh_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.96,
+      "y": 0.5,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "bh_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.88,
+      "y": 0.56,
+      "width": 0.16,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        120,
+        230,
+        255
+      ],
+      "track_color": [
+        30,
+        60,
+        130
+      ],
+      "skin": "battery.png",
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "bh_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.8,
+      "y": 0.62,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        200,
+        220,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "bh_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.96,
+      "y": 0.62,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "bh_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.88,
+      "y": 0.68,
+      "width": 0.16,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        120,
+        230,
+        255
+      ],
+      "track_color": [
+        30,
+        60,
+        130
+      ],
+      "skin": "battery.png",
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "bh_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.8,
+      "y": 0.74,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        200,
+        220,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 16
+    },
+    {
+      "id": "bh_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.96,
+      "y": 0.74,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 17
+    },
+    {
+      "id": "bh_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.88,
+      "y": 0.8,
+      "width": 0.16,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        120,
+        230,
+        255
+      ],
+      "track_color": [
+        30,
+        60,
+        130
+      ],
+      "skin": "battery.png",
+      "opacity": 1.0,
+      "z": 18
+    },
+    {
+      "id": "bh_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.8,
+      "y": 0.86,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        200,
+        220,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 19
+    },
+    {
+      "id": "bh_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.96,
+      "y": 0.86,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "bh_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.88,
+      "y": 0.92,
+      "width": 0.16,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        120,
+        230,
+        255
+      ],
+      "track_color": [
+        30,
+        60,
+        130
+      ],
+      "skin": "battery.png",
+      "opacity": 1.0,
+      "z": 21
+    }
+  ]
+}
