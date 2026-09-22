@@ -130,6 +130,16 @@ header h1 {
   color: #9aa1ab;
 }
 
+.sim-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #1c1f24;
+  background: #e8b93e;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
 .panel {
   background: #1c1f24;
   border: 1px solid #2a2e35;

@@ -25,6 +25,7 @@ export default function App() {
   const [autoDetectValue, setAutoDetectValue] = useState(null);
   const [portsStatus, setPortsStatus] = useState(null);
   const [portsError, setPortsError] = useState(null);
+  const [simulateDraft, setSimulateDraft] = useState({ enabled: false, width: "", height: "", angle: "180" });
   const [brightnessDraft, setBrightnessDraft] = useState(90);
   const [theme, setTheme] = useState("clock");
   const [logs, setLogs] = useState([]);
@@ -70,6 +71,13 @@ export default function App() {
       setConfig(c);
       setPortDraft(c.port || "");
       setBrightnessDraft(c.brightness ?? 90);
+      const sim = c.simulate || {};
+      setSimulateDraft({
+        enabled: !!sim.enabled,
+        width: sim.width ? String(sim.width) : "",
+        height: sim.height ? String(sim.height) : "",
+        angle: sim.angle != null ? String(sim.angle) : "180",
+      });
       const v = c.video || {};
       setVideoDraft({
         path: v.path || "",
@@ -216,6 +224,29 @@ export default function App() {
       setConfig(saved);
     });
 
+  // Simulation mode: run any theme against a fake, in-memory panel --
+  // no physical screen needed. Saved (and applied on the next Start/
+  // Apply -- see controller.py's _desired_screen_factory()) the moment
+  // it's changed, same "no separate Save step" pattern as the port
+  // picker above. Width/height/angle are blank by default so the
+  // backend's own SimulatedHongtaiScreen defaults (a real Spectra
+  // panel's own numbers) are what an empty field actually means, not
+  // some duplicated copy of those numbers living here too.
+  const handleSimulateChange = (patch) =>
+    runAction(async () => {
+      const next = { ...simulateDraft, ...patch };
+      setSimulateDraft(next);
+      const saved = await api.updateConfig({
+        simulate: {
+          enabled: next.enabled,
+          width: next.width.trim() ? Number(next.width) : null,
+          height: next.height.trim() ? Number(next.height) : null,
+          angle: next.angle.trim() ? Number(next.angle) : null,
+        },
+      });
+      setConfig(saved);
+    });
+
   // Brightness is applied live (see api.setBrightness's docstring) --
   // no Save button needed for it, just a short debounce on drag.
   const handleBrightnessChange = (value) => {
@@ -341,8 +372,11 @@ export default function App() {
   // truth for this gate: portDraft changes the instant the dropdown is
   // touched, but handlePortChange saves it immediately too (no separate
   // Save step -- see its own comment), so the two are never out of sync
-  // for more than one request.
-  const portSelected = !!config?.port;
+  // for more than one request. Simulation mode (see handleSimulateChange
+  // above) is the other way through this gate: it needs no physical
+  // port at all, so a saved `simulate.enabled` opens up the rest of the
+  // page exactly like a saved port does.
+  const portSelected = !!config?.port || !!config?.simulate?.enabled;
 
   return (
     <div className="app">
@@ -356,6 +390,11 @@ export default function App() {
             ? `connected${state.screen_info ? ` -- ${state.screen_info.model}` : ""}`
             : "no screen connected"}
         </span>
+        {/* Reflects the LIVE connection (state.simulated), not just the
+            saved setting -- see controller.py's state() docstring --
+            so this only shows while a simulated screen is actually the
+            thing being driven right now. */}
+        {state?.simulated && <span className="sim-badge" title="Driving a simulated panel -- no real hardware connected">SIMULATED</span>}
       </header>
 
       {/* `actionError` is shared across every button that goes through
@@ -413,9 +452,68 @@ export default function App() {
         </div>
         {portsStatus && <p className="hint">{portsStatus}</p>}
         {portsError && <p className="error">Couldn't scan for screens: {portsError}</p>}
+
+        <div className="row">
+          <label className="row-inline">
+            <input
+              type="checkbox"
+              checked={simulateDraft.enabled}
+              disabled={busy}
+              onChange={(e) => handleSimulateChange({ enabled: e.target.checked })}
+            />
+            Run without a panel (simulate)
+          </label>
+        </div>
+        {simulateDraft.enabled && (
+          <>
+            <p className="hint">
+              No physical screen needed -- themes render against a fake panel you can watch in
+              the Preview below, same as a real one.
+            </p>
+            <div className="row">
+              <label>
+                Width
+                <input
+                  type="text"
+                  value={simulateDraft.width}
+                  onChange={(e) => setSimulateDraft({ ...simulateDraft, width: e.target.value })}
+                  onBlur={() => handleSimulateChange({})}
+                  placeholder="960"
+                  style={{ width: "5em" }}
+                />
+              </label>
+              <label>
+                Height
+                <input
+                  type="text"
+                  value={simulateDraft.height}
+                  onChange={(e) => setSimulateDraft({ ...simulateDraft, height: e.target.value })}
+                  onBlur={() => handleSimulateChange({})}
+                  placeholder="480"
+                  style={{ width: "5em" }}
+                />
+              </label>
+              <label>
+                Angle
+                <select
+                  value={simulateDraft.angle}
+                  onChange={(e) => handleSimulateChange({ angle: e.target.value })}
+                  disabled={busy}
+                >
+                  <option value="0">0</option>
+                  <option value="90">90</option>
+                  <option value="180">180</option>
+                  <option value="270">270</option>
+                </select>
+              </label>
+            </div>
+          </>
+        )}
+
         {!portSelected && (
           <p className="error">
-            No port selected -- the rest of this app stays disabled until you pick one above.
+            No port selected -- the rest of this app stays disabled until you pick one above, or
+            turn on "Run without a panel" instead.
           </p>
         )}
 

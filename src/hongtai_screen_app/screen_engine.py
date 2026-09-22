@@ -104,7 +104,7 @@ class ScreenEngine:
     # ------------------------------------------------------------------ #
     # public API
     # ------------------------------------------------------------------ #
-    def switch(self, label, target, kwargs, port=None):
+    def switch(self, label, target, kwargs, port=None, screen_factory=None):
         """Starts running `target(**kwargs)` against the persistent
         connection, interrupting whatever's currently running first (if
         anything is). Connects lazily -- the very first switch() call
@@ -112,12 +112,24 @@ class ScreenEngine:
         one after that, while still connected, reuses it. `kwargs`
         should be the same shape theme_kwargs.build() produces (no
         stop_event/log/screen/screen_factory/on_connected keys -- this
-        adds all of those itself)."""
+        adds all of those itself).
+
+        `screen_factory`, if given, replaces self.screen_factory for the
+        *next fresh connection* -- i.e. it only actually takes effect if
+        nothing is connected yet (first switch(), or the first one after
+        a stop()/give-up); it does nothing to a connection already open,
+        same as `port` above. This is how Controller picks
+        SimulatedHongtaiScreen vs the real HongtaiScreen per the
+        "simulate" setting: switching that setting while something's
+        already running takes effect on the next stop()+switch(), not
+        instantly, exactly like changing the port does."""
         with self._cv:
             if self._shutdown:
                 raise RuntimeError("engine is shut down")
             if port is not None:
                 self._port = port
+            if screen_factory is not None:
+                self.screen_factory = screen_factory
             if self._current_stop_event is not None:
                 self._current_stop_event.set()
             self._pending = ("run", label, target, dict(kwargs))

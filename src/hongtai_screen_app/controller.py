@@ -30,6 +30,9 @@ from . import theme_kwargs
 from . import weather
 from . import power_state
 from .driver import hongtai_screen
+from .driver import simulated_screen
+from .driver.hongtai_screen import HongtaiScreen
+from .driver.simulated_screen import SimulatedHongtaiScreen
 from .paths import _app_base_dir
 from .screen_engine import ScreenEngine
 from .themes import dashboard_theme
@@ -127,6 +130,16 @@ class AppController:
             on_disconnected=self._on_screen_disconnected,
             on_finished=self._on_theme_finished,
         )
+        # The (factory, descriptor)'s descriptor half -- see
+        # _desired_screen_factory() -- that the engine's *live*
+        # connection (if any) was actually opened with. Compared against
+        # a fresh _desired_screen_factory() call in start() so flipping
+        # the "simulate" setting while something is running forces a
+        # real disconnect+reconnect instead of silently continuing to
+        # drive whichever one is already open (ScreenEngine.switch()'s
+        # screen_factory only takes effect on a fresh connection -- see
+        # its docstring).
+        self._active_screen_descriptor = None
 
     # ------------------------------------------------------------------ #
     # logging / pub-sub -- SSE clients get every line pushed to them
@@ -167,6 +180,13 @@ class AppController:
                 "active_tab": self.cfg.get("active_tab", 0),
                 "connected": screen is not None,
                 "screen_info": self._screen_info(screen) if screen is not None else None,
+                # Whether the *live* connection (not just the saved
+                # setting -- see _desired_screen_factory()) is a
+                # SimulatedHongtaiScreen, so the frontend can show a
+                # "SIMULATED" badge exactly while it's actually true,
+                # including the moment after flipping the setting but
+                # before the next Start/Apply reconnects.
+                "simulated": isinstance(screen, SimulatedHongtaiScreen),
             }
 
     @staticmethod
@@ -1154,6 +1174,36 @@ class AppController:
         )
         return None
 
+    def _desired_screen_factory(self):
+        """Which HongtaiScreen-shaped class start() should be driving,
+        per the persisted "simulate" setting -- a global on/off, not a
+        per-theme choice (see simulated_screen.py's module docstring for
+        why SimulatedHongtaiScreen is a safe drop-in: it only fakes
+        connect()/blind_restart(), everything else -- brightness, the
+        web mirror, rotation -- runs the exact same code a real panel
+        does).
+
+        Returns (factory, descriptor). `descriptor` is a plain,
+        comparable value (unlike `factory`, which is a fresh closure
+        every call for the simulate case) -- start() compares it against
+        the descriptor the live connection was actually opened with, so
+        an unchanged "simulate" setting never forces a reconnect just
+        because this was called again."""
+        sim = self.cfg.get("simulate") or {}
+        if not isinstance(sim, dict) or not sim.get("enabled"):
+            return HongtaiScreen, ("real",)
+        width = sim.get("width") or simulated_screen.DEFAULT_WIDTH
+        height = sim.get("height") or simulated_screen.DEFAULT_HEIGHT
+        angle = sim.get("angle", simulated_screen.DEFAULT_ANGLE)
+        descriptor = ("simulate", int(width), int(height), int(angle))
+
+        def _factory(port=None, width=width, height=height, angle=angle):
+            # `port` is accepted (and ignored) because ScreenEngine always
+            # calls screen_factory(self._port) -- see _ensure_connected().
+            return SimulatedHongtaiScreen(width=width, height=height, angle=angle)
+
+        return _factory, descriptor
+
     # ------------------------------------------------------------------ #
     # start / stop / apply
     #
@@ -1184,7 +1234,24 @@ class AppController:
             self.cfg["auto_resume_tab"] = self.cfg["active_tab"]
             config_store.save_config(self.cfg)
 
-        self.engine.switch(label, target, kwargs, port=port)
+            desired_factory, desired_descriptor = self._desired_screen_factory()
+
+        if (self._active_screen_descriptor is not None
+                and desired_descriptor != self._active_screen_descriptor):
+            # The "simulate" setting changed since whatever's connected
+            # right now was opened -- ScreenEngine.switch()'s
+            # screen_factory only takes effect on a fresh connection, so
+            # force one: stop and wait for the real teardown (same
+            # pattern relaunch_elevated() uses) before switching back in
+            # with the newly-desired factory, rather than silently
+            # continuing to drive the stale one.
+            self.engine.stop()
+            deadline = time.time() + 5.0
+            while self.engine.is_running() and time.time() < deadline:
+                time.sleep(0.05)
+
+        self._active_screen_descriptor = desired_descriptor
+        self.engine.switch(label, target, kwargs, port=port, screen_factory=desired_factory)
         return {"running_theme": label}
 
     def _on_screen_connected(self, screen):
