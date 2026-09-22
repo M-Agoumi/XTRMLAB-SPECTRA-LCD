@@ -77,6 +77,26 @@ halves of the app (backend/tray and the webview window -- see
 `app.py`'s own docstring for the `--ui` dispatch that makes one exe
 cover both).
 
+### Optional: build a real installer too
+
+`dist\Hongtai Screen.exe` above is a *portable* exe — running it
+launches the app directly, nothing gets "installed." That's fine for
+personal use, but it can't satisfy a distribution channel that
+requires a real installer with silent-install support (the Microsoft
+Store's submission form, for instance, or winget). For that, build
+`dist\HongtaiScreen-Setup.exe` too, with [Inno Setup
+6](https://jrsoftware.org/isinfo.php) installed:
+
+```
+ISCC packaging\hongtai_screen.iss /DAppVersion=2.1.1
+```
+
+See `packaging\hongtai_screen.iss`'s own header comment for the
+silent-install switches and exit codes a submission form will ask for.
+`scripts\build_local.ps1` builds this automatically after the portable
+exe if it detects Inno Setup is installed (skip it with
+`-SkipInstaller`).
+
 ## 4. Test it
 
 Run `dist\Hongtai Screen.exe` directly. Things worth specifically
