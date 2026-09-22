@@ -144,6 +144,19 @@ jobs:
         # the CI -> SignPath pipeline itself works end to end). Swap
         # -SigningPolicySlug to a real release policy once SignPath's
         # free OSS program issues an actual trusted certificate.
+        #
+        # continue-on-error: true -- SignPath's free OSS tier has a
+        # yearly artifact-size quota (confirmed by a real CI failure:
+        # "Yearly quota for artifact size has been exceeded", a 400
+        # from SignPath's API, not a build problem). Since this cert is
+        # only a self-signed test cert anyway (see above -- it doesn't
+        # get end users past SmartScreen/Smart App Control today), a
+        # quota outage isn't worth blocking every release over: the
+        # step still tries every run, but "Publish release" below runs
+        # either way and just ships the plain unsigned exe (exactly
+        # what every release shipped before SignPath was wired in) when
+        # signing doesn't come back.
+        continue-on-error: true
         shell: pwsh
         env:
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
