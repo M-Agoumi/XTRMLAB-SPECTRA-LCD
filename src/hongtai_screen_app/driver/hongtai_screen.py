@@ -941,7 +941,12 @@ class HongtaiScreen:
         frame fits under the device's size cap (mirrors the official
         app's getSizeBt())."""
         cap_bytes = self._max_frame_kb() * 1024
-        quality = self._quality
+        # Start one step above the last quality that fit, so it climbs back
+        # once a detailed frame has passed. Starting at the last value made
+        # it a one-way ratchet: after a single heavy frame, every later
+        # frame (and every theme switched to afterwards) stayed at that low
+        # quality until the app restarted.
+        quality = min(100, self._quality + 5)
         while quality > 10:
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=quality)
