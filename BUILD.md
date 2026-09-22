@@ -176,9 +176,22 @@ built the spec, but never ran the actual .exe):
     convenience, not a substitute for the real Foundation cert. If
     SignPath's beta policy ever reissues a new self-signed cert, a
     build signed under the new cert will need this re-run against the
-    new exe. Smart App Control isn't guaranteed to honor this the same
-    documented way SmartScreen does -- verify by actually launching the
-    exe with Smart App Control on, rather than assuming it's cleared.
+    new exe.
+
+    **This clears SmartScreen but does NOT clear Smart App Control --
+    confirmed by a real test.** `Get-AuthenticodeSignature` showed
+    `Status: Valid` and the exact same cert thumbprint present in both
+    `Cert:\LocalMachine\Root` and `Cert:\LocalMachine\TrustedPublisher`,
+    yet Smart App Control still blocked the exe ("could not verify its
+    publisher to confirm it was safe to run"). Unlike SmartScreen's
+    Authenticode chain check, Smart App Control's publisher check leans
+    on Microsoft's own cloud reputation/verification for the signer,
+    not the local machine's certificate stores -- so no amount of local
+    trust-store surgery fixes it for a self-signed cert. The only real
+    fixes are a CA-trusted cert (SignPath Foundation, once this project
+    qualifies) or testing inside a disposable Windows Sandbox/VM with
+    Smart App Control off there (see above) -- don't keep chasing local
+    workarounds for this specific wall.
 
 ## Hardware sensors (CPU Temp)
 
