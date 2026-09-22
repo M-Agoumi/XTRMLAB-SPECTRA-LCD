@@ -35,7 +35,7 @@ from .driver.hongtai_screen import HongtaiScreen
 from .driver.simulated_screen import SimulatedHongtaiScreen
 from .paths import _app_base_dir
 from .screen_engine import ScreenEngine
-from .themes import dashboard_theme
+from .themes import dashboard_theme, widget_styles
 
 
 def _is_elevated():
@@ -945,7 +945,7 @@ class AppController:
         for slot in self._preset_image_slots(preset):
             for field, (b64_key, name_key) in self._PICTURE_FIELDS.items():
                 path = slot.get(field)
-                if not path or (field != "image_path" and not os.path.isabs(path)):
+                if not path or (field != "image_path" and widget_styles.is_bundled_skin(path)):
                     continue  # nothing set, or a bundled skin named by file name
                 try:
                     with open(path, "rb") as f:
@@ -1010,7 +1010,7 @@ class AppController:
                 # of ours already (re-importing a file exported here), or a
                 # bundled skin's bare file name -- never an arbitrary path
                 # chosen by whoever sent it.
-                bundled = field != "image_path" and path and os.path.basename(path) == path
+                bundled = field != "image_path" and widget_styles.is_bundled_skin(path)
                 slot[field] = path if (bundled or (path and image_store.is_managed(path))) else None
         return self.save_dashboard_preset(name, preset.get("elements"), preset.get("background"))
 
