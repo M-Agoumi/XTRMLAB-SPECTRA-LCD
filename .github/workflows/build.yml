@@ -133,6 +133,27 @@ jobs:
           npm ci
           npm run build
 
+      - name: Fetch LibreHardwareMonitor DLLs (CPU Temp)
+        # assets/hardware/ is gitignored (see BUILD.md's "Hardware
+        # sensors" section), so a fresh checkout never has it and the
+        # spec silently builds without CPU Temp -- every release exe
+        # showed "CPU Temp unavailable -- DLL not found at ...\_MEI...\
+        # assets\hardware\LibreHardwareMonitorLib.dll". The plain
+        # LibreHardwareMonitor.zip (the .NET Framework build pythonnet
+        # loads, not the .NET.10 one), every .dll in it, pinned to a
+        # release + its sha256 so a changed upstream asset fails the
+        # build instead of shipping.
+        shell: bash
+        env:
+          LHM_VERSION: v0.9.6
+          LHM_SHA256: 086d9f1b5a99e643edc2cfaaac16051685b551e4c5ac0b32a57c58c0e529c001
+        run: |
+          curl -fsSL -o lhm.zip "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/download/${LHM_VERSION}/LibreHardwareMonitor.zip"
+          echo "${LHM_SHA256}  lhm.zip" | sha256sum -c -
+          python -m zipfile -e lhm.zip lhm
+          mkdir -p assets/hardware
+          cp lhm/*.dll assets/hardware/
+
       - name: Build the exe with PyInstaller
         run: pyinstaller packaging/hongtai_screen.spec
 
