@@ -83,8 +83,46 @@ function Invoke-Checked {
     }
 }
 
-Invoke-Checked -Description "Installing Python dependencies" -Command {
-    python -m pip install -r requirements.txt
+# Not a plain Invoke-Checked step -- pip installing winsdk (an
+# optional, unpinned-upper-bound dependency; see requirements.txt's
+# own comment on why it can't be pinned tighter) can fall through to
+# building winsdk's sdist from source when the resolved pre-release
+# has no prebuilt wheel for this interpreter's Python version
+# (confirmed for real: winsdk 1.0.0b10, its newest release, only
+# ships wheels for Python 3.8-3.12 -- github.com/pywinrt/python-winsdk's
+# own release notes). That source build needs the MSVC toolchain
+# (nmake), and scikit-build's own failure for a missing one is a wall
+# of "Trying 'NMake Makefiles ...' generator - failure" noise that
+# doesn't say what to actually do about it -- confirmed by a real
+# report that read as a crash rather than a clear, actionable error.
+# Caught here and translated into one specific fix instead.
+Write-Host "==> Installing Python dependencies" -ForegroundColor Cyan
+$pipOutputLines = $null
+try {
+    python -m pip install -r requirements.txt 2>&1 | Tee-Object -Variable pipOutputLines | Out-Host
+} catch {
+    # PowerShell 7.3+'s $PSNativeCommandUseErrorActionPreference can
+    # turn pip's own non-zero exit into a terminating error here under
+    # $ErrorActionPreference = "Stop" -- same gotcha as this script's
+    # taskkill call above. $LASTEXITCODE is checked below regardless
+    # of whether that happened, so this catch only needs to exist to
+    # keep the script from stopping before that check runs.
+}
+if ($LASTEXITCODE -ne 0) {
+    $combined = ($pipOutputLines | Out-String)
+    if ($combined -match "winsdk" -and $combined -match "nmake|NMake Makefiles|CMake Error") {
+        Write-Error @"
+Installing Python dependencies failed building winsdk from source -- it needs the MSVC/nmake toolchain, which isn't installed (or isn't on PATH in this session).
+
+Fix: install the "Desktop development with C++" workload, as Administrator:
+  winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --wait"
+
+Then close and reopen this PowerShell window (nmake/cl.exe only land on PATH in a fresh session) and re-run this script.
+"@
+    } else {
+        Write-Error "Installing Python dependencies failed (exit code $LASTEXITCODE)"
+    }
+    exit 1
 }
 Invoke-Checked -Description "Installing PyInstaller" -Command {
     python -m pip install pyinstaller
