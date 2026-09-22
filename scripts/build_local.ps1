@@ -144,7 +144,21 @@ if (-not $SkipFrontend) {
 # was running) is just as fine an outcome here as "killed it" -- same
 # reasoning as hongtai_screen.iss's own CloseRunningApp, which has this
 # exact problem at install/uninstall time instead of build time.
-taskkill /IM "Hongtai Screen.exe" /F /T 2>$null | Out-Null
+#
+# Wrapped in try/catch, not just `2>$null | Out-Null`: on PowerShell
+# 7.3+, $PSNativeCommandUseErrorActionPreference defaults to $true,
+# which makes $ErrorActionPreference = "Stop" (set above) turn
+# taskkill's non-zero "process not found" exit code into a terminating
+# NativeCommandError -- confirmed by a real run, even with stderr
+# already redirected to $null (that redirection silences the message,
+# not the exit code the Stop preference reacts to). try/catch swallows
+# it regardless of which PowerShell version/preference is in play,
+# unlike relying on the exit code being ignored.
+try {
+    taskkill /IM "Hongtai Screen.exe" /F /T 2>$null | Out-Null
+} catch {
+    # No matching process -- nothing was running, nothing to do here.
+}
 
 Invoke-Checked -Description "Building the exe with PyInstaller" -Command {
     pyinstaller (Join-Path $RepoRoot "packaging\hongtai_screen.spec")
