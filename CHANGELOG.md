@@ -2,7 +2,67 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [2.1.0] — 2026-09-22
+
+### Added
+- **Simulation mode: run any theme with no physical panel plugged in at
+  all.** A new "Run without a panel (simulate)" toggle (plus
+  width/height/angle fields) in the web UI's Controls section drives a
+  `SimulatedHongtaiScreen` that fakes only the two things that
+  actually need real hardware -- the initial handshake (`connect()`,
+  now fabricating a `DeviceInfo` from the configured virtual panel
+  size instead of scanning serial ports) and firmware
+  `blind_restart()`. Brightness dimming, the web mirror/`/frame.jpg`
+  feed, and panel-rotation math all run through the exact same code a
+  real panel uses, so the Preview shows exactly what a real panel
+  would. A "SIMULATED" badge appears next to the connection status
+  whenever it's actually driving the fake panel, not just when the
+  setting is on -- useful for developing/demoing the app, or trying
+  out a layout, without owning the hardware.
+- **`scripts/build_local.ps1`** -- one-command local exe build,
+  wrapping the manual steps `BUILD.md` used to walk through by hand.
+- **`HONGTAI_SCREEN_DEBUG=1`** environment variable opens WebView2
+  DevTools in the desktop app, for debugging the React UI without a
+  separate browser.
+- **`LICENSE`** (MIT) and **`PRIVACY.md`** -- explicit license terms
+  and a plain-language privacy statement (what stays on your machine,
+  and the two opt-in features -- the weather widget and the
+  webpage-mirror theme -- that are the only things that ever talk to
+  the network at all).
+
+### Fixed
+- **The frozen `.exe` shipped without pycairo, making the Dashboard
+  theme completely unusable in built releases** (it worked fine
+  running from source, which is why this went unnoticed) --
+  `packaging/hongtai_screen.spec` now bundles it correctly.
+- **The desktop webview window could come up as a solid black
+  rectangle on machines/VMs with no GPU** -- `ui_window.py` now forces
+  WebView2 onto software rendering.
+
+### CI/CD
+- **Release builds are now code-signed via SignPath** before
+  publishing (`.github/workflows/build.yml`) -- currently backed by
+  SignPath's self-signed CI test certificate while the free
+  open-source signing program issues a real one, so this doesn't yet
+  get SmartScreen/Smart App Control to trust a build automatically
+  (see `BUILD.md`'s Smart App Control section), but the pipeline
+  itself is wired up end to end.
+- The rolling beta prerelease now publishes under the tag
+  **`beta-latest`** (was `beta`), with the old release deleted before
+  each republish -- GitHub releases are immutable and can't be
+  overwritten in place.
+- A `develop` -> `main` release pull request no longer triggers a
+  second, redundant build alongside the one `develop`'s own push
+  already ran.
+- GitHub Actions bumped to their latest major versions (clears a
+  Node 20 deprecation warning).
+
+## [2.0.0] — 2026-09-21
+
+The v2.0 rewrite (`ROADMAP.md`) is complete and this is the shipped
+version: a system tray icon + webview window showing a React UI,
+driving the panel over a local control API, replacing the old Tkinter
+desktop GUI entirely.
 
 ### Changed
 - **CPU Temp now reads via [LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
@@ -38,13 +98,6 @@ All notable changes to this project are documented here.
   builds the Windows exe. Every push to `develop` re-publishes a
   rolling "beta" prerelease; pushing a `vX.Y.Z` tag publishes a
   production release. See `BUILD.md`'s "Automated builds" section.
-
-## [2.0.0] — 2026-09-21
-
-The v2.0 rewrite (`ROADMAP.md`) is complete and this is the shipped
-version: a system tray icon + webview window showing a React UI,
-driving the panel over a local control API, replacing the old Tkinter
-desktop GUI entirely.
 
 ### Removed
 - **The Tkinter GUI** (`src/hongtai_screen_app/app.py`, and
