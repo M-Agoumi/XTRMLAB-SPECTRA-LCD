@@ -78,7 +78,7 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           else
             echo "channel=beta" >> "$GITHUB_OUTPUT"
-            echo "tag=beta" >> "$GITHUB_OUTPUT"
+            echo "tag=beta-latest" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Move the floating "beta" tag to this commit
@@ -87,8 +87,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f beta
-          git push -f origin beta
+          git tag -f beta-latest
+          git push -f origin beta-latest
 
       - name: Install Python dependencies
         # `python -m pip install`, not bare `pip install` -- the
@@ -192,7 +192,7 @@ jobs:
         if: steps.channel.outputs.channel == 'beta'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release delete beta --yes --cleanup-tag=false || true
+        run: gh release delete beta-latest --yes --cleanup-tag=false || true
 
       - name: Publish release
         if: steps.channel.outputs.channel != 'pr'
