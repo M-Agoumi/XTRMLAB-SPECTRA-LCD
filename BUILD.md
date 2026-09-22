@@ -101,10 +101,37 @@ built the spec, but never ran the actual .exe):
 - **The Dashboard tab's background image picker and web mirror.**
 - Windows Defender / SmartScreen may flag a brand-new, unsigned exe on
   first run ("Windows protected your PC") — this is normal for any
-  unsigned indie tool, not a sign something's wrong. Code-signing is
-  out of scope here (it needs a paid certificate); "More info" → "Run
-  anyway" gets past it, and telling people that up front in your
+  unsigned indie tool, not a sign something's wrong. "More info" →
+  "Run anyway" gets past it, and telling people that up front in your
   release notes saves them a scare.
+- **Smart App Control is a separate, harsher wall than SmartScreen --
+  confirmed by a real report: "Smart App Control blocked a file that
+  may be unsafe", with no "Run anyway"/"More info" escape hatch at
+  all.** SmartScreen still lets you click through an unsigned exe;
+  Smart App Control (Windows 11 22H2+, auto-enabled on a *clean*
+  install after an evaluation period, off by default on an
+  upgrade-from-older-Windows install) just refuses outright.
+  - Testing on your own machine: `Settings -> Privacy & security ->
+    Windows Security -> App & browser control -> Smart App Control` --
+    if it's On, you can switch it Off, but **Microsoft's own docs say
+    this is one-way**: once you turn it off, the only way back on is a
+    clean reinstall of Windows. Don't do this on a daily-driver machine
+    just to test one exe. Test inside a disposable **Windows Sandbox**
+    or VM instead (see the "how would it react on a brand new PC"
+    testing notes elsewhere in this repo) -- toggling Smart App Control
+    off in there costs you nothing since the whole environment gets
+    thrown away anyway.
+  - For real end users: this isn't just a scarier dialog than
+    SmartScreen, it's a **hard block with no override** for anyone who
+    has it on -- which, since it's the default outcome of Windows 11's
+    out-of-box evaluation on a clean install, is exactly the "brand new
+    PC, brand new user" case this app is meant to run on. Code-signing
+    (still out of scope here -- a standard cert is a real yearly cost)
+    is the actual fix, since Smart App Control's evaluation leans on
+    the exe's reputation/signature; a free option worth looking into
+    before assuming it has to be paid is
+    [SignPath.io](https://signpath.io)'s free signing for open-source
+    projects.
 
 ## Hardware sensors (CPU Temp)
 
