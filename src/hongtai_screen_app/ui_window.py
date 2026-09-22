@@ -154,11 +154,29 @@ def main(argv=None):
         except Exception:  # noqa: BLE001 -- older pywebview without .events.shown
             pass
 
+    # HONGTAI_SCREEN_DEBUG=1 in the environment (inherited from whatever
+    # spawned this process -- see backend_app.py's _on_show(), which
+    # doesn't strip the environment when it Popen()s this) opens
+    # WebView2's DevTools (right-click "Inspect", or F12) instead of the
+    # normal no-devtools end-user window. Not exposed as its own CLI
+    # flag: this is a debugging aid, not a feature, and an env var
+    # means it can be flipped on for one run without a new build --
+    # e.g. `$env:HONGTAI_SCREEN_DEBUG=1; & ".\Hongtai Screen.exe"` on a
+    # machine where the page is rendering blank/black and the actual
+    # browser console error is what's needed to diagnose it.
+    debug = bool(os.environ.get("HONGTAI_SCREEN_DEBUG"))
+
     try:
-        webview.start(icon=args.icon) if args.icon else webview.start()
+        webview.start(icon=args.icon, debug=debug) if args.icon else webview.start(debug=debug)
     except TypeError:
-        # Older pywebview without the `icon` kwarg on start() at all.
-        webview.start()
+        # Older pywebview missing the `icon` and/or `debug` kwarg on
+        # start() entirely -- fall back a step at a time rather than
+        # straight to the bare call, so `debug` still applies wherever
+        # pywebview's own version actually supports it.
+        try:
+            webview.start(debug=debug)
+        except TypeError:
+            webview.start()
     except Exception as e:  # noqa: BLE001 -- see _looks_like_missing_webview2()
         if _looks_like_missing_webview2(e):
             _show_webview2_missing_message()
