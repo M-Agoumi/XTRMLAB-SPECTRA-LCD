@@ -44,8 +44,31 @@ import glob
 import os
 import sys
 
+from PyInstaller.utils.hooks import collect_all
+
 block_cipher = None
 REPO_ROOT = os.path.dirname(SPECPATH)  # SPECPATH: packaging/ -- one level up is the repo root
+
+# pycairo (dashboard_theme.py's `import cairo`, the gauges/thumbnails --
+# see its own try/except ImportError right at the top of that file) --
+# a real report from a built exe: the app ran, but every Dashboard
+# render and every preset thumbnail failed with dashboard_theme.py's own
+# "needs pycairo... it isn't installed" message, even though `pip
+# install -r requirements.txt` (pycairo is in there, unconditionally)
+# had clearly succeeded during that same build -- so pycairo was
+# present at BUILD time but its compiled extension (cairo/_cairo.
+# cp3xx-win_amd64.pyd) didn't make it into the frozen exe. `import
+# cairo` is a plain top-level statement in a module PyInstaller's
+# static analyzer can already see (controller.py imports dashboard_
+# theme.py directly, no lazy/dynamic import in between, unlike pystray/
+# webview/pythonnet above), so this isn't the same "analyzer can't
+# trace a runtime backend pick" problem those hidden_imports exist for
+# -- collect_all() is the standard, more thorough fix PyInstaller's own
+# docs recommend when a compiled extension's binary gets silently
+# dropped despite a plain static import, and it's cheap/harmless to
+# apply even if the exact root cause on that CI run was something more
+# specific (a stale build cache, say).
+cairo_datas, cairo_binaries, cairo_hiddenimports = collect_all("cairo")
 
 hidden_imports = [
     # PyInstaller's static import scanner can miss these -- they're
@@ -70,7 +93,7 @@ hidden_imports = [
     # in the exe") for a clr/clr_loader import error first.
     "clr",
     "clr_loader",
-]
+] + cairo_hiddenimports
 
 # LibreHardwareMonitorLib.dll (CPU Temp, dashboard_theme.py's
 # _lhm_cpu_temp()) -- NOT committed to this repo, see BUILD.md's
@@ -96,7 +119,7 @@ a = Analysis(
     # static analyzer can't follow that at scan time, so it's told
     # here explicitly instead.
     pathex=[os.path.join(REPO_ROOT, "src")],
-    binaries=[],
+    binaries=[] + cairo_binaries,
     datas=[
         (os.path.join(REPO_ROOT, "assets", "icon.ico"), "assets"),
         # The bundled dashboard background pictures (dashboard_theme.
@@ -124,7 +147,7 @@ a = Analysis(
         # would fall back to the plain-HTML placeholder page instead
         # of the real UI.
         (os.path.join(REPO_ROOT, "frontend", "dist"), "frontend/dist"),
-    ] + optional_datas,
+    ] + optional_datas + cairo_datas,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},

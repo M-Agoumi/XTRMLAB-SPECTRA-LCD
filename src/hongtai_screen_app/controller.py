@@ -1035,6 +1035,19 @@ class AppController:
         app_config.json, say) logs and is skipped rather than taking
         down the whole picker -- every other preset's thumbnail still
         renders."""
+        if dashboard_theme.cairo is None:
+            # Every thumbnail renders through the same cairo-backed
+            # pipeline (render_preset_thumbnail()'s docstring above) --
+            # without it, each one would fail identically, one at a
+            # time, for the same reason (see run()'s own "needs pycairo"
+            # message). Logging N identical failures instead of one
+            # clear one is confusing rather than merely noisy, so this
+            # short-circuits the whole loop the same way run() already
+            # does, instead of letting the per-preset except below catch
+            # it N times.
+            self._log("(dashboard: presets have no thumbnails -- pycairo isn't available, "
+                      "see the \"needs pycairo\" message above)")
+            return {}
         dashboard_cfg = self.cfg.get("dashboard") or {}
         if default_background is None:
             default_background = dict(dashboard_theme.DEFAULT_BACKGROUND, **(dashboard_cfg.get("background") or {}))
