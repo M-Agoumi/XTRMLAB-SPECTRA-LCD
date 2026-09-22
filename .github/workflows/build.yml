@@ -160,14 +160,23 @@ jobs:
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           Install-Module -Name SignPath -Force
+          # -OutputArtifactPath must NOT be the same file as -InputArtifactPath --
+          # Submit-SigningRequest downloads the signed result to the output path
+          # and refuses to overwrite an existing file there without -Force, and
+          # that "existing file" would be the unsigned input it just read (real
+          # CI failure: "There is already a file at ...dist\Hongtai Screen.exe.
+          # If you want to overwrite it use the -Force switch"). Signing to a
+          # separate temp path and then replacing the original avoids relying on
+          # -Force to blow away the unsigned exe mid-request.
           Submit-SigningRequest `
             -InputArtifactPath "dist\Hongtai Screen.exe" `
             -ApiToken $env:SIGNPATH_API_TOKEN `
             -OrganizationId "cd586646-a92e-463e-9b22-9fc099baa11c" `
             -ProjectSlug "Hongtai_Screen" `
             -SigningPolicySlug "CI_Beta_Signing" `
-            -OutputArtifactPath "dist\Hongtai Screen.exe" `
+            -OutputArtifactPath "dist\Hongtai Screen.signed.exe" `
             -WaitForCompletion
+          Move-Item -Path "dist\Hongtai Screen.signed.exe" -Destination "dist\Hongtai Screen.exe" -Force
 
       - name: Publish release
         if: steps.channel.outputs.channel != 'pr'
