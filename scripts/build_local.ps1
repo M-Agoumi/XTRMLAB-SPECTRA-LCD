@@ -134,6 +134,18 @@ if (-not $SkipFrontend) {
     }
 }
 
+# PyInstaller deletes dist\Hongtai Screen.exe before writing the new one
+# -- if a previous build/test run of the app is still open (tray icon,
+# or a spawned --ui webview window, see app.py's own docstring on that
+# dispatch), Windows won't let it, and the build fails with
+# "PermissionError: [WinError 5] Access is denied" on that os.remove()
+# call, deep inside PyInstaller's own EXE.assemble() -- confirmed by a
+# real run. taskkill's exit code is ignored: "no such process" (nothing
+# was running) is just as fine an outcome here as "killed it" -- same
+# reasoning as hongtai_screen.iss's own CloseRunningApp, which has this
+# exact problem at install/uninstall time instead of build time.
+taskkill /IM "Hongtai Screen.exe" /F /T 2>$null | Out-Null
+
 Invoke-Checked -Description "Building the exe with PyInstaller" -Command {
     pyinstaller (Join-Path $RepoRoot "packaging\hongtai_screen.spec")
 }
