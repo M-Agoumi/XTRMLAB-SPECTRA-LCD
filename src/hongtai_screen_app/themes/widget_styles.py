@@ -212,9 +212,19 @@ def skin_path(name):
     not be able to point the renderer at an arbitrary file on this disk."""
     if not name:
         return None
-    if os.path.isabs(name):
-        return name if image_store.is_managed(name) else None
-    return resource_path("skins", name) if os.path.basename(name) == name else None
+    if is_bundled_skin(name):
+        return resource_path("skins", name)
+    return name if image_store.is_managed(name) else None
+
+
+def is_bundled_skin(name):
+    """True if `name` is the file name of a picture in assets/skins/. Checked
+    against the folder itself, not the string's shape, so no path (with
+    either separator, a drive, or "..") can pass as one."""
+    try:
+        return bool(name) and name in os.listdir(resource_path("skins"))
+    except OSError:
+        return False
 
 
 @functools.lru_cache(maxsize=16)
