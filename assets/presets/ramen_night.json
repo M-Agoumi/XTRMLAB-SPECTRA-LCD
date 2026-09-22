@@ -1,0 +1,328 @@
+{
+  "name": "Ramen Night",
+  "bundled_background": {
+    "mode": "ramen",
+    "file": "ramen_night.jpg"
+  },
+  "background": {
+    "mode": "ramen",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "ramen_clock",
+      "type": "clock",
+      "x": 0.3,
+      "y": 0.1,
+      "font_size": 0.065,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "yuji_syuku",
+      "color": [
+        250,
+        236,
+        210
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "ramen_spotify",
+      "type": "media",
+      "x": 0.26,
+      "y": 0.9,
+      "width": 0.45,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        244,
+        150,
+        60
+      ],
+      "text_color": [
+        250,
+        236,
+        210
+      ],
+      "muted_color": [
+        200,
+        180,
+        150
+      ],
+      "font": "shippori_mincho",
+      "track_color": [
+        58,
+        46,
+        36
+      ],
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "ramen_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.14,
+      "y": 0.45,
+      "radius": 0.12,
+      "widget_style": "gothic",
+      "color": [
+        244,
+        150,
+        60
+      ],
+      "text_color": [
+        250,
+        236,
+        210
+      ],
+      "ornament_color": [
+        150,
+        120,
+        90
+      ],
+      "muted_color": [
+        200,
+        180,
+        150
+      ],
+      "track_color": [
+        46,
+        38,
+        30
+      ],
+      "face_color": [
+        14,
+        16,
+        22
+      ],
+      "alert_color": [
+        255,
+        90,
+        50
+      ],
+      "font": "shippori_mincho",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "ramen_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.39,
+      "y": 0.45,
+      "radius": 0.12,
+      "widget_style": "gothic",
+      "color": [
+        244,
+        150,
+        60
+      ],
+      "text_color": [
+        250,
+        236,
+        210
+      ],
+      "ornament_color": [
+        150,
+        120,
+        90
+      ],
+      "muted_color": [
+        200,
+        180,
+        150
+      ],
+      "track_color": [
+        46,
+        38,
+        30
+      ],
+      "face_color": [
+        14,
+        16,
+        22
+      ],
+      "alert_color": [
+        255,
+        90,
+        50
+      ],
+      "font": "shippori_mincho",
+      "opacity": 1.0,
+      "z": 4
+    },
+    {
+      "id": "ramen_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.04000000000000001,
+      "y": 0.72,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        200,
+        180,
+        150
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "ramen_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.24000000000000002,
+      "y": 0.72,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        250,
+        236,
+        210
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "ramen_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.14,
+      "y": 0.78,
+      "width": 0.2,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        244,
+        150,
+        60
+      ],
+      "track_color": [
+        58,
+        46,
+        36
+      ],
+      "skin": "lanterns.png",
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "ramen_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.29000000000000004,
+      "y": 0.72,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        200,
+        180,
+        150
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "ramen_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.49,
+      "y": 0.72,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        250,
+        236,
+        210
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "ramen_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.39,
+      "y": 0.78,
+      "width": 0.2,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        244,
+        150,
+        60
+      ],
+      "track_color": [
+        58,
+        46,
+        36
+      ],
+      "skin": "lanterns.png",
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "ramen_cpu_temp",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.14,
+      "y": 0.62,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        250,
+        236,
+        210
+      ],
+      "opacity": 1.0,
+      "z": 60
+    },
+    {
+      "id": "ramen_gpu_temp",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.39,
+      "y": 0.62,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        250,
+        236,
+        210
+      ],
+      "opacity": 1.0,
+      "z": 60
+    }
+  ]
+}

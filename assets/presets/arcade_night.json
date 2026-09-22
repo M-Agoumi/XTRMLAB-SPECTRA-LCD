@@ -1,0 +1,328 @@
+{
+  "name": "Arcade Night",
+  "bundled_background": {
+    "mode": "arcade",
+    "file": "arcade_night.jpg"
+  },
+  "background": {
+    "mode": "arcade",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "arcade_clock",
+      "type": "clock",
+      "x": 0.31,
+      "y": 0.11,
+      "font_size": 0.065,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "orbitron",
+      "color": [
+        246,
+        240,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "arcade_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.2,
+      "y": 0.39,
+      "radius": 0.11,
+      "widget_style": "cyberpunk",
+      "color": [
+        60,
+        230,
+        255
+      ],
+      "text_color": [
+        246,
+        240,
+        255
+      ],
+      "ornament_color": [
+        120,
+        100,
+        170
+      ],
+      "muted_color": [
+        180,
+        170,
+        220
+      ],
+      "track_color": [
+        36,
+        26,
+        54
+      ],
+      "face_color": [
+        10,
+        6,
+        18
+      ],
+      "alert_color": [
+        255,
+        90,
+        120
+      ],
+      "font": "chakra",
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "arcade_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.42,
+      "y": 0.39,
+      "radius": 0.11,
+      "widget_style": "cyberpunk",
+      "color": [
+        255,
+        80,
+        200
+      ],
+      "text_color": [
+        246,
+        240,
+        255
+      ],
+      "ornament_color": [
+        120,
+        100,
+        170
+      ],
+      "muted_color": [
+        180,
+        170,
+        220
+      ],
+      "track_color": [
+        36,
+        26,
+        54
+      ],
+      "face_color": [
+        10,
+        6,
+        18
+      ],
+      "alert_color": [
+        255,
+        90,
+        120
+      ],
+      "font": "chakra",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "arcade_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.11000000000000001,
+      "y": 0.64,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        180,
+        170,
+        220
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "arcade_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.29000000000000004,
+      "y": 0.64,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        246,
+        240,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "arcade_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.2,
+      "y": 0.6900000000000001,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        60,
+        230,
+        255
+      ],
+      "track_color": [
+        44,
+        30,
+        64
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "arcade_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.32999999999999996,
+      "y": 0.64,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        180,
+        170,
+        220
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "arcade_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.51,
+      "y": 0.64,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        246,
+        240,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "arcade_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.42,
+      "y": 0.6900000000000001,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        80,
+        200
+      ],
+      "track_color": [
+        44,
+        30,
+        64
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "arcade_spotify",
+      "type": "media",
+      "x": 0.31,
+      "y": 0.84,
+      "width": 0.4,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        60,
+        230,
+        255
+      ],
+      "text_color": [
+        246,
+        240,
+        255
+      ],
+      "muted_color": [
+        180,
+        170,
+        220
+      ],
+      "font": "chakra",
+      "track_color": [
+        44,
+        30,
+        64
+      ],
+      "opacity": 1.0,
+      "z": 50
+    },
+    {
+      "id": "arcade_cpu_temp",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.2,
+      "y": 0.55,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        246,
+        240,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 60
+    },
+    {
+      "id": "arcade_gpu_temp",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.42,
+      "y": 0.55,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        246,
+        240,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 60
+    }
+  ]
+}

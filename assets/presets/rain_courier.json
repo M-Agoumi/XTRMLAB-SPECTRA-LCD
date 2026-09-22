@@ -1,0 +1,472 @@
+{
+  "name": "Rain Courier",
+  "bundled_background": {
+    "mode": "raincourier",
+    "file": "rain_courier.jpg"
+  },
+  "background": {
+    "mode": "raincourier",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "rcourier_clock",
+      "type": "clock",
+      "x": 0.82,
+      "y": 0.1,
+      "font_size": 0.055,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "orbitron",
+      "color": [
+        230,
+        248,
+        252
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "rcourier_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.64,
+      "y": 0.41,
+      "radius": 0.1,
+      "widget_style": "cyberpunk",
+      "color": [
+        255,
+        140,
+        40
+      ],
+      "text_color": [
+        230,
+        248,
+        252
+      ],
+      "ornament_color": [
+        60,
+        150,
+        170
+      ],
+      "muted_color": [
+        170,
+        214,
+        226
+      ],
+      "track_color": [
+        22,
+        34,
+        48
+      ],
+      "face_color": [
+        6,
+        10,
+        18
+      ],
+      "alert_color": [
+        255,
+        70,
+        90
+      ],
+      "font": "chakra",
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "rcourier_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.86,
+      "y": 0.41,
+      "radius": 0.1,
+      "widget_style": "cyberpunk",
+      "color": [
+        255,
+        140,
+        40
+      ],
+      "text_color": [
+        230,
+        248,
+        252
+      ],
+      "ornament_color": [
+        60,
+        150,
+        170
+      ],
+      "muted_color": [
+        170,
+        214,
+        226
+      ],
+      "track_color": [
+        22,
+        34,
+        48
+      ],
+      "face_color": [
+        6,
+        10,
+        18
+      ],
+      "alert_color": [
+        255,
+        70,
+        90
+      ],
+      "font": "chakra",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "rcourier_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.55,
+      "y": 0.6,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        170,
+        214,
+        226
+      ],
+      "opacity": 1.0,
+      "z": 10,
+      "plate": [
+        8,
+        14,
+        24
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "rcourier_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.73,
+      "y": 0.6,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        230,
+        248,
+        252
+      ],
+      "opacity": 1.0,
+      "z": 11,
+      "plate": [
+        8,
+        14,
+        24
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "rcourier_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.64,
+      "y": 0.65,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        140,
+        40
+      ],
+      "track_color": [
+        30,
+        44,
+        60
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "rcourier_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.55,
+      "y": 0.71,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        170,
+        214,
+        226
+      ],
+      "opacity": 1.0,
+      "z": 13,
+      "plate": [
+        8,
+        14,
+        24
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "rcourier_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.73,
+      "y": 0.71,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        230,
+        248,
+        252
+      ],
+      "opacity": 1.0,
+      "z": 14,
+      "plate": [
+        8,
+        14,
+        24
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "rcourier_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.64,
+      "y": 0.77,
+      "width": 0.18,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        140,
+        40
+      ],
+      "track_color": [
+        30,
+        44,
+        60
+      ],
+      "skin": "battery.png",
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "rcourier_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.77,
+      "y": 0.6,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        170,
+        214,
+        226
+      ],
+      "opacity": 1.0,
+      "z": 20,
+      "plate": [
+        8,
+        14,
+        24
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "rcourier_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.95,
+      "y": 0.6,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        230,
+        248,
+        252
+      ],
+      "opacity": 1.0,
+      "z": 21,
+      "plate": [
+        8,
+        14,
+        24
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "rcourier_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.86,
+      "y": 0.65,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        140,
+        40
+      ],
+      "track_color": [
+        30,
+        44,
+        60
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "rcourier_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.77,
+      "y": 0.71,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        170,
+        214,
+        226
+      ],
+      "opacity": 1.0,
+      "z": 23,
+      "plate": [
+        8,
+        14,
+        24
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "rcourier_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.95,
+      "y": 0.71,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        230,
+        248,
+        252
+      ],
+      "opacity": 1.0,
+      "z": 24,
+      "plate": [
+        8,
+        14,
+        24
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "rcourier_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.86,
+      "y": 0.77,
+      "width": 0.18,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        140,
+        40
+      ],
+      "track_color": [
+        30,
+        44,
+        60
+      ],
+      "skin": "battery.png",
+      "opacity": 1.0,
+      "z": 25
+    },
+    {
+      "id": "rcourier_spotify",
+      "type": "media",
+      "x": 0.75,
+      "y": 0.9,
+      "width": 0.42,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        255,
+        140,
+        40
+      ],
+      "text_color": [
+        230,
+        248,
+        252
+      ],
+      "muted_color": [
+        170,
+        214,
+        226
+      ],
+      "font": "chakra",
+      "track_color": [
+        30,
+        44,
+        60
+      ],
+      "opacity": 1.0,
+      "z": 50
+    }
+  ]
+}

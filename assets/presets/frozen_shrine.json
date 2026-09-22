@@ -1,0 +1,324 @@
+{
+  "name": "Frozen Shrine",
+  "bundled_background": {
+    "mode": "frozen",
+    "file": "frozen_shrine.jpg"
+  },
+  "background": {
+    "mode": "frozen",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "frozen_spotify",
+      "type": "media",
+      "x": 0.5,
+      "y": 0.085,
+      "width": 0.4,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        188,
+        58,
+        40
+      ],
+      "text_color": [
+        26,
+        36,
+        66
+      ],
+      "muted_color": [
+        90,
+        96,
+        116
+      ],
+      "font": "shippori_mincho",
+      "track_color": [
+        196,
+        190,
+        172
+      ],
+      "opacity": 1.0,
+      "z": 50
+    },
+    {
+      "id": "frozen_clock",
+      "type": "clock",
+      "x": 0.5,
+      "y": 0.215,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "yuji_syuku",
+      "color": [
+        26,
+        36,
+        66
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "frozen_cpu_label",
+      "type": "text",
+      "x": 0.38,
+      "y": 0.33,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        70,
+        78,
+        100
+      ],
+      "opacity": 1.0,
+      "z": 10,
+      "stat": "cpu_temp",
+      "template": "CPU \u00b7 {value}"
+    },
+    {
+      "id": "frozen_cpu_value",
+      "type": "text",
+      "stat": "cpu_load",
+      "template": "{value}",
+      "x": 0.52,
+      "y": 0.33,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        26,
+        36,
+        66
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "frozen_cpu_meter",
+      "type": "bar",
+      "stat": "cpu_load",
+      "x": 0.45,
+      "y": 0.39,
+      "width": 0.14,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        188,
+        58,
+        40
+      ],
+      "track_color": [
+        196,
+        190,
+        172
+      ],
+      "skin": "brush_stroke.png",
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "frozen_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.38,
+      "y": 0.47,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        70,
+        78,
+        100
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "frozen_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.52,
+      "y": 0.47,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        26,
+        36,
+        66
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "frozen_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.45,
+      "y": 0.53,
+      "width": 0.14,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        188,
+        58,
+        40
+      ],
+      "track_color": [
+        196,
+        190,
+        172
+      ],
+      "skin": "brush_stroke.png",
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "frozen_gpu_label",
+      "type": "text",
+      "x": 0.55,
+      "y": 0.33,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        70,
+        78,
+        100
+      ],
+      "opacity": 1.0,
+      "z": 30,
+      "stat": "gpu_temp",
+      "template": "GPU \u00b7 {value}"
+    },
+    {
+      "id": "frozen_gpu_value",
+      "type": "text",
+      "stat": "gpu_load",
+      "template": "{value}",
+      "x": 0.69,
+      "y": 0.33,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        26,
+        36,
+        66
+      ],
+      "opacity": 1.0,
+      "z": 31
+    },
+    {
+      "id": "frozen_gpu_meter",
+      "type": "bar",
+      "stat": "gpu_load",
+      "x": 0.62,
+      "y": 0.39,
+      "width": 0.14,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        188,
+        58,
+        40
+      ],
+      "track_color": [
+        196,
+        190,
+        172
+      ],
+      "skin": "brush_stroke.png",
+      "opacity": 1.0,
+      "z": 32
+    },
+    {
+      "id": "frozen_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.55,
+      "y": 0.47,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        70,
+        78,
+        100
+      ],
+      "opacity": 1.0,
+      "z": 33
+    },
+    {
+      "id": "frozen_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.69,
+      "y": 0.47,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        26,
+        36,
+        66
+      ],
+      "opacity": 1.0,
+      "z": 34
+    },
+    {
+      "id": "frozen_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.62,
+      "y": 0.53,
+      "width": 0.14,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        188,
+        58,
+        40
+      ],
+      "track_color": [
+        196,
+        190,
+        172
+      ],
+      "skin": "brush_stroke.png",
+      "opacity": 1.0,
+      "z": 35
+    }
+  ]
+}

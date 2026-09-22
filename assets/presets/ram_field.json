@@ -1,0 +1,416 @@
+{
+  "name": "Ram Field",
+  "bundled_background": {
+    "mode": "ram",
+    "file": "ram_field.jpg"
+  },
+  "background": {
+    "mode": "ram",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "ram_clock",
+      "type": "clock",
+      "x": 0.2,
+      "y": 0.09,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "poppins",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "ram_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.315,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        200,
+        220,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "ram_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.445,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "ram_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.38,
+      "y": 0.12000000000000001,
+      "width": 0.13,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        222,
+        80
+      ],
+      "track_color": [
+        40,
+        70,
+        150
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "ram_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.465,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        200,
+        220,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "ram_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.595,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "ram_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.53,
+      "y": 0.12000000000000001,
+      "width": 0.13,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        222,
+        80
+      ],
+      "track_color": [
+        40,
+        70,
+        150
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "ram_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.615,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        200,
+        220,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 16
+    },
+    {
+      "id": "ram_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.7450000000000001,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 17
+    },
+    {
+      "id": "ram_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.68,
+      "y": 0.12000000000000001,
+      "width": 0.13,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        222,
+        80
+      ],
+      "track_color": [
+        40,
+        70,
+        150
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 18
+    },
+    {
+      "id": "ram_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.7649999999999999,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        200,
+        220,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 19
+    },
+    {
+      "id": "ram_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.895,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "ram_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.83,
+      "y": 0.12000000000000001,
+      "width": 0.13,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        222,
+        80
+      ],
+      "track_color": [
+        40,
+        70,
+        150
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "ram_spotify",
+      "type": "media",
+      "x": 0.42,
+      "y": 0.27,
+      "width": 0.36,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        255,
+        222,
+        80
+      ],
+      "text_color": [
+        255,
+        255,
+        255
+      ],
+      "muted_color": [
+        200,
+        220,
+        250
+      ],
+      "font": "poppins",
+      "track_color": [
+        40,
+        70,
+        150
+      ],
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "ram_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.73,
+      "y": 0.3,
+      "radius": 0.09,
+      "widget_style": "gothic",
+      "color": [
+        255,
+        222,
+        80
+      ],
+      "text_color": [
+        255,
+        255,
+        255
+      ],
+      "ornament_color": [
+        200,
+        220,
+        250
+      ],
+      "muted_color": [
+        200,
+        220,
+        250
+      ],
+      "track_color": [
+        30,
+        56,
+        130
+      ],
+      "face_color": [
+        14,
+        36,
+        100
+      ],
+      "alert_color": [
+        255,
+        120,
+        80
+      ],
+      "font": "poppins",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "ram_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.89,
+      "y": 0.3,
+      "radius": 0.09,
+      "widget_style": "gothic",
+      "color": [
+        255,
+        222,
+        80
+      ],
+      "text_color": [
+        255,
+        255,
+        255
+      ],
+      "ornament_color": [
+        200,
+        220,
+        250
+      ],
+      "muted_color": [
+        200,
+        220,
+        250
+      ],
+      "track_color": [
+        30,
+        56,
+        130
+      ],
+      "face_color": [
+        14,
+        36,
+        100
+      ],
+      "alert_color": [
+        255,
+        120,
+        80
+      ],
+      "font": "poppins",
+      "opacity": 1.0,
+      "z": 4
+    }
+  ]
+}

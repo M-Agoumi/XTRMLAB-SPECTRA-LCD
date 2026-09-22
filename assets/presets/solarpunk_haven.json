@@ -1,0 +1,539 @@
+{
+  "name": "Solarpunk Haven",
+  "bundled_background": {
+    "mode": "haven",
+    "file": "solarpunk_haven.jpg"
+  },
+  "background": {
+    "mode": "haven",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "haven_clock",
+      "type": "clock",
+      "x": 0.5,
+      "y": 0.2,
+      "font_size": 0.07,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "poppins",
+      "color": [
+        248,
+        252,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 1,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_cpu_label",
+      "type": "text",
+      "text": "CPU",
+      "x": 0.295,
+      "y": 0.7,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        196,
+        226,
+        222
+      ],
+      "opacity": 1.0,
+      "z": 10,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_cpu_value",
+      "type": "text",
+      "stat": "cpu_load",
+      "template": "{value}",
+      "x": 0.465,
+      "y": 0.7,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        248,
+        252,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 11,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_cpu_meter",
+      "type": "bar",
+      "stat": "cpu_load",
+      "x": 0.38,
+      "y": 0.75,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        226,
+        170
+      ],
+      "track_color": [
+        30,
+        70,
+        76
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "haven_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.295,
+      "y": 0.84,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        196,
+        226,
+        222
+      ],
+      "opacity": 1.0,
+      "z": 13,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.465,
+      "y": 0.84,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        248,
+        252,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 14,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.38,
+      "y": 0.89,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        226,
+        170
+      ],
+      "track_color": [
+        30,
+        70,
+        76
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "haven_gpu_label",
+      "type": "text",
+      "text": "GPU",
+      "x": 0.515,
+      "y": 0.7,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        196,
+        226,
+        222
+      ],
+      "opacity": 1.0,
+      "z": 16,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_gpu_value",
+      "type": "text",
+      "stat": "gpu_load",
+      "template": "{value}",
+      "x": 0.6849999999999999,
+      "y": 0.7,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        248,
+        252,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 17,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_gpu_meter",
+      "type": "bar",
+      "stat": "gpu_load",
+      "x": 0.6,
+      "y": 0.75,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        226,
+        170
+      ],
+      "track_color": [
+        30,
+        70,
+        76
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 18
+    },
+    {
+      "id": "haven_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.515,
+      "y": 0.84,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        196,
+        226,
+        222
+      ],
+      "opacity": 1.0,
+      "z": 19,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.6849999999999999,
+      "y": 0.84,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        248,
+        252,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 20,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.6,
+      "y": 0.89,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        226,
+        170
+      ],
+      "track_color": [
+        30,
+        70,
+        76
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "haven_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.735,
+      "y": 0.7,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        196,
+        226,
+        222
+      ],
+      "opacity": 1.0,
+      "z": 22,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.9049999999999999,
+      "y": 0.7,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        248,
+        252,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 23,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.82,
+      "y": 0.75,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        226,
+        170
+      ],
+      "track_color": [
+        30,
+        70,
+        76
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 24
+    },
+    {
+      "id": "haven_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.735,
+      "y": 0.84,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        196,
+        226,
+        222
+      ],
+      "opacity": 1.0,
+      "z": 25,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.9049999999999999,
+      "y": 0.84,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        248,
+        252,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 26,
+      "plate": [
+        10,
+        44,
+        52
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "haven_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.82,
+      "y": 0.89,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        226,
+        170
+      ],
+      "track_color": [
+        30,
+        70,
+        76
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 27
+    },
+    {
+      "id": "haven_spotify",
+      "type": "media",
+      "x": 0.5,
+      "y": 0.36,
+      "width": 0.26,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        255,
+        226,
+        170
+      ],
+      "text_color": [
+        248,
+        252,
+        248
+      ],
+      "muted_color": [
+        170,
+        200,
+        196
+      ],
+      "font": "poppins",
+      "track_color": [
+        30,
+        70,
+        76
+      ],
+      "opacity": 1.0,
+      "z": 50
+    }
+  ]
+}

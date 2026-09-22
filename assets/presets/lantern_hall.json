@@ -1,0 +1,416 @@
+{
+  "name": "Lantern Hall",
+  "bundled_background": {
+    "mode": "lanternhall",
+    "file": "lantern_hall.jpg"
+  },
+  "background": {
+    "mode": "lanternhall",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "lhall_clock",
+      "type": "clock",
+      "x": 0.3,
+      "y": 0.1,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "yuji_syuku",
+      "color": [
+        252,
+        240,
+        234
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "lhall_spotify",
+      "type": "media",
+      "x": 0.71,
+      "y": 0.12,
+      "width": 0.26,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        255,
+        120,
+        100
+      ],
+      "text_color": [
+        252,
+        240,
+        234
+      ],
+      "muted_color": [
+        210,
+        190,
+        186
+      ],
+      "font": "shippori_mincho",
+      "track_color": [
+        60,
+        34,
+        34
+      ],
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "lhall_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.3,
+      "y": 0.42,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        232,
+        52,
+        44
+      ],
+      "text_color": [
+        252,
+        240,
+        234
+      ],
+      "ornament_color": [
+        196,
+        154,
+        100
+      ],
+      "muted_color": [
+        210,
+        190,
+        186
+      ],
+      "track_color": [
+        48,
+        28,
+        28
+      ],
+      "face_color": [
+        12,
+        8,
+        8
+      ],
+      "alert_color": [
+        255,
+        100,
+        70
+      ],
+      "font": "shippori_mincho",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "lhall_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.74,
+      "y": 0.44,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        232,
+        52,
+        44
+      ],
+      "text_color": [
+        252,
+        240,
+        234
+      ],
+      "ornament_color": [
+        196,
+        154,
+        100
+      ],
+      "muted_color": [
+        210,
+        190,
+        186
+      ],
+      "track_color": [
+        48,
+        28,
+        28
+      ],
+      "face_color": [
+        12,
+        8,
+        8
+      ],
+      "alert_color": [
+        255,
+        100,
+        70
+      ],
+      "font": "shippori_mincho",
+      "opacity": 1.0,
+      "z": 4
+    },
+    {
+      "id": "lhall_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.195,
+      "y": 0.62,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        210,
+        190,
+        186
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "lhall_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.345,
+      "y": 0.62,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        240,
+        234
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "lhall_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.27,
+      "y": 0.67,
+      "width": 0.15,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        120,
+        100
+      ],
+      "track_color": [
+        60,
+        34,
+        34
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "lhall_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.195,
+      "y": 0.74,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        210,
+        190,
+        186
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "lhall_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.345,
+      "y": 0.74,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        240,
+        234
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "lhall_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.27,
+      "y": 0.8,
+      "width": 0.15,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        120,
+        100
+      ],
+      "track_color": [
+        60,
+        34,
+        34
+      ],
+      "skin": "lanterns.png",
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "lhall_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.685,
+      "y": 0.64,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        210,
+        190,
+        186
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "lhall_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.835,
+      "y": 0.64,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        240,
+        234
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "lhall_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.76,
+      "y": 0.69,
+      "width": 0.15,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        120,
+        100
+      ],
+      "track_color": [
+        60,
+        34,
+        34
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "lhall_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.685,
+      "y": 0.76,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        210,
+        190,
+        186
+      ],
+      "opacity": 1.0,
+      "z": 23
+    },
+    {
+      "id": "lhall_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.835,
+      "y": 0.76,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        240,
+        234
+      ],
+      "opacity": 1.0,
+      "z": 24
+    },
+    {
+      "id": "lhall_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.76,
+      "y": 0.82,
+      "width": 0.15,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        120,
+        100
+      ],
+      "track_color": [
+        60,
+        34,
+        34
+      ],
+      "skin": "lanterns.png",
+      "opacity": 1.0,
+      "z": 25
+    }
+  ]
+}

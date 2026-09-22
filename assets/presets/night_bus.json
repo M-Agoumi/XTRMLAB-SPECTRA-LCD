@@ -1,0 +1,380 @@
+{
+  "name": "Night Bus",
+  "bundled_background": {
+    "mode": "nightbus",
+    "file": "night_bus.jpg"
+  },
+  "background": {
+    "mode": "nightbus",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "bus_cpu_label",
+      "type": "text",
+      "x": 0.03,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        214,
+        196,
+        170
+      ],
+      "opacity": 1.0,
+      "z": 10,
+      "plate": [
+        16,
+        18,
+        26
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35,
+      "stat": "cpu_temp",
+      "template": "CPU \u00b7 {value}"
+    },
+    {
+      "id": "bus_cpu_value",
+      "type": "text",
+      "stat": "cpu_load",
+      "template": "{value}",
+      "x": 0.17,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        250,
+        238,
+        214
+      ],
+      "opacity": 1.0,
+      "z": 11,
+      "plate": [
+        16,
+        18,
+        26
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "bus_cpu_meter",
+      "type": "bar",
+      "stat": "cpu_load",
+      "x": 0.1,
+      "y": 0.12000000000000001,
+      "width": 0.14,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        240,
+        168,
+        70
+      ],
+      "track_color": [
+        60,
+        50,
+        44
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "bus_gpu_label",
+      "type": "text",
+      "x": 0.2,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        214,
+        196,
+        170
+      ],
+      "opacity": 1.0,
+      "z": 13,
+      "plate": [
+        16,
+        18,
+        26
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35,
+      "stat": "gpu_temp",
+      "template": "GPU \u00b7 {value}"
+    },
+    {
+      "id": "bus_gpu_value",
+      "type": "text",
+      "stat": "gpu_load",
+      "template": "{value}",
+      "x": 0.34,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        250,
+        238,
+        214
+      ],
+      "opacity": 1.0,
+      "z": 14,
+      "plate": [
+        16,
+        18,
+        26
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "bus_gpu_meter",
+      "type": "bar",
+      "stat": "gpu_load",
+      "x": 0.27,
+      "y": 0.12000000000000001,
+      "width": 0.14,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        240,
+        168,
+        70
+      ],
+      "track_color": [
+        60,
+        50,
+        44
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "bus_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.37,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        214,
+        196,
+        170
+      ],
+      "opacity": 1.0,
+      "z": 16,
+      "plate": [
+        16,
+        18,
+        26
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "bus_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.51,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        250,
+        238,
+        214
+      ],
+      "opacity": 1.0,
+      "z": 17,
+      "plate": [
+        16,
+        18,
+        26
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "bus_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.44,
+      "y": 0.12000000000000001,
+      "width": 0.14,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        240,
+        168,
+        70
+      ],
+      "track_color": [
+        60,
+        50,
+        44
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 18
+    },
+    {
+      "id": "bus_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.54,
+      "y": 0.07,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        214,
+        196,
+        170
+      ],
+      "opacity": 1.0,
+      "z": 19,
+      "plate": [
+        16,
+        18,
+        26
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "bus_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.6799999999999999,
+      "y": 0.07,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        250,
+        238,
+        214
+      ],
+      "opacity": 1.0,
+      "z": 20,
+      "plate": [
+        16,
+        18,
+        26
+      ],
+      "plate_opacity": 0.72,
+      "plate_pad": 0.35
+    },
+    {
+      "id": "bus_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.61,
+      "y": 0.12000000000000001,
+      "width": 0.14,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        240,
+        168,
+        70
+      ],
+      "track_color": [
+        60,
+        50,
+        44
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "bus_clock",
+      "type": "clock",
+      "x": 0.13,
+      "y": 0.8,
+      "font_size": 0.075,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "shippori_mincho",
+      "color": [
+        250,
+        238,
+        214
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "bus_spotify",
+      "type": "media",
+      "x": 0.45,
+      "y": 0.82,
+      "width": 0.34,
+      "height": 0.2,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        240,
+        168,
+        70
+      ],
+      "text_color": [
+        250,
+        238,
+        214
+      ],
+      "muted_color": [
+        214,
+        196,
+        170
+      ],
+      "font": "shippori_mincho",
+      "track_color": [
+        60,
+        50,
+        44
+      ],
+      "opacity": 1.0,
+      "z": 50
+    }
+  ]
+}

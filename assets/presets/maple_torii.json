@@ -1,0 +1,416 @@
+{
+  "name": "Maple Torii",
+  "bundled_background": {
+    "mode": "mapletorii",
+    "file": "maple_torii.jpg"
+  },
+  "background": {
+    "mode": "mapletorii",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "maple_clock",
+      "type": "clock",
+      "x": 0.12,
+      "y": 0.08,
+      "font_size": 0.055,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "yuji_syuku",
+      "color": [
+        252,
+        246,
+        240
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "maple_spotify",
+      "type": "media",
+      "x": 0.87,
+      "y": 0.12,
+      "width": 0.22,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        230,
+        64,
+        44
+      ],
+      "text_color": [
+        252,
+        246,
+        240
+      ],
+      "muted_color": [
+        214,
+        200,
+        190
+      ],
+      "font": "shippori_mincho",
+      "track_color": [
+        60,
+        36,
+        32
+      ],
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "maple_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.12,
+      "y": 0.4,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        230,
+        64,
+        44
+      ],
+      "text_color": [
+        252,
+        246,
+        240
+      ],
+      "ornament_color": [
+        200,
+        156,
+        96
+      ],
+      "muted_color": [
+        214,
+        200,
+        190
+      ],
+      "track_color": [
+        44,
+        28,
+        26
+      ],
+      "face_color": [
+        10,
+        8,
+        8
+      ],
+      "alert_color": [
+        255,
+        110,
+        70
+      ],
+      "font": "shippori_mincho",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "maple_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.87,
+      "y": 0.43,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        230,
+        64,
+        44
+      ],
+      "text_color": [
+        252,
+        246,
+        240
+      ],
+      "ornament_color": [
+        200,
+        156,
+        96
+      ],
+      "muted_color": [
+        214,
+        200,
+        190
+      ],
+      "track_color": [
+        44,
+        28,
+        26
+      ],
+      "face_color": [
+        10,
+        8,
+        8
+      ],
+      "alert_color": [
+        255,
+        110,
+        70
+      ],
+      "font": "shippori_mincho",
+      "opacity": 1.0,
+      "z": 4
+    },
+    {
+      "id": "maple_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.03,
+      "y": 0.6,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        214,
+        200,
+        190
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "maple_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.21,
+      "y": 0.6,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        246,
+        240
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "maple_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.12,
+      "y": 0.65,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        230,
+        64,
+        44
+      ],
+      "track_color": [
+        60,
+        36,
+        32
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "maple_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.03,
+      "y": 0.72,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        214,
+        200,
+        190
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "maple_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.21,
+      "y": 0.72,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        246,
+        240
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "maple_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.12,
+      "y": 0.78,
+      "width": 0.18,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        230,
+        64,
+        44
+      ],
+      "track_color": [
+        60,
+        36,
+        32
+      ],
+      "skin": "lanterns.png",
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "maple_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.78,
+      "y": 0.62,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        214,
+        200,
+        190
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "maple_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.96,
+      "y": 0.62,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        246,
+        240
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "maple_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.87,
+      "y": 0.67,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        230,
+        64,
+        44
+      ],
+      "track_color": [
+        60,
+        36,
+        32
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "maple_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.78,
+      "y": 0.74,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        214,
+        200,
+        190
+      ],
+      "opacity": 1.0,
+      "z": 23
+    },
+    {
+      "id": "maple_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.96,
+      "y": 0.74,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        246,
+        240
+      ],
+      "opacity": 1.0,
+      "z": 24
+    },
+    {
+      "id": "maple_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.87,
+      "y": 0.8,
+      "width": 0.18,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        230,
+        64,
+        44
+      ],
+      "track_color": [
+        60,
+        36,
+        32
+      ],
+      "skin": "lanterns.png",
+      "opacity": 1.0,
+      "z": 25
+    }
+  ]
+}

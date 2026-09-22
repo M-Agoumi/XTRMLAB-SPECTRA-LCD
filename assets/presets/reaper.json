@@ -1,0 +1,372 @@
+{
+  "name": "Reaper",
+  "bundled_background": {
+    "mode": "reaper",
+    "file": "reaper.jpg"
+  },
+  "background": {
+    "mode": "reaper",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "reaper_spotify",
+      "type": "media",
+      "x": 0.5,
+      "y": 0.4,
+      "width": 0.26,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        176,
+        26,
+        36
+      ],
+      "text_color": [
+        26,
+        24,
+        26
+      ],
+      "muted_color": [
+        70,
+        70,
+        72
+      ],
+      "font": "cinzel",
+      "track_color": [
+        196,
+        196,
+        196
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "reaper_clock",
+      "type": "clock",
+      "x": 0.5,
+      "y": 0.6,
+      "font_size": 0.065,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "unifraktur",
+      "color": [
+        26,
+        24,
+        26
+      ],
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "reaper_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.71,
+      "y": 0.53,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        176,
+        26,
+        36
+      ],
+      "text_color": [
+        26,
+        24,
+        26
+      ],
+      "ornament_color": [
+        70,
+        70,
+        72
+      ],
+      "muted_color": [
+        70,
+        70,
+        72
+      ],
+      "track_color": [
+        186,
+        186,
+        186
+      ],
+      "face_color": [
+        236,
+        236,
+        236
+      ],
+      "alert_color": [
+        230,
+        30,
+        40
+      ],
+      "font": "cinzel",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "reaper_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.9,
+      "y": 0.53,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        176,
+        26,
+        36
+      ],
+      "text_color": [
+        26,
+        24,
+        26
+      ],
+      "ornament_color": [
+        70,
+        70,
+        72
+      ],
+      "muted_color": [
+        70,
+        70,
+        72
+      ],
+      "track_color": [
+        186,
+        186,
+        186
+      ],
+      "face_color": [
+        236,
+        236,
+        236
+      ],
+      "alert_color": [
+        230,
+        30,
+        40
+      ],
+      "font": "cinzel",
+      "opacity": 1.0,
+      "z": 4
+    },
+    {
+      "id": "reaper_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.42,
+      "y": 0.82,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        70,
+        70,
+        72
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "reaper_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.58,
+      "y": 0.82,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        26,
+        24,
+        26
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "reaper_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.5,
+      "y": 0.87,
+      "width": 0.16,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        176,
+        26,
+        36
+      ],
+      "track_color": [
+        196,
+        196,
+        196
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "reaper_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.63,
+      "y": 0.82,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        70,
+        70,
+        72
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "reaper_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.7899999999999999,
+      "y": 0.82,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        26,
+        24,
+        26
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "reaper_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.71,
+      "y": 0.87,
+      "width": 0.16,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        176,
+        26,
+        36
+      ],
+      "track_color": [
+        196,
+        196,
+        196
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "reaper_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.8200000000000001,
+      "y": 0.82,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        70,
+        70,
+        72
+      ],
+      "opacity": 1.0,
+      "z": 30
+    },
+    {
+      "id": "reaper_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.98,
+      "y": 0.82,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        26,
+        24,
+        26
+      ],
+      "opacity": 1.0,
+      "z": 31
+    },
+    {
+      "id": "reaper_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.9,
+      "y": 0.87,
+      "width": 0.16,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        176,
+        26,
+        36
+      ],
+      "track_color": [
+        196,
+        196,
+        196
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 32
+    },
+    {
+      "id": "reaper_cpu_temp",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.71,
+      "y": 0.68,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        26,
+        24,
+        26
+      ],
+      "opacity": 1.0,
+      "z": 60
+    }
+  ]
+}
