@@ -25,6 +25,15 @@
     Skip `playwright install chromium` (~150MB download). Only needed
     if you actually use webpage_theme.py; harmless to skip otherwise.
 
+.PARAMETER SkipInstaller
+    Skip building HongtaiScreen-Setup.exe (packaging\hongtai_screen.iss)
+    after the portable exe. On by default when Inno Setup (ISCC.exe)
+    isn't installed -- it's a genuinely optional step for a local dev
+    build, only needed when you actually want the installer (e.g. for a
+    Store submission's silent-install requirement -- see that script's
+    own header comment for why the portable exe alone can't satisfy
+    that). Pass this switch to skip it even when ISCC.exe IS found.
+
 .EXAMPLE
     .\scripts\build_local.ps1
     Full build: Python deps, Playwright's Chromium, frontend, then the exe.
@@ -37,7 +46,8 @@
 [CmdletBinding()]
 param(
     [switch]$SkipFrontend,
-    [switch]$SkipPlaywright
+    [switch]$SkipPlaywright,
+    [switch]$SkipInstaller
 )
 
 $ErrorActionPreference = "Stop"
@@ -137,4 +147,48 @@ if (Test-Path $exePath) {
 } else {
     Write-Error "PyInstaller reported success but $exePath wasn't found -- something's off."
     exit 1
+}
+
+if (-not $SkipInstaller) {
+    # ISCC.exe isn't installed by default the way Python/npm are already
+    # assumed to be above -- unlike those, silently requiring it would
+    # break every existing local build for anyone who doesn't have Inno
+    # Setup, for a step most local dev builds don't actually need (see
+    # hongtai_screen.iss's own header comment: it's only the Store/
+    # silent-install path that needs a real installer over the portable
+    # exe). So this looks for it and just skips with a clear pointer to
+    # -SkipInstaller / the download page, rather than failing the whole
+    # build the way a genuinely required tool being missing would.
+    $iscc = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
+    if (-not $iscc) {
+        $fallback = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+        if (Test-Path $fallback) { $iscc = $fallback } else { $iscc = $null }
+    } else {
+        $iscc = $iscc.Source
+    }
+
+    if ($iscc) {
+        # AppVersion isn't wired to a single source of truth in this repo
+        # yet (see pyproject.toml's own version field vs. CHANGELOG.md) --
+        # "0.0.0-local" (hongtai_screen.iss's own default) is fine for a
+        # local test build; build.yml passes the real released version
+        # explicitly for anything actually published.
+        Invoke-Checked -Description "Building the installer (HongtaiScreen-Setup.exe)" -Command {
+            & $iscc (Join-Path $RepoRoot "packaging\hongtai_screen.iss")
+        }
+        $installerPath = Join-Path $RepoRoot "dist\HongtaiScreen-Setup.exe"
+        if (Test-Path $installerPath) {
+            Write-Host "Installer built: $installerPath" -ForegroundColor Green
+        } else {
+            Write-Error "ISCC reported success but $installerPath wasn't found -- something's off."
+            exit 1
+        }
+    } else {
+        Write-Host ""
+        Write-Host "==> Skipping installer build -- Inno Setup (ISCC.exe) not found." -ForegroundColor Yellow
+        Write-Host "    Install it from https://jrsoftware.org/isinfo.php if you need HongtaiScreen-Setup.exe," -ForegroundColor Yellow
+        Write-Host "    or pass -SkipInstaller to silence this notice." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "==> Skipping installer build (-SkipInstaller)" -ForegroundColor Yellow
 }
