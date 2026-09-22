@@ -24,7 +24,29 @@ Needs `pip install pywebview` and a real desktop with WebView2
 tested from a sandbox with no display at all.
 """
 import argparse
+import os
 import sys
+
+# WebView2's underlying Chromium tries to hardware-accelerate its
+# compositor -- in a GPU-less environment (Windows Sandbox, most VMs,
+# an RDP/remote-desktop session with no real GPU) that produces a
+# solid BLACK window instead of a visible error, which looks exactly
+# like a silent failure with nothing in this file's own error handling
+# to catch (confirmed by a real test: WebView2 loaded fine, the window
+# opened, and stayed black the whole time). WebView2's loader reads
+# WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS from the environment and
+# appends it verbatim to the underlying Chromium's own command line --
+# this is a documented WebView2 mechanism, not a pywebview API, so it
+# has to be set before webview.create_window()/webview.start() trigger
+# WebView2's environment creation, which is why it's set here at
+# import time rather than deeper in main(). --disable-gpu forces
+# software rendering, which is plenty for this app's plain HTML/CSS
+# dashboard UI and fixes the black-window case unconditionally, at the
+# cost of not hardware-accelerating on a real GPU either -- an
+# acceptable trade for a small control-panel window, not a game.
+# setdefault(), not a plain assignment, so a user/packager who already
+# set their own WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS isn't overridden.
+os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu")
 
 
 def _looks_like_missing_webview2(exc):
