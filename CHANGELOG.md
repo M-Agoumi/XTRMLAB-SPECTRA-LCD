@@ -2,6 +2,47 @@
 
 All notable changes to this project are documented here.
 
+## [2.1.1] — 2026-09-22
+
+### Fixed
+- **Enabling "Launch at Windows startup" as a standard user failed
+  even after the expected UAC elevation retry**, with `schtasks`
+  reporting `ERROR: Invalid argument/option - 'Screen.exe
+  --autostart'`. The elevated path built a PowerShell array and ran
+  `& schtasks.exe @a`, which goes through PowerShell's own native-
+  command argument translation instead of the Win32/C-runtime argv
+  convention `schtasks.exe` actually parses with -- and that layer
+  mis-splits an already-quoted path containing embedded `"`
+  characters (exactly what `/tr`'s value is). The elevated call now
+  runs through a plain `.bat` executed by `cmd.exe`, which forwards
+  the command line close to verbatim.
+- **The frozen `.exe` always reported "CPU Temp unavailable -- DLL
+  not found"**, even though CPU Temp worked fine running from
+  source -- `assets/hardware/` (LibreHardwareMonitor's DLLs) is
+  gitignored, so a fresh CI checkout never had it and every shipped
+  release built without it. CI now fetches the pinned
+  LibreHardwareMonitor release (sha256-verified) and bundles its
+  DLLs into the build.
+- **`npm install` in `frontend/` failed outright with ERESOLVE**
+  (`peer vite@"^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0" from
+  @vitejs/plugin-react@4.7.0`) after Dependabot bumped `vite` from
+  `5.4.21` straight to `8.3.0` without touching `@vitejs/plugin-react`
+  -- bumped it to `^6.1.1`, the first release whose peer range
+  actually covers vite 8.
+- **`scripts/build_local.ps1` could still fail the frontend build
+  after that**, with `vite build` unable to find its native bundler
+  binding (`Cannot find module '@rolldown/binding-win32-x64-msvc'`)
+  -- a known npm bug (npm/cli#4828) where `npm install` against an
+  existing `node_modules` can silently skip installing an optional
+  dependency that's newly appeared in the tree, which is exactly what
+  happened when vite 8 first pulled in its rolldown-based bundler.
+  The script now removes `node_modules` and runs `npm ci` (a clean,
+  lockfile-exact install) instead of `npm install`, so a stale tree
+  can't cause this again on a future dependency bump either.
+
+### Dependencies
+- `vite` bumped from `5.4.21` to `8.3.0` in `frontend/` (Dependabot).
+
 ## [2.1.0] — 2026-09-22
 
 ### Added
