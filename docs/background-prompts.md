@@ -256,13 +256,6 @@ Seed 22; recipe `pick-pony-15` on lane `pony` (`ponyDiffusionV6XL.safetensors`),
 score_9_up, score_9, score_8_up, score_8, score_7_up, raw, high quality, absurdres, morimee_style, masterpiece, best quality, 1girl, adult woman, curvy, elegant black gothic gown with a deep neckline, fully clothed, ethereal empress of death, glowing scythe, green glow, crescent eye tattoo, glowing eyes, standing at the entrance to the underworld, very wide composition, the figure on the right side, dark stone archways and drifting green deadlight fog, the left half of the image is dark shadowy fog, intense low lighting
 ```
 
-## Armored Allure — `armored_allure.jpg`
-Seed 11; recipe `pick-amix-samurai` on lane `amix` (`aMix_illust.safetensors`), LoRAs: rimix_style_v2_illust @ 1.0; euler_ancestral/normal, 30 steps, cfg 6.0.
-
-```text
-samurai woman, sexy, black hair, medium length, straight hair, fair skin, blue eyes, large breasts, ornate traditional japanese armor, seductive pose, cowboy shot, standing at the far right edge of the image, very wide landscape composition, the left two thirds of the image is a dark empty temple interior with deep black shadow, faint red paper lanterns high in the corner, very dark and quiet, dramatic red rim lighting, masterpiece, best quality, detailed, depth of field, very aesthetic, adult, mature female
-```
-
 ## Bug Knight — `bug_knight.jpg`
 Seed 22; recipe `pick-krea2-39` on lane `krea2` (`krea2_turbo_fp8_scaled.safetensors`), LoRAs: cartoon_world @ 1.0; euler/simple, 7 steps, cfg 1.0, hires fix.
 
@@ -324,13 +317,6 @@ Seed 22; recipe `pick-hassaku-14` on lane `hassaku` (`hassakuXL_illust_v13a.safe
 
 ```text
 (4k,8k,Ultra HD), masterpiece, best quality, ultra-detailed, very aesthetic, depth of field, best lighting, detailed illustration, detailed background, cinematic, beautiful face, ambient occlusion, soft lighting, cute girl, adult woman, BREAK Aka-Oni, oni, (oni horns), colored skin, (red skin), smooth horns, black horns, straight horns, black kimono slipping off one shoulder, sitting on a wooden veranda at the far left of the image, holding a sake cup, confident smile, BREAK very wide composition, night garden with paper lanterns and a full moon, the right side of the image is dark night sky and quiet garden
-```
-
-## Lantern Hall — `lantern_hall.jpg`
-Seed 22; recipe `pick-amix-samurai` on lane `amix` (`aMix_illust.safetensors`), LoRAs: rimix_style_v2_illust @ 1.0; euler_ancestral/normal, 30 steps, cfg 6.0.
-
-```text
-samurai woman, sexy, black hair, medium length, straight hair, fair skin, blue eyes, large breasts, ornate traditional japanese armor, seductive pose, cowboy shot, standing at the far right edge of the image, very wide landscape composition, the left two thirds of the image is a dark empty temple interior with deep black shadow, faint red paper lanterns high in the corner, very dark and quiet, dramatic red rim lighting, masterpiece, best quality, detailed, depth of field, very aesthetic, adult, mature female
 ```
 
 ## Red Vigil — `red_vigil.jpg`
@@ -422,13 +408,6 @@ Seed 11; recipe `pick-hassaku-18` on lane `hassaku` (`hassakuXL_illust_v13a.safe
 
 ```text
 masterpiece, best quality, good quality, very aesthetic, absurdres, newest, depth of field, focused subject, in the style of ckncore, 1girl, solo, adult woman, space bounty hunter, short silver hair, tight black bodysuit with armor plates, utility belt, holding a blaster, cables attached, leaning against a spaceship hull at the far right of the image, very wide composition, the rest of the image is a flat deep blue background with a few faint stars, simple background, adult
-```
-
-## Velvet Boudoir — `velvet_boudoir.jpg`
-Seed 11; recipe `pick-wai-illustrious-28` on lane `wai-illustrious` (`waiIllustrious_v14.safetensors`), LoRAs: smoothdetailer_illust @ 0.4, smooth_style @ 0.8, fantasy_forge @ 0.7; euler/normal, 25 steps, cfg 4.0, hires fix.
-
-```text
-masterpiece, best quality, newest, absurdres, highres, ultra detailed, sharp focus, depth of field, (cel shading:1.3), addmicrodetails, 1girl, solo, adult woman, mature female, long black hair, sheer black lace negligee, stockings, reclining on a red velvet chaise longue at the far left of the image, seductive smile, looking at viewer, very wide composition, the right two thirds of the image is a dark candlelit boudoir with deep shadow and heavy red curtains, dim warm light, quiet and dark
 ```
 
 ## Amber Sorceress — `amber_sorceress.jpg`
