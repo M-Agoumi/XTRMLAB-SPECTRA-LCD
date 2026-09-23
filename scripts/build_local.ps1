@@ -25,6 +25,15 @@
     Skip `playwright install chromium` (~150MB download). Only needed
     if you actually use webpage_theme.py; harmless to skip otherwise.
 
+.PARAMETER SkipInstaller
+    Skip building HongtaiScreen-Setup.exe (packaging\hongtai_screen.iss)
+    after the portable exe. On by default when Inno Setup (ISCC.exe)
+    isn't installed -- it's a genuinely optional step for a local dev
+    build, only needed when you actually want the installer (e.g. for a
+    Store submission's silent-install requirement -- see that script's
+    own header comment for why the portable exe alone can't satisfy
+    that). Pass this switch to skip it even when ISCC.exe IS found.
+
 .EXAMPLE
     .\scripts\build_local.ps1
     Full build: Python deps, Playwright's Chromium, frontend, then the exe.
@@ -37,7 +46,8 @@
 [CmdletBinding()]
 param(
     [switch]$SkipFrontend,
-    [switch]$SkipPlaywright
+    [switch]$SkipPlaywright,
+    [switch]$SkipInstaller
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,8 +83,46 @@ function Invoke-Checked {
     }
 }
 
-Invoke-Checked -Description "Installing Python dependencies" -Command {
-    python -m pip install -r requirements.txt
+# Not a plain Invoke-Checked step -- pip installing winsdk (an
+# optional, unpinned-upper-bound dependency; see requirements.txt's
+# own comment on why it can't be pinned tighter) can fall through to
+# building winsdk's sdist from source when the resolved pre-release
+# has no prebuilt wheel for this interpreter's Python version
+# (confirmed for real: winsdk 1.0.0b10, its newest release, only
+# ships wheels for Python 3.8-3.12 -- github.com/pywinrt/python-winsdk's
+# own release notes). That source build needs the MSVC toolchain
+# (nmake), and scikit-build's own failure for a missing one is a wall
+# of "Trying 'NMake Makefiles ...' generator - failure" noise that
+# doesn't say what to actually do about it -- confirmed by a real
+# report that read as a crash rather than a clear, actionable error.
+# Caught here and translated into one specific fix instead.
+Write-Host "==> Installing Python dependencies" -ForegroundColor Cyan
+$pipOutputLines = $null
+try {
+    python -m pip install -r requirements.txt 2>&1 | Tee-Object -Variable pipOutputLines | Out-Host
+} catch {
+    # PowerShell 7.3+'s $PSNativeCommandUseErrorActionPreference can
+    # turn pip's own non-zero exit into a terminating error here under
+    # $ErrorActionPreference = "Stop" -- same gotcha as this script's
+    # taskkill call above. $LASTEXITCODE is checked below regardless
+    # of whether that happened, so this catch only needs to exist to
+    # keep the script from stopping before that check runs.
+}
+if ($LASTEXITCODE -ne 0) {
+    $combined = ($pipOutputLines | Out-String)
+    if ($combined -match "winsdk" -and $combined -match "nmake|NMake Makefiles|CMake Error") {
+        Write-Error @"
+Installing Python dependencies failed building winsdk from source -- it needs the MSVC/nmake toolchain, which isn't installed (or isn't on PATH in this session).
+
+Fix: install the "Desktop development with C++" workload, as Administrator:
+  winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --wait"
+
+Then close and reopen this PowerShell window (nmake/cl.exe only land on PATH in a fresh session) and re-run this script.
+"@
+    } else {
+        Write-Error "Installing Python dependencies failed (exit code $LASTEXITCODE)"
+    }
+    exit 1
 }
 Invoke-Checked -Description "Installing PyInstaller" -Command {
     python -m pip install pyinstaller
@@ -124,6 +172,32 @@ if (-not $SkipFrontend) {
     }
 }
 
+# PyInstaller deletes dist\Hongtai Screen.exe before writing the new one
+# -- if a previous build/test run of the app is still open (tray icon,
+# or a spawned --ui webview window, see app.py's own docstring on that
+# dispatch), Windows won't let it, and the build fails with
+# "PermissionError: [WinError 5] Access is denied" on that os.remove()
+# call, deep inside PyInstaller's own EXE.assemble() -- confirmed by a
+# real run. taskkill's exit code is ignored: "no such process" (nothing
+# was running) is just as fine an outcome here as "killed it" -- same
+# reasoning as hongtai_screen.iss's own CloseRunningApp, which has this
+# exact problem at install/uninstall time instead of build time.
+#
+# Wrapped in try/catch, not just `2>$null | Out-Null`: on PowerShell
+# 7.3+, $PSNativeCommandUseErrorActionPreference defaults to $true,
+# which makes $ErrorActionPreference = "Stop" (set above) turn
+# taskkill's non-zero "process not found" exit code into a terminating
+# NativeCommandError -- confirmed by a real run, even with stderr
+# already redirected to $null (that redirection silences the message,
+# not the exit code the Stop preference reacts to). try/catch swallows
+# it regardless of which PowerShell version/preference is in play,
+# unlike relying on the exit code being ignored.
+try {
+    taskkill /IM "Hongtai Screen.exe" /F /T 2>$null | Out-Null
+} catch {
+    # No matching process -- nothing was running, nothing to do here.
+}
+
 Invoke-Checked -Description "Building the exe with PyInstaller" -Command {
     pyinstaller (Join-Path $RepoRoot "packaging\hongtai_screen.spec")
 }
@@ -137,4 +211,48 @@ if (Test-Path $exePath) {
 } else {
     Write-Error "PyInstaller reported success but $exePath wasn't found -- something's off."
     exit 1
+}
+
+if (-not $SkipInstaller) {
+    # ISCC.exe isn't installed by default the way Python/npm are already
+    # assumed to be above -- unlike those, silently requiring it would
+    # break every existing local build for anyone who doesn't have Inno
+    # Setup, for a step most local dev builds don't actually need (see
+    # hongtai_screen.iss's own header comment: it's only the Store/
+    # silent-install path that needs a real installer over the portable
+    # exe). So this looks for it and just skips with a clear pointer to
+    # -SkipInstaller / the download page, rather than failing the whole
+    # build the way a genuinely required tool being missing would.
+    $iscc = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
+    if (-not $iscc) {
+        $fallback = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+        if (Test-Path $fallback) { $iscc = $fallback } else { $iscc = $null }
+    } else {
+        $iscc = $iscc.Source
+    }
+
+    if ($iscc) {
+        # AppVersion isn't wired to a single source of truth in this repo
+        # yet (see pyproject.toml's own version field vs. CHANGELOG.md) --
+        # "0.0.0-local" (hongtai_screen.iss's own default) is fine for a
+        # local test build; build.yml passes the real released version
+        # explicitly for anything actually published.
+        Invoke-Checked -Description "Building the installer (HongtaiScreen-Setup.exe)" -Command {
+            & $iscc (Join-Path $RepoRoot "packaging\hongtai_screen.iss")
+        }
+        $installerPath = Join-Path $RepoRoot "dist\HongtaiScreen-Setup.exe"
+        if (Test-Path $installerPath) {
+            Write-Host "Installer built: $installerPath" -ForegroundColor Green
+        } else {
+            Write-Error "ISCC reported success but $installerPath wasn't found -- something's off."
+            exit 1
+        }
+    } else {
+        Write-Host ""
+        Write-Host "==> Skipping installer build -- Inno Setup (ISCC.exe) not found." -ForegroundColor Yellow
+        Write-Host "    Install it from https://jrsoftware.org/isinfo.php if you need HongtaiScreen-Setup.exe," -ForegroundColor Yellow
+        Write-Host "    or pass -SkipInstaller to silence this notice." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "==> Skipping installer build (-SkipInstaller)" -ForegroundColor Yellow
 }

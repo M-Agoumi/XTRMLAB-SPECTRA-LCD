@@ -72,9 +72,16 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "channel=prod" >> "$GITHUB_OUTPUT"
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            # Inno Setup's AppVersion is a plain display string, but a
+            # leading "v" (git's own tag convention) looks wrong in an
+            # Add/Remove Programs entry, so it's stripped here rather
+            # than in the .iss script -- keeps hongtai_screen.iss usable
+            # standalone with a plain "2.1.1"-style version too.
+            echo "installer_version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
           else
             echo "channel=beta" >> "$GITHUB_OUTPUT"
             echo "tag=beta-latest" >> "$GITHUB_OUTPUT"
+            echo "installer_version=0.0.0-beta+${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Move the floating "beta" tag to this commit
@@ -202,6 +209,50 @@ jobs:
             -WaitForCompletion
           Move-Item -Path "dist\Hongtai Screen.signed.exe" -Destination "dist\Hongtai Screen.exe" -Force
 
+      - name: Install Inno Setup
+        # windows-latest's runner image has historically carried Inno
+        # Setup preinstalled, but its exact version isn't pinned by
+        # GitHub and has drifted/gone missing across image updates
+        # before (see actions/runner-images issues on this) -- installing
+        # a known version via Chocolatey (already present on this image)
+        # rather than trusting ambient state matches how the LibreHardwareMonitor
+        # DLL fetch above is pinned too, instead of hoping something's
+        # already there.
+        run: choco install innosetup --no-progress -y
+
+      - name: Build the installer (HongtaiScreen-Setup.exe)
+        # Packages the (now-signed) portable exe from the steps above --
+        # see packaging/hongtai_screen.iss's own header comment for why
+        # a bare portable exe can't satisfy a silent-install requirement
+        # (a Store submission, say) on its own.
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            packaging\hongtai_screen.iss `
+            /DAppVersion=${{ steps.channel.outputs.installer_version }}
+
+      - name: Sign the installer (SignPath)
+        # Same reasoning as "Sign the exe" above, applied to the
+        # installer too -- a second signing request against the same
+        # already-authenticated SignPath session/module install.
+        # continue-on-error: true for the same quota reason as that
+        # step; an unsigned installer is still a strict improvement over
+        # no installer at all, which is what shipped before this existed.
+        continue-on-error: true
+        shell: pwsh
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: |
+          Submit-SigningRequest `
+            -InputArtifactPath "dist\HongtaiScreen-Setup.exe" `
+            -ApiToken $env:SIGNPATH_API_TOKEN `
+            -OrganizationId "cd586646-a92e-463e-9b22-9fc099baa11c" `
+            -ProjectSlug "Hongtai_Screen" `
+            -SigningPolicySlug "CI_Beta_Signing" `
+            -OutputArtifactPath "dist\HongtaiScreen-Setup.signed.exe" `
+            -WaitForCompletion
+          Move-Item -Path "dist\HongtaiScreen-Setup.signed.exe" -Destination "dist\HongtaiScreen-Setup.exe" -Force
+
       - name: Delete previous beta release
         # GitHub's "immutable releases" now refuse to let an action
         # delete/replace an ASSET on an already-published release
@@ -225,5 +276,7 @@ jobs:
           name: ${{ steps.channel.outputs.channel == 'prod' && format('Hongtai Screen {0}', steps.channel.outputs.tag) || 'Beta build' }}
           prerelease: ${{ steps.channel.outputs.channel == 'beta' }}
           make_latest: ${{ steps.channel.outputs.channel == 'prod' }}
-          files: "dist/Hongtai Screen.exe"
+          files: |
+            dist/Hongtai Screen.exe
+            dist/HongtaiScreen-Setup.exe
           body: ${{ steps.channel.outputs.channel == 'beta' && format('Automatic beta build from `develop` @ `{0}`.', github.sha) || format('Production release built from tag `{0}`.', steps.channel.outputs.tag) }}
