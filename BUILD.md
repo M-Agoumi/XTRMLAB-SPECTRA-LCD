@@ -84,7 +84,7 @@ launches the app directly, nothing gets "installed." That's fine for
 personal use, but it can't satisfy a distribution channel that
 requires a real installer with silent-install support (the Microsoft
 Store's submission form, for instance, or winget). For that, build
-`dist\HongtaiScreen-Setup.exe` too, with [Inno Setup
+`dist\Rigvue-Setup.exe` too, with [Inno Setup
 6](https://jrsoftware.org/isinfo.php) installed:
 
 ```

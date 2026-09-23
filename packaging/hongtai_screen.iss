@@ -13,10 +13,10 @@
 ;      (AppVersion defaults to 0.0.0-local below if omitted, for a quick
 ;      local test compile.)
 ;
-; Output: dist\HongtaiScreen-Setup.exe
+; Output: dist\Rigvue-Setup.exe
 ;
 ; Silent install (what a Store/winget-style submission form asks for):
-;   HongtaiScreen-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+;   Rigvue-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ;
 ; Exit codes are Inno Setup's own standard ones (documented at
 ; https://jrsoftware.org/ishelp/topic_setupexitcodes.htm) -- this script
@@ -51,13 +51,14 @@ AppId={{B8F2C1A4-6D3E-4F1A-9C5B-2E7D4A1F8C3D}
 ; has to be here: the Store's automated package-validation flagged a
 ; prior submission because it couldn't match the app name it was told
 ; about ("Rigvue") against what the installer had actually registered
-; ("Hongtai Screen") -- this is that fix. Deliberately NOT renamed:
-; the built exe itself stays "Hongtai Screen.exe" everywhere below
-; (Source/Filename/UninstallDisplayIcon/CloseRunningApp), and
-; OutputBaseFilename below stays "HongtaiScreen-Setup" -- neither is
-; customer-visible the way AppName/the shortcuts/the install folder
-; are, and changing them would mean updating every already-submitted
-; Package URL (Partner Center) and CI reference for no real benefit.
+; ("Hongtai Screen") -- this is that fix. OutputBaseFilename below is
+; "Rigvue-Setup" for the same consistency reason (see its own comment).
+; Deliberately NOT renamed: the built exe itself stays
+; "Hongtai Screen.exe" everywhere below (Source/Filename/
+; UninstallDisplayIcon/CloseRunningApp) -- it's not customer-visible
+; the way AppName/the shortcuts/the install folder/the installer
+; filename are, and PyInstaller's own output name (hongtai_screen.spec)
+; is a separate build step this file doesn't control.
 AppName=Rigvue
 AppVersion={#AppVersion}
 AppPublisher=magoumi
@@ -83,7 +84,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
 OutputDir=..\dist
-OutputBaseFilename=HongtaiScreen-Setup
+OutputBaseFilename=Rigvue-Setup
 SetupIconFile=..\assets\icon.ico
 UninstallDisplayIcon={app}\Hongtai Screen.exe
 LicenseFile=..\LICENSE
