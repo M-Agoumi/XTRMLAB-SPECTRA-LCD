@@ -43,14 +43,29 @@
 ; versions. Do not regenerate this for a version bump; only if the app
 ; is meant to be treated as a wholly different product from here on.
 AppId={{B8F2C1A4-6D3E-4F1A-9C5B-2E7D4A1F8C3D}
-AppName=Hongtai Screen
+; "Rigvue" is the Microsoft Store listing name (reserved there since
+; the OEM's own "Hongtai" name doesn't help anyone discover this app,
+; but the app/repo itself keeps that name everywhere else -- see
+; README.md/CHANGELOG.md). This is what actually shows up in Windows'
+; "Installed apps"/"Add or Remove Programs" list, which is also why it
+; has to be here: the Store's automated package-validation flagged a
+; prior submission because it couldn't match the app name it was told
+; about ("Rigvue") against what the installer had actually registered
+; ("Hongtai Screen") -- this is that fix. Deliberately NOT renamed:
+; the built exe itself stays "Hongtai Screen.exe" everywhere below
+; (Source/Filename/UninstallDisplayIcon/CloseRunningApp), and
+; OutputBaseFilename below stays "HongtaiScreen-Setup" -- neither is
+; customer-visible the way AppName/the shortcuts/the install folder
+; are, and changing them would mean updating every already-submitted
+; Package URL (Partner Center) and CI reference for no real benefit.
+AppName=Rigvue
 AppVersion={#AppVersion}
 AppPublisher=magoumi
 AppPublisherURL=https://github.com/M-Agoumi/XTRMLAB-SPECTRA-LCD
 AppSupportURL=https://github.com/M-Agoumi/XTRMLAB-SPECTRA-LCD/issues
 AppUpdatesURL=https://github.com/M-Agoumi/XTRMLAB-SPECTRA-LCD/releases
 
-; {autopf}\Hongtai Screen + PrivilegesRequired=lowest + the Overrides
+; {autopf}\Rigvue + PrivilegesRequired=lowest + the Overrides
 ; setting below is Inno Setup's own recommended modern combo: an
 ; interactive run offers a choice ("install for me" vs "install for all
 ; users, needs admin"), and a non-admin standard-user account still gets
@@ -58,8 +73,8 @@ AppUpdatesURL=https://github.com/M-Agoumi/XTRMLAB-SPECTRA-LCD/releases
 ; install (what the Store actually runs) skips the dialog and just picks
 ; the per-user path with no prompt -- exactly what an unattended install
 ; needs. See https://jrsoftware.org/ishelp/topic_admininstallmode.htm
-DefaultDirName={autopf}\Hongtai Screen
-DefaultGroupName=Hongtai Screen
+DefaultDirName={autopf}\Rigvue
+DefaultGroupName=Rigvue
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
@@ -90,9 +105,9 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "..\dist\Hongtai Screen.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Hongtai Screen"; Filename: "{app}\Hongtai Screen.exe"
-Name: "{group}\Uninstall Hongtai Screen"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Hongtai Screen"; Filename: "{app}\Hongtai Screen.exe"; Tasks: desktopicon
+Name: "{group}\Rigvue"; Filename: "{app}\Hongtai Screen.exe"
+Name: "{group}\Uninstall Rigvue"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Rigvue"; Filename: "{app}\Hongtai Screen.exe"; Tasks: desktopicon
 
 [Run]
 ; skipifsilent matters here specifically: a silent/unattended install
@@ -100,7 +115,7 @@ Name: "{autodesktop}\Hongtai Screen"; Filename: "{app}\Hongtai Screen.exe"; Task
 ; its own -- Store certification runs installs unattended and doesn't
 ; expect a GUI window to appear uninvited. An interactive install still
 ; offers the normal "Launch now?" checkbox.
-Filename: "{app}\Hongtai Screen.exe"; Description: "Launch Hongtai Screen"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Hongtai Screen.exe"; Description: "Launch Rigvue"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; Best-effort cleanup of the Task Scheduler entry startup_registration.py
