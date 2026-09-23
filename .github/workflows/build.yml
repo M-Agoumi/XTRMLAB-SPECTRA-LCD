@@ -220,7 +220,7 @@ jobs:
         # already there.
         run: choco install innosetup --no-progress -y
 
-      - name: Build the installer (HongtaiScreen-Setup.exe)
+      - name: Build the installer (Rigvue-Setup.exe)
         # Packages the (now-signed) portable exe from the steps above --
         # see packaging/hongtai_screen.iss's own header comment for why
         # a bare portable exe can't satisfy a silent-install requirement
@@ -244,14 +244,14 @@ jobs:
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
         run: |
           Submit-SigningRequest `
-            -InputArtifactPath "dist\HongtaiScreen-Setup.exe" `
+            -InputArtifactPath "dist\Rigvue-Setup.exe" `
             -ApiToken $env:SIGNPATH_API_TOKEN `
             -OrganizationId "cd586646-a92e-463e-9b22-9fc099baa11c" `
             -ProjectSlug "Hongtai_Screen" `
             -SigningPolicySlug "CI_Beta_Signing" `
-            -OutputArtifactPath "dist\HongtaiScreen-Setup.signed.exe" `
+            -OutputArtifactPath "dist\Rigvue-Setup.signed.exe" `
             -WaitForCompletion
-          Move-Item -Path "dist\HongtaiScreen-Setup.signed.exe" -Destination "dist\HongtaiScreen-Setup.exe" -Force
+          Move-Item -Path "dist\Rigvue-Setup.signed.exe" -Destination "dist\Rigvue-Setup.exe" -Force
 
       - name: Delete previous beta release
         # GitHub's "immutable releases" now refuse to let an action
@@ -278,5 +278,5 @@ jobs:
           make_latest: ${{ steps.channel.outputs.channel == 'prod' }}
           files: |
             dist/Hongtai Screen.exe
-            dist/HongtaiScreen-Setup.exe
+            dist/Rigvue-Setup.exe
           body: ${{ steps.channel.outputs.channel == 'beta' && format('Automatic beta build from `develop` @ `{0}`.', github.sha) || format('Production release built from tag `{0}`.', steps.channel.outputs.tag) }}
