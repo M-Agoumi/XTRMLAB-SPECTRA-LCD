@@ -35,7 +35,7 @@ from .driver.hongtai_screen import HongtaiScreen
 from .driver.simulated_screen import SimulatedHongtaiScreen
 from .paths import _app_base_dir
 from .screen_engine import ScreenEngine
-from .themes import dashboard_theme
+from .themes import dashboard_theme, widget_styles
 
 
 def _is_elevated():
@@ -506,6 +506,9 @@ class AppController:
             },
             "background": dict(dashboard_theme.DEFAULT_BACKGROUND, **(d.get("background") or {})),
             "backgroundPresets": dict(dashboard_theme.BACKGROUND_PRESETS),
+            # Bundled pictures a bar's `skin` / a styled dial's `face_image`
+            # can name; an uploaded one is stored by path instead.
+            "skins": dashboard_theme.bundled_skins(),
             # What an unset background key means, so the canvas can
             # fill in a loaded preset's blanks explicitly instead of
             # letting the save-time merge carry the last theme's
@@ -903,6 +906,15 @@ class AppController:
     # already treats as "no image" rather than an error.
     # ------------------------------------------------------------------ #
     _IMAGE_HOLDERS = "image_path"
+    # Every field that can point at a picture, with the keys its inlined
+    # copy travels under. `skin`/`face_image` also accept a bundled skin's
+    # bare file name (see widget_styles.skin_path()), which is the same on
+    # every machine and so travels as-is.
+    _PICTURE_FIELDS = {
+        "image_path": ("image_b64", "image_name"),
+        "skin": ("skin_b64", "skin_name"),
+        "face_image": ("face_image_b64", "face_image_name"),
+    }
 
     @staticmethod
     def _preset_image_slots(preset):
@@ -931,27 +943,28 @@ class AppController:
             raise ValueError(f"no such preset: {name}")
         preset = json.loads(json.dumps(preset))  # deep copy; never mutate the live one
         for slot in self._preset_image_slots(preset):
-            path = slot.get("image_path")
-            if not path:
-                continue
-            try:
-                with open(path, "rb") as f:
-                    slot["image_b64"] = base64.b64encode(f.read()).decode("ascii")
-                # Send the name without the 8-char content-hash prefix
-                # image_store adds when it takes a copy: that prefix is
-                # our storage detail, not part of the picture's name,
-                # and leaving it on means each export/import round trip
-                # stacks another one ("ab12_ab12_shot.png") and stores
-                # a second identical copy instead of deduping onto the
-                # first.
-                slot["image_name"] = re.sub(r"^[0-9a-f]{8}_", "", os.path.basename(path))
-            except OSError:
-                # The picture is gone from this machine -- export the
-                # layout anyway rather than failing the whole thing;
-                # the recipient gets it with no image, same as they'd
-                # get from a preset that never had one.
-                pass
-            slot["image_path"] = None
+            for field, (b64_key, name_key) in self._PICTURE_FIELDS.items():
+                path = slot.get(field)
+                if not path or (field != "image_path" and widget_styles.is_bundled_skin(path)):
+                    continue  # nothing set, or a bundled skin named by file name
+                try:
+                    with open(path, "rb") as f:
+                        slot[b64_key] = base64.b64encode(f.read()).decode("ascii")
+                    # Send the name without the 8-char content-hash prefix
+                    # image_store adds when it takes a copy: that prefix is
+                    # our storage detail, not part of the picture's name,
+                    # and leaving it on means each export/import round trip
+                    # stacks another one ("ab12_ab12_shot.png") and stores
+                    # a second identical copy instead of deduping onto the
+                    # first.
+                    slot[name_key] = re.sub(r"^[0-9a-f]{8}_", "", os.path.basename(path))
+                except OSError:
+                    # The picture is gone from this machine -- export the
+                    # layout anyway rather than failing the whole thing;
+                    # the recipient gets it with no image, same as they'd
+                    # get from a preset that never had one.
+                    pass
+                slot[field] = None
         return {"name": name, "preset": preset}
 
     def import_dashboard_preset(self, name, preset):
@@ -977,23 +990,28 @@ class AppController:
             raise ValueError("preset's \"background\" must be an object")
         preset = json.loads(json.dumps(preset))  # detach from the caller's dict
         for slot in self._preset_image_slots(preset):
-            blob = slot.pop("image_b64", None)
-            original = slot.pop("image_name", None) or "imported.png"
-            path = slot.get("image_path")
-            if blob:
-                try:
-                    slot["image_path"] = image_store.store_image_bytes(
-                        base64.b64decode(blob), original)
-                    continue
-                except (ValueError, base64.binascii.Error):
-                    # Corrupt or not-an-image payload: drop it and keep
-                    # the rest of the layout, same as a missing file.
-                    slot["image_path"] = None
-                    continue
-            # No image travelled with it: keep a path only if it's one
-            # of ours already (re-importing a file exported here), and
-            # never an arbitrary path chosen by whoever sent it.
-            slot["image_path"] = path if (path and image_store.is_managed(path)) else None
+            for field, (b64_key, name_key) in self._PICTURE_FIELDS.items():
+                blob = slot.pop(b64_key, None)
+                original = slot.pop(name_key, None) or "imported.png"
+                path = slot.get(field)
+                if blob:
+                    try:
+                        slot[field] = image_store.store_image_bytes(
+                            base64.b64decode(blob), original)
+                        continue
+                    except (ValueError, base64.binascii.Error):
+                        # Corrupt or not-an-image payload: drop it and keep
+                        # the rest of the layout, same as a missing file.
+                        slot[field] = None
+                        continue
+                if field != "image_path" and field not in slot:
+                    continue  # don't add skin/face_image keys to slots that never had them
+                # No picture travelled with it: keep a path only if it's one
+                # of ours already (re-importing a file exported here), or a
+                # bundled skin's bare file name -- never an arbitrary path
+                # chosen by whoever sent it.
+                bundled = field != "image_path" and widget_styles.is_bundled_skin(path)
+                slot[field] = path if (bundled or (path and image_store.is_managed(path))) else None
         return self.save_dashboard_preset(name, preset.get("elements"), preset.get("background"))
 
     def restore_dismissed_dashboard_presets(self):

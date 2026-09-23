@@ -45,3 +45,22 @@ Style keys are `gothic`, `cyberpunk`, and `high_fantasy`. Missing/null element v
 Font sources and redistribution notices are in `assets/fonts/LICENSES.md` and the accompanying OFL files. Both rendering and editor previews use bundled fonts; no runtime font download is needed.
 
 All three backgrounds are bundled JPEGs under `assets/backgrounds/`. They were generated with the built-in image generation tool; the final prompts are recorded in [background-prompts.md](background-prompts.md).
+
+## Picture skins
+
+Two optional element fields swap a drawn widget part for a transparent PNG: a bundled one named by file name (`assets/skins/`), or an uploaded one stored in the app's image folder. Any other path is ignored, so a shared preset can't point the renderer at an arbitrary file. Both fall back to the normal drawing when the field is unset or the file can't be read. Export inlines uploaded skins the same way it inlines images.
+
+- **`skin`** on a horizontal `bar` (styled or not): the picture is the meter. Drawn left (0%) to right (100%), scaled to the bar's width with its aspect kept. The empty part shows the picture darkened and faded, and the filled part reveals the picture itself up to the current value, with a hint of the bar's `color`. A katana lights up from hilt to tip, a row of lanterns lights one by one.
+- **`face_image`** on a styled `gauge`: the picture replaces the dial face. The track, ticks and live needle still draw over it.
+
+```json
+{ "type": "bar", "stat": "ram", "x": 0.1, "y": 0.9, "width": 0.16, "height": 0.055, "skin": "katana.png" }
+{ "type": "gauge", "stat": "cpu_load", "x": 0.1, "y": 0.42, "radius": 0.14, "widget_style": "cyberpunk", "face_image": "tsuba.png" }
+```
+
+Skins are cut out of rendered images (object on a plain background, then background removal), cropped to the object, and saved with alpha.
+
+## Presets as data
+
+Presets can also ship as files: each `assets/presets/*.json` holds `name`, `bundled_background` (`mode` plus a picture in `assets/backgrounds/`) and the usual `background`/`elements`. The app loads them at startup next to the built-in ones, so a new theme is a JSON file and a picture, no code. A file that can't be read is skipped with a log line.
+

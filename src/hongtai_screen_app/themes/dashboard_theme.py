@@ -4479,7 +4479,6 @@ BUILTIN_DASHBOARD_PRESETS["Sakura Ink"] = {
 }
 
 
-
 def _element_accent(el):
     """An element's gauge color: an explicit `color` (r, g, b) tuple if
     it has one, otherwise the old left-column-cyan/right-column-magenta
@@ -5234,6 +5233,32 @@ def _draw_bar_static(img, el, box, fonts):
               fill=widget_styles.color(el, "text_color") if gothic else (225, 226, 236), anchor="mb")
 
 
+@functools.lru_cache(maxsize=32)
+def _bar_skin_tiles(name, box_w, box_h, accent):
+    """(dim, lit) RGBA tiles for a bar's `skin` -- a transparent PNG (see
+    widget_styles.skin_path()), drawn left (0%) to right (100%) -- scaled
+    to the bar's width with its aspect kept, and no taller than the bar's
+    box. `dim` is the empty track: darkened and faded. `lit` is the
+    full-value look: the picture itself with a hint of the bar's accent.
+    Built once per size and color, not per frame. None when there's no skin
+    or it can't be read, so the bar falls back to its normal drawn fill."""
+    path = widget_styles.skin_path(name)
+    if not path:
+        return None
+    try:
+        src = Image.open(path).convert("RGBA")
+    except OSError:
+        return None
+    scale = min(box_w / src.width, max(box_h, 1) / src.height)
+    src = src.resize((max(1, int(src.width * scale)), max(1, int(src.height * scale))), Image.LANCZOS)
+    alpha = src.getchannel("A")
+    dim = Image.eval(src.convert("RGB"), lambda v: int(v * 0.22)).convert("RGBA")
+    dim.putalpha(alpha.point(lambda a: int(a * 0.5)))
+    lit = Image.blend(src.convert("RGB"), Image.new("RGB", src.size, accent), 0.12).convert("RGBA")
+    lit.putalpha(alpha)
+    return dim, lit
+
+
 def _draw_bar_dynamic(img, el, box, value, min_v, max_v, accent, font_value, value_fmt):
     """Redraws one bar element's fill + current-value text for this
     frame. A linear alternative to `gauge`'s circular ring for the same
@@ -5300,9 +5325,22 @@ def _draw_bar_dynamic(img, el, box, value, min_v, max_v, accent, font_value, val
     # around it. 0.8 keeps the knob a bit larger than the track itself
     # (still reads as a "handle" -- picked visually, not derived) rather
     # than ballooning past it several times over.
-    progress_bar_glow(tile, bar_x, bar_y, bar_w, bar_h, fraction, accent, vertical=vertical, knob_scale=0.8,
-                       show_knob=show_knob, fill_colors=gradient_colors, fill_direction=gradient_direction,
-                       track_color=_element_color(el, key="track_color", default=None))
+    skin = _bar_skin_tiles(el.get("skin"), int(box["w"]), int(box["h"]), tuple(accent)) if not vertical else None
+    if skin:
+        # A skinned bar is a picture instead of a drawn track: the whole
+        # image dimmed as the empty track, and the lit image revealed
+        # left to right up to the value (a katana lighting up from hilt
+        # to tip, say). See _bar_skin_tiles().
+        dim, lit = skin
+        sx, sy = int(box["x0"]), int(box["cy"] - dim.height / 2)
+        tile.alpha_composite(dim, (sx, sy))
+        reveal = int(round(lit.width * fraction))
+        if reveal > 0:
+            tile.alpha_composite(lit.crop((0, 0, reveal, lit.height)), (sx, sy))
+    else:
+        progress_bar_glow(tile, bar_x, bar_y, bar_w, bar_h, fraction, accent, vertical=vertical, knob_scale=0.8,
+                           show_knob=show_knob, fill_colors=gradient_colors, fill_direction=gradient_direction,
+                           track_color=_element_color(el, key="track_color", default=None))
     if not el.get("show_value", True):
         # The counterpart to `show_title` (see _draw_bar_static()): a
         # layout that puts the reading in its own stat-bound *text*
@@ -5423,6 +5461,44 @@ BUNDLED_BACKGROUND_IMAGES = {
     "neon": "neon_pulse.jpg",
     "crimson": "crimson_strike.jpg",
 }
+
+
+def _load_bundled_presets():
+    """Presets shipped as data: each assets/presets/*.json names its preset,
+    its bundled background (a picture in assets/backgrounds/) and the usual
+    {"background", "elements"} layout, so adding one takes a JSON file and a
+    picture, no code. A file that can't be read is skipped with a log line
+    rather than taking every other preset down with it."""
+    folder = resource_path("presets")
+    try:
+        files = sorted(f for f in os.listdir(folder) if f.endswith(".json"))
+    except OSError:
+        return
+    custom = BACKGROUND_PRESETS.pop("image")  # keep "Custom image" last in the picker
+    for fn in files:
+        try:
+            with open(os.path.join(folder, fn), encoding="utf-8") as f:
+                data = json.load(f)
+            bundled = data["bundled_background"]
+            BUNDLED_BACKGROUND_IMAGES[bundled["mode"]] = bundled["file"]
+            BACKGROUND_PRESETS[bundled["mode"]] = f"{data['name']} (image)"
+            BUILTIN_DASHBOARD_PRESETS[data["name"]] = {"background": data["background"],
+                                                       "elements": data["elements"]}
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            print(f"  (skipping preset {fn}: {e})")
+    BACKGROUND_PRESETS["image"] = custom
+
+
+_load_bundled_presets()
+
+
+def bundled_skins():
+    """File names of the pictures in assets/skins/ -- what the editor offers
+    for a bar's `skin` and a styled dial's `face_image`."""
+    try:
+        return sorted(f for f in os.listdir(resource_path("skins")) if f.lower().endswith(".png"))
+    except OSError:
+        return []
 # Applies to every mode above except "image" and the bundled-image
 # modes (which are the photo itself) -- "default"'s hex grid and
 # circuit traces keep their own fixed tint regardless of scheme
@@ -7056,7 +7132,9 @@ def render_frame(background, layout, width, height, fonts, stats, media, history
             stat_def = STAT_DEFS.get(el.get("stat"))
             if stat_def is None:
                 continue
-            if el.get("widget_style") in widget_styles.STYLES:
+            # A skin replaces the meter whatever the widget style, so a skinned
+            # bar always takes the path that draws skins.
+            if el.get("widget_style") in widget_styles.STYLES and not el.get("skin"):
                 widget_styles.draw_bar(img, el, box, stats.get(el["stat"]), stat_def, _cached_scaled_font)
                 continue
             accent = _element_color(el, default=ACCENT_CPU)

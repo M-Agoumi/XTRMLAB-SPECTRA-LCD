@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+- **Presets as data**: `assets/presets/*.json` load at startup next to the built-in presets. A new theme is a JSON file and a picture.
+- **Picture skins**: `skin` on a horizontal bar turns the meter into a picture that lights up to the value (a katana, a row of lanterns, battery cells); `face_image` on a styled dial replaces the dial face. Bundled skins live in `assets/skins/`; uploaded ones go through the image store and travel with exported presets.
+
 ## [2.1.1] — 2026-09-22
 
 ### Fixed
