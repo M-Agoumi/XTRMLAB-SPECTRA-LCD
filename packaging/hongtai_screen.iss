@@ -61,24 +61,79 @@ AppId={{B8F2C1A4-6D3E-4F1A-9C5B-2E7D4A1F8C3D}
 ; is a separate build step this file doesn't control.
 AppName=Rigvue
 AppVersion={#AppVersion}
+; Without this, Inno Setup derives the Add/Remove Programs DisplayName
+; from AppName + AppVersion -- "Rigvue version 2.1.5", not "Rigvue"
+; (verified by installing the 2.1.5 script locally and reading the
+; DisplayName value it wrote under the Uninstall key). The Store's
+; validator string-matches that DisplayName against the reserved
+; listing name, "Rigvue", and "Rigvue version 2.1.5" is not a match --
+; that's the second half of the "could not identify the app name and
+; the publisher name" failure. Pinning this does NOT lose the version:
+; Inno still writes DisplayVersion as its own separate registry value,
+; which is the "Version" column the validator reads (its manual steps
+; say to "verify the app name, publisher name and app version" --
+; learn.microsoft.com/windows/apps/publish/publish-your-app/msi/
+; manual-package-validation).
+AppVerName=Rigvue
+; Must match the publisher display name on the Partner Center account
+; exactly -- the validator compares this ARP "Publisher" value against
+; that name, not against the code-signing certificate's subject.
 AppPublisher=magoumi
 AppPublisherURL=https://github.com/M-Agoumi/XTRMLAB-SPECTRA-LCD
 AppSupportURL=https://github.com/M-Agoumi/XTRMLAB-SPECTRA-LCD/issues
 AppUpdatesURL=https://github.com/M-Agoumi/XTRMLAB-SPECTRA-LCD/releases
 
-; {autopf}\Rigvue + PrivilegesRequired=lowest + the Overrides
-; setting below is Inno Setup's own recommended modern combo: an
-; interactive run offers a choice ("install for me" vs "install for all
-; users, needs admin"), and a non-admin standard-user account still gets
-; a working per-user install instead of failing outright. A silent
-; install (what the Store actually runs) skips the dialog and just picks
-; the per-user path with no prompt -- exactly what an unattended install
-; needs. See https://jrsoftware.org/ishelp/topic_admininstallmode.htm
+; admin, NOT lowest -- and that distinction is the whole reason the
+; Store's package validation rejected the 2.1.5 submission. Under
+; PrivilegesRequired=lowest a silent install never shows the "just me /
+; all users" dialog; it silently takes the per-user path, installs to
+; %LOCALAPPDATA%\Programs\Rigvue and registers its Add/Remove Programs
+; entry under HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall
+; -- i.e. inside one single user account's hive. Reproduced locally
+; against the 2.1.5 script: exit code 0, HKCU entry present, and
+; *nothing* whatsoever under HKLM (neither the 64-bit Uninstall key nor
+; the WOW6432Node one). The Store validator installs the package in a
+; clean automated sandbox and then enumerates the machine's installed-
+; programs list, so an entry confined to the automation account's own
+; HKCU hive is invisible to it -- which is exactly what "we could not
+; identify the app name and the publisher name that your app has added
+; in the add or remove programs" means. It also explains the other two
+; soft failures in that same report, which are not separate bugs:
+; "bundleware check" reports the same missing entry with the same
+; wording (it counts ARP entries and found zero rather than one), and
+; "silent install check" confirms silence by confirming the app
+; actually landed.
+;
+; Requiring admin is explicitly fine for this check: Microsoft's own
+; manual validation steps say in as many words that "UAC (User Account
+; Control) prompts are allowed" during the silent install. And the app
+; keeps working from Program Files because it never writes next to its
+; own exe -- all mutable state (app_config.json, images,
+; startup_debug.log) goes to %LOCALAPPDATA%\HongtaiScreen via paths.py's
+; USER_DATA_DIR.
+;
+; PrivilegesRequiredOverridesAllowed=dialog is deliberately KEPT, so
+; this changes the default rather than removing the per-user path
+; entirely: an interactive run still offers "install for me only" to a
+; standard user with no admin rights, and /CURRENTUSER still forces it.
+; Only the unattended default flips -- which is the only case the Store
+; exercises. See https://jrsoftware.org/ishelp/topic_admininstallmode.htm
 DefaultDirName={autopf}\Rigvue
 DefaultGroupName=Rigvue
 DisableProgramGroupPage=yes
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
+; Acknowledges, rather than fixes, the warning ISCC now emits because
+; [UninstallDelete] touches a per-user area ({userstartup}) while this
+; is an administrative-mode install: "such changes may not achieve what
+; you are intending". That is understood and already accounted for --
+; see the [UninstallDelete] comment below. Deleting the .vbs from the
+; uninstalling user's own Startup folder is best-effort cleanup for the
+; one account most likely to have enabled "Launch at Windows startup";
+; another account's copy survives, exactly as its own comment says.
+; Turning this off keeps the CI compile log clean so a *real* warning
+; there is not lost in the noise.
+UsedUserAreasWarning=no
 
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
