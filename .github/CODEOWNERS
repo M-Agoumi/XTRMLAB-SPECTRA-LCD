@@ -1,0 +1,11 @@
+# Code owners are requested for review automatically on every pull
+# request that touches the matching paths. The last matching line wins.
+# https://docs.github.com/articles/about-code-owners
+
+*                       @M-Agoumi
+
+# Release plumbing: CI, signing, installer. Changes here can ship a
+# broken or unsigned build, so they always need the owner's eyes.
+/.github/               @M-Agoumi
+/packaging/             @M-Agoumi
+/src/hongtai_screen_app/driver/  @M-Agoumi
