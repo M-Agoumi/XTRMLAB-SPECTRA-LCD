@@ -1,0 +1,79 @@
+name: Bug report
+description: Something doesn't work the way it should.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please search
+        [existing issues](https://github.com/M-Agoumi/XTRMLAB-SPECTRA-LCD/issues)
+        first. If the panel stopped responding, check the README's
+        "If the panel stops responding" section too.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect to see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the app
+        2. Pick the Dashboard theme
+        3. Press Start
+        4. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Shown in the app, or the release you downloaded (e.g. v2.1.1, beta-latest @ abc1234).
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How are you running it?
+      options:
+        - Installer (Rigvue-Setup.exe)
+        - Portable exe
+        - From source (python app.py)
+        - Microsoft Store
+    validations:
+      required: true
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Which theme / area?
+      multiple: true
+      options:
+        - Dashboard
+        - Video
+        - Webpage mirror
+        - Demo clock
+        - Theme import/export
+        - Tray icon / startup
+        - Installer
+        - Other
+  - type: input
+    id: os
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      description: Case/panel model and firmware if known, CPU, GPU.
+      placeholder: XTRM lab Spectra 6.2", fw 3.3, Ryzen 7 7800X3D, RTX 4070
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste any error output. It's formatted as code automatically.
+      render: text
