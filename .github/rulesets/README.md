@@ -11,7 +11,7 @@ pick the JSON file.
 | File | Protects | What it enforces |
 | --- | --- | --- |
 | `develop.json` | `develop` | No direct pushes, force-pushes or deletion. Changes land through a PR with 1 code-owner approval, resolved threads, and green `test` + `frontend` checks. |
-| `main.json` | `main` (default branch) | Same as develop, merge commits only (release PRs from develop). |
+| `main.json` | `main` | Same as develop, merge commits only (release PRs from develop). |
 | `release-tags.json` | `v*` tags | Release tags can't be moved or deleted, except by an admin. |
 
 Repository admins are bypass actors in **pull request mode**: an admin
