@@ -57,7 +57,7 @@ pystray>=0.19        # optional -- without it, closing the window quits instead
                      # of dismissing to tray, and --autostart just minimizes
 
 # --- Desktop app window: app.py --ui / scripts/run_ui.py ----------------
-pywebview>=5.0        # required -- this is the app's window. Also needs
+pywebview>=6.2.1        # required -- this is the app's window. Also needs
                      # WebView2 (ships with Windows 11; usually present on
                      # Windows 10 via Edge -- ui_window.py shows a clear
                      # message with a download link if it's missing).
