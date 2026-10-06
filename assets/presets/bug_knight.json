@@ -1,0 +1,328 @@
+{
+  "name": "Bug Knight",
+  "bundled_background": {
+    "mode": "cavern",
+    "file": "bug_knight.jpg"
+  },
+  "background": {
+    "mode": "cavern",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "cavern_clock",
+      "type": "clock",
+      "x": 0.5,
+      "y": 0.11,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "poppins",
+      "color": [
+        226,
+        246,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "cavern_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.36,
+      "y": 0.42,
+      "radius": 0.12,
+      "widget_style": "gothic",
+      "color": [
+        120,
+        220,
+        255
+      ],
+      "text_color": [
+        226,
+        246,
+        255
+      ],
+      "ornament_color": [
+        80,
+        140,
+        170
+      ],
+      "muted_color": [
+        150,
+        196,
+        214
+      ],
+      "track_color": [
+        20,
+        36,
+        50
+      ],
+      "face_color": [
+        6,
+        14,
+        24
+      ],
+      "alert_color": [
+        255,
+        140,
+        120
+      ],
+      "font": "poppins",
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "cavern_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.64,
+      "y": 0.42,
+      "radius": 0.12,
+      "widget_style": "gothic",
+      "color": [
+        120,
+        220,
+        255
+      ],
+      "text_color": [
+        226,
+        246,
+        255
+      ],
+      "ornament_color": [
+        80,
+        140,
+        170
+      ],
+      "muted_color": [
+        150,
+        196,
+        214
+      ],
+      "track_color": [
+        20,
+        36,
+        50
+      ],
+      "face_color": [
+        6,
+        14,
+        24
+      ],
+      "alert_color": [
+        255,
+        140,
+        120
+      ],
+      "font": "poppins",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "cavern_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.26,
+      "y": 0.67,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        150,
+        196,
+        214
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "cavern_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.45999999999999996,
+      "y": 0.67,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        226,
+        246,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "cavern_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.36,
+      "y": 0.7200000000000001,
+      "width": 0.2,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        120,
+        220,
+        255
+      ],
+      "track_color": [
+        24,
+        44,
+        60
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "cavern_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.54,
+      "y": 0.67,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        150,
+        196,
+        214
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "cavern_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.74,
+      "y": 0.67,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        226,
+        246,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "cavern_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.64,
+      "y": 0.7200000000000001,
+      "width": 0.2,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        120,
+        220,
+        255
+      ],
+      "track_color": [
+        24,
+        44,
+        60
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "cavern_spotify",
+      "type": "media",
+      "x": 0.5,
+      "y": 0.88,
+      "width": 0.44,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        120,
+        220,
+        255
+      ],
+      "text_color": [
+        226,
+        246,
+        255
+      ],
+      "muted_color": [
+        150,
+        196,
+        214
+      ],
+      "font": "poppins",
+      "track_color": [
+        24,
+        44,
+        60
+      ],
+      "opacity": 1.0,
+      "z": 50
+    },
+    {
+      "id": "cavern_cpu_temp",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.36,
+      "y": 0.59,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        226,
+        246,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 60
+    },
+    {
+      "id": "cavern_gpu_temp",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.64,
+      "y": 0.59,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        226,
+        246,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 60
+    }
+  ]
+}

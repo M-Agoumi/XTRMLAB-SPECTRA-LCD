@@ -1,0 +1,328 @@
+{
+  "name": "Station Window",
+  "bundled_background": {
+    "mode": "station",
+    "file": "station_window.jpg"
+  },
+  "background": {
+    "mode": "station",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "station_clock",
+      "type": "clock",
+      "x": 0.5,
+      "y": 0.1,
+      "font_size": 0.055,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "chakra",
+      "color": [
+        232,
+        238,
+        246
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "station_spotify",
+      "type": "media",
+      "x": 0.83,
+      "y": 0.12,
+      "width": 0.28,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        255,
+        176,
+        80
+      ],
+      "text_color": [
+        232,
+        238,
+        246
+      ],
+      "muted_color": [
+        170,
+        180,
+        196
+      ],
+      "font": "chakra",
+      "track_color": [
+        40,
+        44,
+        54
+      ],
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "station_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.2,
+      "y": 0.37,
+      "radius": 0.1,
+      "widget_style": "cyberpunk",
+      "color": [
+        255,
+        176,
+        80
+      ],
+      "text_color": [
+        232,
+        238,
+        246
+      ],
+      "ornament_color": [
+        110,
+        120,
+        140
+      ],
+      "muted_color": [
+        170,
+        180,
+        196
+      ],
+      "track_color": [
+        30,
+        34,
+        44
+      ],
+      "face_color": [
+        6,
+        8,
+        12
+      ],
+      "alert_color": [
+        255,
+        90,
+        60
+      ],
+      "font": "chakra",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "station_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.45,
+      "y": 0.37,
+      "radius": 0.1,
+      "widget_style": "cyberpunk",
+      "color": [
+        255,
+        176,
+        80
+      ],
+      "text_color": [
+        232,
+        238,
+        246
+      ],
+      "ornament_color": [
+        110,
+        120,
+        140
+      ],
+      "muted_color": [
+        170,
+        180,
+        196
+      ],
+      "track_color": [
+        30,
+        34,
+        44
+      ],
+      "face_color": [
+        6,
+        8,
+        12
+      ],
+      "alert_color": [
+        255,
+        90,
+        60
+      ],
+      "font": "chakra",
+      "opacity": 1.0,
+      "z": 4
+    },
+    {
+      "id": "station_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.11000000000000001,
+      "y": 0.6,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        170,
+        180,
+        196
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "station_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.29000000000000004,
+      "y": 0.6,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        232,
+        238,
+        246
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "station_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.2,
+      "y": 0.6599999999999999,
+      "width": 0.18,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        176,
+        80
+      ],
+      "track_color": [
+        40,
+        44,
+        54
+      ],
+      "skin": "battery.png",
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "station_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.36,
+      "y": 0.6,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        170,
+        180,
+        196
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "station_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.54,
+      "y": 0.6,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        232,
+        238,
+        246
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "station_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.45,
+      "y": 0.6599999999999999,
+      "width": 0.18,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        176,
+        80
+      ],
+      "track_color": [
+        40,
+        44,
+        54
+      ],
+      "skin": "battery.png",
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "station_cpu_temp",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.2,
+      "y": 0.52,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        232,
+        238,
+        246
+      ],
+      "opacity": 1.0,
+      "z": 60
+    },
+    {
+      "id": "station_gpu_temp",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.45,
+      "y": 0.52,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        232,
+        238,
+        246
+      ],
+      "opacity": 1.0,
+      "z": 60
+    }
+  ]
+}

@@ -1,0 +1,366 @@
+{
+  "name": "Player Two",
+  "bundled_background": {
+    "mode": "playertwo",
+    "file": "player_two.jpg"
+  },
+  "background": {
+    "mode": "playertwo",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "playertwo_clock",
+      "type": "clock",
+      "x": 0.1,
+      "y": 0.1,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "orbitron",
+      "color": [
+        255,
+        250,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "playertwo_spotify",
+      "type": "media",
+      "x": 0.5,
+      "y": 0.06,
+      "width": 0.4,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        80,
+        220,
+        255
+      ],
+      "text_color": [
+        255,
+        250,
+        250
+      ],
+      "muted_color": [
+        236,
+        210,
+        210
+      ],
+      "font": "chakra",
+      "track_color": [
+        70,
+        20,
+        24
+      ],
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "playertwo_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.1,
+      "y": 0.5,
+      "radius": 0.1,
+      "widget_style": "cyberpunk",
+      "color": [
+        80,
+        220,
+        255
+      ],
+      "text_color": [
+        236,
+        246,
+        255
+      ],
+      "ornament_color": [
+        20,
+        14,
+        16
+      ],
+      "muted_color": [
+        160,
+        170,
+        180
+      ],
+      "track_color": [
+        40,
+        34,
+        38
+      ],
+      "face_color": [
+        12,
+        10,
+        12
+      ],
+      "alert_color": [
+        255,
+        255,
+        255
+      ],
+      "font": "chakra",
+      "opacity": 1.0,
+      "z": 3,
+      "show_title": false
+    },
+    {
+      "id": "playertwo_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.9,
+      "y": 0.5,
+      "radius": 0.1,
+      "widget_style": "cyberpunk",
+      "color": [
+        80,
+        220,
+        255
+      ],
+      "text_color": [
+        236,
+        246,
+        255
+      ],
+      "ornament_color": [
+        20,
+        14,
+        16
+      ],
+      "muted_color": [
+        160,
+        170,
+        180
+      ],
+      "track_color": [
+        40,
+        34,
+        38
+      ],
+      "face_color": [
+        12,
+        10,
+        12
+      ],
+      "alert_color": [
+        255,
+        255,
+        255
+      ],
+      "font": "chakra",
+      "opacity": 1.0,
+      "z": 4,
+      "show_title": false
+    },
+    {
+      "id": "playertwo_cpu_title",
+      "type": "text",
+      "text": "CPU",
+      "x": 0.1,
+      "y": 0.34,
+      "font_size": 0.032,
+      "align": "center",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        255,
+        250,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 5
+    },
+    {
+      "id": "playertwo_gpu_title",
+      "type": "text",
+      "text": "GPU",
+      "x": 0.9,
+      "y": 0.34,
+      "font_size": 0.032,
+      "align": "center",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        255,
+        250,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 6
+    },
+    {
+      "id": "playertwo_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.020000000000000004,
+      "y": 0.76,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        236,
+        210,
+        210
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "playertwo_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.18,
+      "y": 0.76,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        255,
+        250,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "playertwo_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.1,
+      "y": 0.81,
+      "width": 0.16,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        80,
+        220,
+        255
+      ],
+      "track_color": [
+        70,
+        20,
+        24
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "playertwo_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.8200000000000001,
+      "y": 0.76,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "chakra",
+      "color": [
+        236,
+        210,
+        210
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "playertwo_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.98,
+      "y": 0.76,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        255,
+        250,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "playertwo_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.9,
+      "y": 0.81,
+      "width": 0.16,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        80,
+        220,
+        255
+      ],
+      "track_color": [
+        70,
+        20,
+        24
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "playertwo_cpu_temp",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.1,
+      "y": 0.65,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        255,
+        250,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 60
+    },
+    {
+      "id": "playertwo_gpu_temp",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.9,
+      "y": 0.65,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "chakra",
+      "color": [
+        255,
+        250,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 60
+    }
+  ]
+}

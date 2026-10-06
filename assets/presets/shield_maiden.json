@@ -1,0 +1,416 @@
+{
+  "name": "Shield Maiden",
+  "bundled_background": {
+    "mode": "shieldmaiden",
+    "file": "shield_maiden.jpg"
+  },
+  "background": {
+    "mode": "shieldmaiden",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "sm_clock",
+      "type": "clock",
+      "x": 0.13,
+      "y": 0.1,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "cinzel",
+      "color": [
+        232,
+        244,
+        244
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "sm_spotify",
+      "type": "media",
+      "x": 0.84,
+      "y": 0.1,
+      "width": 0.3,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        236,
+        186,
+        100
+      ],
+      "text_color": [
+        240,
+        248,
+        248
+      ],
+      "muted_color": [
+        140,
+        170,
+        176
+      ],
+      "font": "cinzel",
+      "track_color": [
+        30,
+        50,
+        56
+      ],
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "sm_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.13,
+      "y": 0.42,
+      "radius": 0.13,
+      "widget_style": "gothic",
+      "color": [
+        212,
+        160,
+        80
+      ],
+      "text_color": [
+        232,
+        244,
+        244
+      ],
+      "ornament_color": [
+        120,
+        150,
+        156
+      ],
+      "muted_color": [
+        160,
+        196,
+        200
+      ],
+      "track_color": [
+        26,
+        42,
+        48
+      ],
+      "face_color": [
+        6,
+        14,
+        18
+      ],
+      "alert_color": [
+        255,
+        110,
+        60
+      ],
+      "font": "cinzel",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "sm_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.87,
+      "y": 0.42,
+      "radius": 0.13,
+      "widget_style": "gothic",
+      "color": [
+        212,
+        160,
+        80
+      ],
+      "text_color": [
+        232,
+        244,
+        244
+      ],
+      "ornament_color": [
+        120,
+        150,
+        156
+      ],
+      "muted_color": [
+        160,
+        196,
+        200
+      ],
+      "track_color": [
+        26,
+        42,
+        48
+      ],
+      "face_color": [
+        6,
+        14,
+        18
+      ],
+      "alert_color": [
+        255,
+        110,
+        60
+      ],
+      "font": "cinzel",
+      "opacity": 1.0,
+      "z": 4
+    },
+    {
+      "id": "sm_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.04,
+      "y": 0.7,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        196,
+        222,
+        224
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "sm_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.22,
+      "y": 0.7,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        240,
+        248,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "sm_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.13,
+      "y": 0.75,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        236,
+        186,
+        100
+      ],
+      "track_color": [
+        30,
+        50,
+        56
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "sm_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.04,
+      "y": 0.83,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        196,
+        222,
+        224
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "sm_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.22,
+      "y": 0.83,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        240,
+        248,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "sm_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.13,
+      "y": 0.88,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        236,
+        186,
+        100
+      ],
+      "track_color": [
+        30,
+        50,
+        56
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "sm_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.78,
+      "y": 0.7,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        196,
+        222,
+        224
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "sm_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.96,
+      "y": 0.7,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        240,
+        248,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "sm_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.87,
+      "y": 0.75,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        236,
+        186,
+        100
+      ],
+      "track_color": [
+        30,
+        50,
+        56
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "sm_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.78,
+      "y": 0.83,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        196,
+        222,
+        224
+      ],
+      "opacity": 1.0,
+      "z": 23
+    },
+    {
+      "id": "sm_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.96,
+      "y": 0.83,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        240,
+        248,
+        248
+      ],
+      "opacity": 1.0,
+      "z": 24
+    },
+    {
+      "id": "sm_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.87,
+      "y": 0.88,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        236,
+        186,
+        100
+      ],
+      "track_color": [
+        30,
+        50,
+        56
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 25
+    }
+  ]
+}

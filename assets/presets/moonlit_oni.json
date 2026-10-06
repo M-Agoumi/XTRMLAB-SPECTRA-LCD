@@ -1,0 +1,416 @@
+{
+  "name": "Moonlit Oni",
+  "bundled_background": {
+    "mode": "moononi",
+    "file": "moonlit_oni.jpg"
+  },
+  "background": {
+    "mode": "moononi",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "moononi_clock",
+      "type": "clock",
+      "x": 0.23,
+      "y": 0.1,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "yuji_syuku",
+      "color": [
+        252,
+        240,
+        236
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "moononi_spotify",
+      "type": "media",
+      "x": 0.72,
+      "y": 0.12,
+      "width": 0.26,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        255,
+        96,
+        80
+      ],
+      "text_color": [
+        252,
+        240,
+        236
+      ],
+      "muted_color": [
+        206,
+        190,
+        196
+      ],
+      "font": "shippori_mincho",
+      "track_color": [
+        60,
+        40,
+        44
+      ],
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "moononi_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.23,
+      "y": 0.41,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        236,
+        60,
+        50
+      ],
+      "text_color": [
+        252,
+        240,
+        236
+      ],
+      "ornament_color": [
+        160,
+        130,
+        120
+      ],
+      "muted_color": [
+        206,
+        190,
+        196
+      ],
+      "track_color": [
+        50,
+        34,
+        38
+      ],
+      "face_color": [
+        16,
+        12,
+        18
+      ],
+      "alert_color": [
+        255,
+        90,
+        70
+      ],
+      "font": "shippori_mincho",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "moononi_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.75,
+      "y": 0.43,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        236,
+        60,
+        50
+      ],
+      "text_color": [
+        252,
+        240,
+        236
+      ],
+      "ornament_color": [
+        160,
+        130,
+        120
+      ],
+      "muted_color": [
+        206,
+        190,
+        196
+      ],
+      "track_color": [
+        50,
+        34,
+        38
+      ],
+      "face_color": [
+        16,
+        12,
+        18
+      ],
+      "alert_color": [
+        255,
+        90,
+        70
+      ],
+      "font": "shippori_mincho",
+      "opacity": 1.0,
+      "z": 4
+    },
+    {
+      "id": "moononi_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.145,
+      "y": 0.61,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        240,
+        230,
+        234
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "moononi_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.315,
+      "y": 0.61,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        240,
+        236
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "moononi_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.23,
+      "y": 0.66,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        96,
+        80
+      ],
+      "track_color": [
+        60,
+        40,
+        44
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "moononi_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.145,
+      "y": 0.73,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        240,
+        230,
+        234
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "moononi_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.315,
+      "y": 0.73,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        240,
+        236
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "moononi_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.23,
+      "y": 0.79,
+      "width": 0.17,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        96,
+        80
+      ],
+      "track_color": [
+        60,
+        40,
+        44
+      ],
+      "skin": "lanterns.png",
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "moononi_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.665,
+      "y": 0.63,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        240,
+        230,
+        234
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "moononi_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.835,
+      "y": 0.63,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        240,
+        236
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "moononi_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.75,
+      "y": 0.68,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        96,
+        80
+      ],
+      "track_color": [
+        60,
+        40,
+        44
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "moononi_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.665,
+      "y": 0.75,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        240,
+        230,
+        234
+      ],
+      "opacity": 1.0,
+      "z": 23
+    },
+    {
+      "id": "moononi_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.835,
+      "y": 0.75,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        252,
+        240,
+        236
+      ],
+      "opacity": 1.0,
+      "z": 24
+    },
+    {
+      "id": "moononi_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.75,
+      "y": 0.81,
+      "width": 0.17,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        96,
+        80
+      ],
+      "track_color": [
+        60,
+        40,
+        44
+      ],
+      "skin": "lanterns.png",
+      "opacity": 1.0,
+      "z": 25
+    }
+  ]
+}

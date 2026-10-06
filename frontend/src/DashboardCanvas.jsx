@@ -457,6 +457,47 @@ function VolumeSourceControl({ meta, setMeta, setError }) {
 // and shows up here with no frontend edit at all. "default" is the
 // OS's own sans, which is what every element saved before the bundled
 // faces existed resolves to.
+// A picture in place of a drawn part: a bar's `skin` (the meter becomes the
+// picture, lit up from the left to the current value) or a styled dial's
+// `face_image`. A bundled picture is stored by file name; an uploaded one
+// goes through the same image store as every other picked image and is
+// stored by that copy's path, which is all the renderer will accept.
+function skinLabel(name) {
+  const stem = name.replace(/\.[^.]+$/, "").replace(/_/g, " ");
+  return stem.charAt(0).toUpperCase() + stem.slice(1);
+}
+
+function PictureSkinControl({ label, field, hint, selected, updateSelected, meta, uploadImage, uploadingId, setError }) {
+  const value = selected[field] || "";
+  const bundled = meta?.skins || [];
+  const uploaded = !!value && !bundled.includes(value);
+  const uploadId = `${selected.id}:${field}`;
+  return (
+    <>
+      <div className="row">
+        <label className="grow">
+          {label}
+          <select value={uploaded ? "__uploaded" : value}
+                  onChange={(e) => e.target.value !== "__uploaded" && updateSelected({ [field]: e.target.value || null })}>
+            <option value="">None</option>
+            {bundled.map((name) => <option key={name} value={name}>{skinLabel(name)}</option>)}
+            {uploaded && <option value="__uploaded">{basename(value)} (uploaded)</option>}
+          </select>
+        </label>
+        <label>
+          Upload your own
+          <input type="file" accept="image/png,image/webp"
+                 onChange={(e) => uploadImage(uploadId, e.target.files[0],
+                   (path) => updateSelected({ [field]: path }), setError)} />
+        </label>
+        {uploaded && <img className="file-thumb" src={api.dashboardImageUrl(value)} alt="" />}
+        {uploadingId === uploadId && <span className="hint">Uploading…</span>}
+      </div>
+      <div className="row"><span className="hint">{hint}</span></div>
+    </>
+  );
+}
+
 function FontFamilyControl({ selected, updateSelected, meta }) {
   const families = meta?.fontFamilies;
   if (!families) return null;
@@ -2611,6 +2652,18 @@ export default function DashboardCanvas({ frameUrl, connected, dashboardRunning 
                 which way the fill runs -- left-to-right, or bottom-to-top.
               </span>
             </div>
+          )}
+
+          {selected.type === "bar" && selected.orientation !== "vertical" && (
+            <PictureSkinControl label="Skin" field="skin" selected={selected} updateSelected={updateSelected}
+              meta={meta} uploadImage={uploadImage} uploadingId={uploadingId} setError={setError}
+              hint="A transparent PNG drawn left (empty) to right (full): the part up to the value shows the picture, the rest a faded copy." />
+          )}
+
+          {selected.type === "gauge" && usesWidgetStyle && (
+            <PictureSkinControl label="Dial face" field="face_image" selected={selected} updateSelected={updateSelected}
+              meta={meta} uploadImage={uploadImage} uploadingId={uploadingId} setError={setError}
+              hint="A roughly round transparent PNG behind the ticks and needle." />
           )}
 
           {selected.type === "image" && (

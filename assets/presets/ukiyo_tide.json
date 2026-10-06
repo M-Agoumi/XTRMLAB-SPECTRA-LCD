@@ -1,0 +1,324 @@
+{
+  "name": "Ukiyo Tide",
+  "bundled_background": {
+    "mode": "tide",
+    "file": "ukiyo_tide.jpg"
+  },
+  "background": {
+    "mode": "tide",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "tide_clock",
+      "type": "clock",
+      "x": 0.5,
+      "y": 0.215,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "yuji_syuku",
+      "color": [
+        26,
+        36,
+        66
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "tide_cpu_label",
+      "type": "text",
+      "x": 0.33499999999999996,
+      "y": 0.33,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        70,
+        78,
+        100
+      ],
+      "opacity": 1.0,
+      "z": 10,
+      "stat": "cpu_temp",
+      "template": "CPU \u00b7 {value}"
+    },
+    {
+      "id": "tide_cpu_value",
+      "type": "text",
+      "stat": "cpu_load",
+      "template": "{value}",
+      "x": 0.485,
+      "y": 0.33,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        26,
+        36,
+        66
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "tide_cpu_meter",
+      "type": "bar",
+      "stat": "cpu_load",
+      "x": 0.41,
+      "y": 0.39,
+      "width": 0.15,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        188,
+        58,
+        40
+      ],
+      "track_color": [
+        196,
+        190,
+        172
+      ],
+      "skin": "brush_stroke.png",
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "tide_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.33499999999999996,
+      "y": 0.47,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        70,
+        78,
+        100
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "tide_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.485,
+      "y": 0.47,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        26,
+        36,
+        66
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "tide_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.41,
+      "y": 0.53,
+      "width": 0.15,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        188,
+        58,
+        40
+      ],
+      "track_color": [
+        196,
+        190,
+        172
+      ],
+      "skin": "brush_stroke.png",
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "tide_gpu_label",
+      "type": "text",
+      "x": 0.515,
+      "y": 0.33,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        70,
+        78,
+        100
+      ],
+      "opacity": 1.0,
+      "z": 30,
+      "stat": "gpu_temp",
+      "template": "GPU \u00b7 {value}"
+    },
+    {
+      "id": "tide_gpu_value",
+      "type": "text",
+      "stat": "gpu_load",
+      "template": "{value}",
+      "x": 0.6649999999999999,
+      "y": 0.33,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        26,
+        36,
+        66
+      ],
+      "opacity": 1.0,
+      "z": 31
+    },
+    {
+      "id": "tide_gpu_meter",
+      "type": "bar",
+      "stat": "gpu_load",
+      "x": 0.59,
+      "y": 0.39,
+      "width": 0.15,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        188,
+        58,
+        40
+      ],
+      "track_color": [
+        196,
+        190,
+        172
+      ],
+      "skin": "brush_stroke.png",
+      "opacity": 1.0,
+      "z": 32
+    },
+    {
+      "id": "tide_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.515,
+      "y": 0.47,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "shippori_mincho",
+      "color": [
+        70,
+        78,
+        100
+      ],
+      "opacity": 1.0,
+      "z": 33
+    },
+    {
+      "id": "tide_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.6649999999999999,
+      "y": 0.47,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "shippori_mincho",
+      "color": [
+        26,
+        36,
+        66
+      ],
+      "opacity": 1.0,
+      "z": 34
+    },
+    {
+      "id": "tide_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.59,
+      "y": 0.53,
+      "width": 0.15,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        188,
+        58,
+        40
+      ],
+      "track_color": [
+        196,
+        190,
+        172
+      ],
+      "skin": "brush_stroke.png",
+      "opacity": 1.0,
+      "z": 35
+    },
+    {
+      "id": "tide_spotify",
+      "type": "media",
+      "x": 0.5,
+      "y": 0.085,
+      "width": 0.46,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        188,
+        58,
+        40
+      ],
+      "text_color": [
+        26,
+        36,
+        66
+      ],
+      "muted_color": [
+        90,
+        96,
+        116
+      ],
+      "font": "shippori_mincho",
+      "track_color": [
+        196,
+        190,
+        172
+      ],
+      "opacity": 1.0,
+      "z": 50
+    }
+  ]
+}

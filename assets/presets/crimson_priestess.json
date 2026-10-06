@@ -1,0 +1,416 @@
+{
+  "name": "Crimson Priestess",
+  "bundled_background": {
+    "mode": "priestess",
+    "file": "crimson_priestess.jpg"
+  },
+  "background": {
+    "mode": "priestess",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "priestess_clock",
+      "type": "clock",
+      "x": 0.5,
+      "y": 0.085,
+      "font_size": 0.065,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "cinzel",
+      "color": [
+        236,
+        232,
+        230
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "priestess_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.03,
+      "y": 0.08,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        150,
+        146,
+        146
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "priestess_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.17,
+      "y": 0.08,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        236,
+        232,
+        230
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "priestess_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.1,
+      "y": 0.14,
+      "width": 0.14,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        205,
+        32,
+        38
+      ],
+      "track_color": [
+        58,
+        54,
+        56
+      ],
+      "skin": "longsword_red.png",
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "priestess_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.2,
+      "y": 0.08,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        150,
+        146,
+        146
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "priestess_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.34,
+      "y": 0.08,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        236,
+        232,
+        230
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "priestess_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.27,
+      "y": 0.14,
+      "width": 0.14,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        205,
+        32,
+        38
+      ],
+      "track_color": [
+        58,
+        54,
+        56
+      ],
+      "skin": "longsword_red.png",
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "priestess_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.6599999999999999,
+      "y": 0.08,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        150,
+        146,
+        146
+      ],
+      "opacity": 1.0,
+      "z": 16
+    },
+    {
+      "id": "priestess_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.8,
+      "y": 0.08,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        236,
+        232,
+        230
+      ],
+      "opacity": 1.0,
+      "z": 17
+    },
+    {
+      "id": "priestess_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.73,
+      "y": 0.14,
+      "width": 0.14,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        205,
+        32,
+        38
+      ],
+      "track_color": [
+        58,
+        54,
+        56
+      ],
+      "skin": "longsword_red.png",
+      "opacity": 1.0,
+      "z": 18
+    },
+    {
+      "id": "priestess_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.8300000000000001,
+      "y": 0.08,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        150,
+        146,
+        146
+      ],
+      "opacity": 1.0,
+      "z": 19
+    },
+    {
+      "id": "priestess_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.97,
+      "y": 0.08,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        236,
+        232,
+        230
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "priestess_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.9,
+      "y": 0.14,
+      "width": 0.14,
+      "height": 0.055,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        205,
+        32,
+        38
+      ],
+      "track_color": [
+        58,
+        54,
+        56
+      ],
+      "skin": "longsword_red.png",
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "priestess_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.11,
+      "y": 0.39,
+      "radius": 0.12,
+      "widget_style": "gothic",
+      "color": [
+        205,
+        32,
+        38
+      ],
+      "text_color": [
+        236,
+        232,
+        230
+      ],
+      "ornament_color": [
+        150,
+        146,
+        146
+      ],
+      "muted_color": [
+        150,
+        146,
+        146
+      ],
+      "track_color": [
+        40,
+        38,
+        40
+      ],
+      "face_color": [
+        14,
+        13,
+        14
+      ],
+      "alert_color": [
+        240,
+        60,
+        60
+      ],
+      "font": "cinzel",
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "priestess_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.32,
+      "y": 0.39,
+      "radius": 0.12,
+      "widget_style": "gothic",
+      "color": [
+        205,
+        32,
+        38
+      ],
+      "text_color": [
+        236,
+        232,
+        230
+      ],
+      "ornament_color": [
+        150,
+        146,
+        146
+      ],
+      "muted_color": [
+        150,
+        146,
+        146
+      ],
+      "track_color": [
+        40,
+        38,
+        40
+      ],
+      "face_color": [
+        14,
+        13,
+        14
+      ],
+      "alert_color": [
+        240,
+        60,
+        60
+      ],
+      "font": "cinzel",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "priestess_spotify",
+      "type": "media",
+      "x": 0.215,
+      "y": 0.6,
+      "width": 0.42,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        205,
+        32,
+        38
+      ],
+      "text_color": [
+        236,
+        232,
+        230
+      ],
+      "muted_color": [
+        140,
+        136,
+        136
+      ],
+      "font": "cinzel",
+      "track_color": [
+        58,
+        54,
+        56
+      ],
+      "opacity": 1.0,
+      "z": 50
+    }
+  ]
+}
