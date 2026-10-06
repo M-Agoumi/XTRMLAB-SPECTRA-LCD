@@ -1,0 +1,27 @@
+name: Main source guard
+
+# `main` only accepts pull requests that come from this repository's
+# `develop` branch. GitHub rulesets can't restrict a PR's source branch,
+# so this job fails for any other head, and `require-develop` is a
+# required status check in the "Protect main" ruleset.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  require-develop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the PR to come from develop
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REF" != "develop" ] || [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error::PRs into main must come from develop in $BASE_REPO (got '$HEAD_REF' from '$HEAD_REPO'). Open the PR against develop instead."
+            exit 1
+          fi
