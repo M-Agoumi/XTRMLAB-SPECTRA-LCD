@@ -1,0 +1,328 @@
+{
+  "name": "Library Cat",
+  "bundled_background": {
+    "mode": "library",
+    "file": "library_cat.jpg"
+  },
+  "background": {
+    "mode": "library",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "library_clock",
+      "type": "clock",
+      "x": 0.41,
+      "y": 0.15,
+      "font_size": 0.075,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "poppins",
+      "color": [
+        60,
+        46,
+        38
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "library_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.3,
+      "y": 0.46,
+      "radius": 0.11,
+      "widget_style": "gothic",
+      "color": [
+        36,
+        140,
+        140
+      ],
+      "text_color": [
+        60,
+        46,
+        38
+      ],
+      "ornament_color": [
+        150,
+        120,
+        96
+      ],
+      "muted_color": [
+        110,
+        92,
+        80
+      ],
+      "track_color": [
+        226,
+        210,
+        192
+      ],
+      "face_color": [
+        252,
+        246,
+        236
+      ],
+      "alert_color": [
+        220,
+        90,
+        50
+      ],
+      "font": "poppins",
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "library_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.52,
+      "y": 0.46,
+      "radius": 0.11,
+      "widget_style": "gothic",
+      "color": [
+        36,
+        140,
+        140
+      ],
+      "text_color": [
+        60,
+        46,
+        38
+      ],
+      "ornament_color": [
+        150,
+        120,
+        96
+      ],
+      "muted_color": [
+        110,
+        92,
+        80
+      ],
+      "track_color": [
+        226,
+        210,
+        192
+      ],
+      "face_color": [
+        252,
+        246,
+        236
+      ],
+      "alert_color": [
+        220,
+        90,
+        50
+      ],
+      "font": "poppins",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "library_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.21,
+      "y": 0.7,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        84,
+        68,
+        58
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "library_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.39,
+      "y": 0.7,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        60,
+        46,
+        38
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "library_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.3,
+      "y": 0.75,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        20,
+        104,
+        108
+      ],
+      "track_color": [
+        226,
+        210,
+        192
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "library_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.43000000000000005,
+      "y": 0.7,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        84,
+        68,
+        58
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "library_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.61,
+      "y": 0.7,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        60,
+        46,
+        38
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "library_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.52,
+      "y": 0.75,
+      "width": 0.18,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        20,
+        104,
+        108
+      ],
+      "track_color": [
+        226,
+        210,
+        192
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "library_spotify",
+      "type": "media",
+      "x": 0.41,
+      "y": 0.88,
+      "width": 0.4,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        20,
+        104,
+        108
+      ],
+      "text_color": [
+        60,
+        46,
+        38
+      ],
+      "muted_color": [
+        110,
+        92,
+        80
+      ],
+      "font": "poppins",
+      "track_color": [
+        226,
+        210,
+        192
+      ],
+      "opacity": 1.0,
+      "z": 50
+    },
+    {
+      "id": "library_cpu_temp",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.3,
+      "y": 0.62,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        60,
+        46,
+        38
+      ],
+      "opacity": 1.0,
+      "z": 60
+    },
+    {
+      "id": "library_gpu_temp",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.52,
+      "y": 0.62,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        60,
+        46,
+        38
+      ],
+      "opacity": 1.0,
+      "z": 60
+    }
+  ]
+}

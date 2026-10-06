@@ -1,0 +1,328 @@
+{
+  "name": "Mars Colony",
+  "bundled_background": {
+    "mode": "mars",
+    "file": "mars_colony.jpg"
+  },
+  "background": {
+    "mode": "mars",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "mars_clock",
+      "type": "clock",
+      "x": 0.5,
+      "y": 0.13,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "poppins",
+      "color": [
+        52,
+        26,
+        22
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "mars_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.41,
+      "y": 0.49,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        20,
+        130,
+        130
+      ],
+      "text_color": [
+        52,
+        26,
+        22
+      ],
+      "ornament_color": [
+        110,
+        60,
+        50
+      ],
+      "muted_color": [
+        110,
+        60,
+        50
+      ],
+      "track_color": [
+        214,
+        190,
+        176
+      ],
+      "face_color": [
+        246,
+        236,
+        226
+      ],
+      "alert_color": [
+        200,
+        40,
+        30
+      ],
+      "font": "poppins",
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "mars_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.59,
+      "y": 0.49,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        20,
+        130,
+        130
+      ],
+      "text_color": [
+        52,
+        26,
+        22
+      ],
+      "ornament_color": [
+        110,
+        60,
+        50
+      ],
+      "muted_color": [
+        110,
+        60,
+        50
+      ],
+      "track_color": [
+        214,
+        190,
+        176
+      ],
+      "face_color": [
+        246,
+        236,
+        226
+      ],
+      "alert_color": [
+        200,
+        40,
+        30
+      ],
+      "font": "poppins",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "mars_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.365,
+      "y": 0.71,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        100,
+        50,
+        42
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "mars_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.495,
+      "y": 0.71,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        52,
+        26,
+        22
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "mars_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.43,
+      "y": 0.76,
+      "width": 0.13,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        10,
+        90,
+        96
+      ],
+      "track_color": [
+        226,
+        176,
+        160
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "mars_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.5249999999999999,
+      "y": 0.71,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        100,
+        50,
+        42
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "mars_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.655,
+      "y": 0.71,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        52,
+        26,
+        22
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "mars_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.59,
+      "y": 0.76,
+      "width": 0.13,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        10,
+        90,
+        96
+      ],
+      "track_color": [
+        226,
+        176,
+        160
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "mars_spotify",
+      "type": "media",
+      "x": 0.5,
+      "y": 0.28,
+      "width": 0.36,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        10,
+        90,
+        96
+      ],
+      "text_color": [
+        52,
+        26,
+        22
+      ],
+      "muted_color": [
+        110,
+        60,
+        50
+      ],
+      "font": "poppins",
+      "track_color": [
+        226,
+        176,
+        160
+      ],
+      "opacity": 1.0,
+      "z": 50
+    },
+    {
+      "id": "mars_cpu_temp",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.41,
+      "y": 0.64,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        52,
+        26,
+        22
+      ],
+      "opacity": 1.0,
+      "z": 60
+    },
+    {
+      "id": "mars_gpu_temp",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.59,
+      "y": 0.64,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        52,
+        26,
+        22
+      ],
+      "opacity": 1.0,
+      "z": 60
+    }
+  ]
+}

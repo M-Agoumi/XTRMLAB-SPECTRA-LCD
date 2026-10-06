@@ -1,0 +1,372 @@
+{
+  "name": "Deadlight",
+  "bundled_background": {
+    "mode": "deadlight",
+    "file": "deadlight.jpg"
+  },
+  "background": {
+    "mode": "deadlight",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "deadlight_clock",
+      "type": "clock",
+      "x": 0.1,
+      "y": 0.1,
+      "font_size": 0.06,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "unifraktur",
+      "color": [
+        28,
+        30,
+        30
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "deadlight_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.020000000000000004,
+      "y": 0.34,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        70,
+        76,
+        72
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "deadlight_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.18,
+      "y": 0.34,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        28,
+        30,
+        30
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "deadlight_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.1,
+      "y": 0.39,
+      "width": 0.16,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        30,
+        120,
+        50
+      ],
+      "track_color": [
+        196,
+        198,
+        194
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "deadlight_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.020000000000000004,
+      "y": 0.52,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        70,
+        76,
+        72
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "deadlight_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.18,
+      "y": 0.52,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        28,
+        30,
+        30
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "deadlight_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.1,
+      "y": 0.5700000000000001,
+      "width": 0.16,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        30,
+        120,
+        50
+      ],
+      "track_color": [
+        196,
+        198,
+        194
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "deadlight_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.020000000000000004,
+      "y": 0.7,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "cinzel",
+      "color": [
+        70,
+        76,
+        72
+      ],
+      "opacity": 1.0,
+      "z": 16
+    },
+    {
+      "id": "deadlight_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.18,
+      "y": 0.7,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        28,
+        30,
+        30
+      ],
+      "opacity": 1.0,
+      "z": 17
+    },
+    {
+      "id": "deadlight_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.1,
+      "y": 0.75,
+      "width": 0.16,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        30,
+        120,
+        50
+      ],
+      "track_color": [
+        196,
+        198,
+        194
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 18
+    },
+    {
+      "id": "deadlight_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.87,
+      "y": 0.4,
+      "radius": 0.11,
+      "widget_style": "gothic",
+      "color": [
+        60,
+        200,
+        80
+      ],
+      "text_color": [
+        28,
+        30,
+        30
+      ],
+      "ornament_color": [
+        70,
+        76,
+        72
+      ],
+      "muted_color": [
+        84,
+        90,
+        86
+      ],
+      "track_color": [
+        178,
+        182,
+        176
+      ],
+      "face_color": [
+        222,
+        224,
+        220
+      ],
+      "alert_color": [
+        140,
+        255,
+        120
+      ],
+      "font": "cinzel",
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "deadlight_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.87,
+      "y": 0.74,
+      "radius": 0.11,
+      "widget_style": "gothic",
+      "color": [
+        60,
+        200,
+        80
+      ],
+      "text_color": [
+        28,
+        30,
+        30
+      ],
+      "ornament_color": [
+        70,
+        76,
+        72
+      ],
+      "muted_color": [
+        84,
+        90,
+        86
+      ],
+      "track_color": [
+        178,
+        182,
+        176
+      ],
+      "face_color": [
+        222,
+        224,
+        220
+      ],
+      "alert_color": [
+        140,
+        255,
+        120
+      ],
+      "font": "cinzel",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "deadlight_spotify",
+      "type": "media",
+      "x": 0.86,
+      "y": 0.1,
+      "width": 0.26,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        30,
+        120,
+        50
+      ],
+      "text_color": [
+        28,
+        30,
+        30
+      ],
+      "muted_color": [
+        84,
+        90,
+        86
+      ],
+      "font": "cinzel",
+      "track_color": [
+        196,
+        198,
+        194
+      ],
+      "opacity": 1.0,
+      "z": 50
+    },
+    {
+      "id": "deadlight_gpu_temp",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "TEMP {value}",
+      "x": 0.87,
+      "y": 0.9,
+      "font_size": 0.03,
+      "align": "center",
+      "bold": true,
+      "font": "cinzel",
+      "color": [
+        28,
+        30,
+        30
+      ],
+      "opacity": 1.0,
+      "z": 60
+    }
+  ]
+}

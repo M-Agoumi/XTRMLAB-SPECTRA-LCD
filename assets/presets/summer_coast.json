@@ -1,0 +1,416 @@
+{
+  "name": "Summer Coast",
+  "bundled_background": {
+    "mode": "coast",
+    "file": "summer_coast.jpg"
+  },
+  "background": {
+    "mode": "coast",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "coast_cputmp_label",
+      "type": "text",
+      "text": "CPU TEMP",
+      "x": 0.03,
+      "y": 0.08,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        200,
+        222,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 10
+    },
+    {
+      "id": "coast_cputmp_value",
+      "type": "text",
+      "stat": "cpu_temp",
+      "template": "{value}",
+      "x": 0.17,
+      "y": 0.08,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "coast_cputmp_meter",
+      "type": "bar",
+      "stat": "cpu_temp",
+      "x": 0.1,
+      "y": 0.13,
+      "width": 0.14,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        210,
+        90
+      ],
+      "track_color": [
+        40,
+        86,
+        160
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "coast_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.2,
+      "y": 0.08,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        200,
+        222,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "coast_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.34,
+      "y": 0.08,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "coast_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.27,
+      "y": 0.13,
+      "width": 0.14,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        210,
+        90
+      ],
+      "track_color": [
+        40,
+        86,
+        160
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "coast_gputmp_label",
+      "type": "text",
+      "text": "GPU TEMP",
+      "x": 0.37,
+      "y": 0.08,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        200,
+        222,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 16
+    },
+    {
+      "id": "coast_gputmp_value",
+      "type": "text",
+      "stat": "gpu_temp",
+      "template": "{value}",
+      "x": 0.51,
+      "y": 0.08,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 17
+    },
+    {
+      "id": "coast_gputmp_meter",
+      "type": "bar",
+      "stat": "gpu_temp",
+      "x": 0.44,
+      "y": 0.13,
+      "width": 0.14,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        210,
+        90
+      ],
+      "track_color": [
+        40,
+        86,
+        160
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 18
+    },
+    {
+      "id": "coast_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.54,
+      "y": 0.08,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        200,
+        222,
+        250
+      ],
+      "opacity": 1.0,
+      "z": 19
+    },
+    {
+      "id": "coast_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.6799999999999999,
+      "y": 0.08,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 20
+    },
+    {
+      "id": "coast_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.61,
+      "y": 0.13,
+      "width": 0.14,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        255,
+        210,
+        90
+      ],
+      "track_color": [
+        40,
+        86,
+        160
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "coast_clock",
+      "type": "clock",
+      "x": 0.87,
+      "y": 0.09,
+      "font_size": 0.065,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "poppins",
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "coast_cpu_dial",
+      "type": "gauge",
+      "stat": "cpu_load",
+      "x": 0.11,
+      "y": 0.34,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        255,
+        210,
+        90
+      ],
+      "text_color": [
+        255,
+        255,
+        255
+      ],
+      "ornament_color": [
+        200,
+        222,
+        250
+      ],
+      "muted_color": [
+        200,
+        222,
+        250
+      ],
+      "track_color": [
+        36,
+        78,
+        150
+      ],
+      "face_color": [
+        18,
+        58,
+        130
+      ],
+      "alert_color": [
+        255,
+        120,
+        80
+      ],
+      "font": "poppins",
+      "opacity": 1.0,
+      "z": 2
+    },
+    {
+      "id": "coast_gpu_dial",
+      "type": "gauge",
+      "stat": "gpu_load",
+      "x": 0.31,
+      "y": 0.34,
+      "radius": 0.1,
+      "widget_style": "gothic",
+      "color": [
+        255,
+        210,
+        90
+      ],
+      "text_color": [
+        255,
+        255,
+        255
+      ],
+      "ornament_color": [
+        200,
+        222,
+        250
+      ],
+      "muted_color": [
+        200,
+        222,
+        250
+      ],
+      "track_color": [
+        36,
+        78,
+        150
+      ],
+      "face_color": [
+        18,
+        58,
+        130
+      ],
+      "alert_color": [
+        255,
+        120,
+        80
+      ],
+      "font": "poppins",
+      "opacity": 1.0,
+      "z": 3
+    },
+    {
+      "id": "coast_spotify",
+      "type": "media",
+      "x": 0.8,
+      "y": 0.3,
+      "width": 0.3,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        255,
+        210,
+        90
+      ],
+      "text_color": [
+        255,
+        255,
+        255
+      ],
+      "muted_color": [
+        200,
+        222,
+        250
+      ],
+      "font": "poppins",
+      "track_color": [
+        40,
+        86,
+        160
+      ],
+      "opacity": 1.0,
+      "z": 50
+    }
+  ]
+}

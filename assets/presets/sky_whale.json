@@ -1,0 +1,324 @@
+{
+  "name": "Sky Whale",
+  "bundled_background": {
+    "mode": "whale",
+    "file": "sky_whale.jpg"
+  },
+  "background": {
+    "mode": "whale",
+    "scheme": "mono",
+    "border": "none",
+    "dim": 0,
+    "widget_style": "default",
+    "image_path": null
+  },
+  "elements": [
+    {
+      "id": "whale_clock",
+      "type": "clock",
+      "x": 0.16,
+      "y": 0.12,
+      "font_size": 0.075,
+      "show_seconds": false,
+      "show_date": true,
+      "face": "digital",
+      "hour_format": "24h",
+      "font": "poppins",
+      "color": [
+        58,
+        66,
+        88
+      ],
+      "opacity": 1.0,
+      "z": 1
+    },
+    {
+      "id": "whale_cpu_label",
+      "type": "text",
+      "x": 0.06499999999999999,
+      "y": 0.3,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        80,
+        78,
+        92
+      ],
+      "opacity": 1.0,
+      "z": 10,
+      "stat": "cpu_temp",
+      "template": "CPU \u00b7 {value}"
+    },
+    {
+      "id": "whale_cpu_value",
+      "type": "text",
+      "stat": "cpu_load",
+      "template": "{value}",
+      "x": 0.235,
+      "y": 0.3,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        58,
+        66,
+        88
+      ],
+      "opacity": 1.0,
+      "z": 11
+    },
+    {
+      "id": "whale_cpu_meter",
+      "type": "bar",
+      "stat": "cpu_load",
+      "x": 0.15,
+      "y": 0.35,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        190,
+        70,
+        50
+      ],
+      "track_color": [
+        238,
+        220,
+        206
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 12
+    },
+    {
+      "id": "whale_ram_label",
+      "type": "text",
+      "text": "RAM",
+      "x": 0.06499999999999999,
+      "y": 0.43,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        80,
+        78,
+        92
+      ],
+      "opacity": 1.0,
+      "z": 13
+    },
+    {
+      "id": "whale_ram_value",
+      "type": "text",
+      "stat": "ram",
+      "template": "{value}",
+      "x": 0.235,
+      "y": 0.43,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        58,
+        66,
+        88
+      ],
+      "opacity": 1.0,
+      "z": 14
+    },
+    {
+      "id": "whale_ram_meter",
+      "type": "bar",
+      "stat": "ram",
+      "x": 0.15,
+      "y": 0.48,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        190,
+        70,
+        50
+      ],
+      "track_color": [
+        238,
+        220,
+        206
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 15
+    },
+    {
+      "id": "whale_gpu_label",
+      "type": "text",
+      "x": 0.285,
+      "y": 0.3,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        80,
+        78,
+        92
+      ],
+      "opacity": 1.0,
+      "z": 20,
+      "stat": "gpu_temp",
+      "template": "GPU \u00b7 {value}"
+    },
+    {
+      "id": "whale_gpu_value",
+      "type": "text",
+      "stat": "gpu_load",
+      "template": "{value}",
+      "x": 0.455,
+      "y": 0.3,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        58,
+        66,
+        88
+      ],
+      "opacity": 1.0,
+      "z": 21
+    },
+    {
+      "id": "whale_gpu_meter",
+      "type": "bar",
+      "stat": "gpu_load",
+      "x": 0.37,
+      "y": 0.35,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        190,
+        70,
+        50
+      ],
+      "track_color": [
+        238,
+        220,
+        206
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 22
+    },
+    {
+      "id": "whale_vram_label",
+      "type": "text",
+      "text": "VRAM",
+      "x": 0.285,
+      "y": 0.43,
+      "font_size": 0.028,
+      "align": "left",
+      "bold": false,
+      "font": "poppins",
+      "color": [
+        80,
+        78,
+        92
+      ],
+      "opacity": 1.0,
+      "z": 23
+    },
+    {
+      "id": "whale_vram_value",
+      "type": "text",
+      "stat": "vram_usage",
+      "template": "{value}",
+      "x": 0.455,
+      "y": 0.43,
+      "font_size": 0.036,
+      "align": "right",
+      "bold": true,
+      "font": "poppins",
+      "color": [
+        58,
+        66,
+        88
+      ],
+      "opacity": 1.0,
+      "z": 24
+    },
+    {
+      "id": "whale_vram_meter",
+      "type": "bar",
+      "stat": "vram_usage",
+      "x": 0.37,
+      "y": 0.48,
+      "width": 0.17,
+      "height": 0.01,
+      "orientation": "horizontal",
+      "show_knob": false,
+      "show_title": false,
+      "show_value": false,
+      "color": [
+        190,
+        70,
+        50
+      ],
+      "track_color": [
+        238,
+        220,
+        206
+      ],
+      "skin": null,
+      "opacity": 1.0,
+      "z": 25
+    },
+    {
+      "id": "whale_spotify",
+      "type": "media",
+      "x": 0.3,
+      "y": 0.6,
+      "width": 0.3,
+      "height": 0.16,
+      "show_art": false,
+      "show_name": true,
+      "show_time": true,
+      "color": [
+        190,
+        70,
+        50
+      ],
+      "text_color": [
+        58,
+        66,
+        88
+      ],
+      "muted_color": [
+        120,
+        116,
+        124
+      ],
+      "font": "poppins",
+      "track_color": [
+        238,
+        220,
+        206
+      ],
+      "opacity": 1.0,
+      "z": 50
+    }
+  ]
+}
