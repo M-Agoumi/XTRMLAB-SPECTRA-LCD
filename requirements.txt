@@ -25,7 +25,7 @@ psutil>=5.9
 numpy>=1.24          # required -- gauge rendering + background gradients
 pycairo>=1.24        # required -- gauge rendering (prebuilt wheel on Windows)
 nvidia-ml-py>=12.0   # optional -- NVIDIA GPU/VRAM/power stats; degrades gracefully without one
-winsdk>=1.0.0b1      # optional -- Spotify/now-playing album art (Windows 10 1809+).
+winsdk>=1.0.0b10      # optional -- Spotify/now-playing album art (Windows 10 1809+).
                      # winsdk has never published a stable release past
                      # 1.0.0 betas (only 1.0.0b1..b10 exist on PyPI as of
                      # this writing) -- a `>=1.0.4` constraint here used
