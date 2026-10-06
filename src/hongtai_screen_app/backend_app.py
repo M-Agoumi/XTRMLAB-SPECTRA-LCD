@@ -33,6 +33,7 @@ import threading
 from . import config_store
 from . import single_instance
 from . import tray_icon
+from . import unelevated_launch
 from .control_server import DEFAULT_PORT, ControlServer, _make_handler
 from .controller import AppController
 from .paths import ICON_PATH, SHOW_TRIGGER_PATH, _app_base_dir, _write_startup_log
@@ -43,6 +44,58 @@ from .paths import ICON_PATH, SHOW_TRIGGER_PATH, _app_base_dir, _write_startup_l
 # below -- see that function's docstring for why a click on the tray
 # icon while the window is already open needs this at all.
 UI_WINDOW_TITLE = "Hongtai Screen"
+
+
+class _DetachedProcessHandle:
+    """Stands in for a `subprocess.Popen` when the UI process was
+    actually launched via unelevated_launch.py's Task Scheduler detour
+    (see `_on_show()`) -- that hand-off fully detaches the new process
+    from this one, so there's no real Popen object, PID, or handle to
+    track. `_ui_process` needs exactly two things from whatever it
+    holds -- `.poll()` (is it still alive?) and `.terminate()` (make it
+    go away) -- and both are answerable purely by window title, the
+    same FindWindowW mechanism `_focus_ui_window()` already relies on
+    to bring an existing window forward.
+
+    Windows-only, same as everything else here; on any other platform
+    this class is simply never constructed (launch_unelevated() always
+    returns a real Popen off Windows)."""
+
+    def __init__(self, window_title):
+        self._window_title = window_title
+
+    def _find_window(self):
+        import ctypes
+        return ctypes.windll.user32.FindWindowW(None, self._window_title)
+
+    def poll(self):
+        """None while the window still exists (mirrors Popen.poll()'s
+        "still running" contract), else 0 -- an arbitrary non-None
+        "exit code" caller code only ever checks `is None` on."""
+        return None if self._find_window() else 0
+
+    def terminate(self):
+        """Best-effort: resolves the window back to its owning process
+        and asks Windows to end that process outright (there's no
+        console/message-loop handle here to send a gentler WM_CLOSE
+        through, so this is the detached equivalent of Popen.terminate()
+        rather than of a graceful window-close click)."""
+        import ctypes
+        hwnd = self._find_window()
+        if not hwnd:
+            return
+        pid = ctypes.c_ulong()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if not pid.value:
+            return
+        PROCESS_TERMINATE = 0x0001
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_TERMINATE, False, pid.value)
+        if not handle:
+            return
+        try:
+            ctypes.windll.kernel32.TerminateProcess(handle, 0)
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
 
 
 class BackendApp:
@@ -219,13 +272,27 @@ class BackendApp:
         window either way). Fixed via _focus_ui_window() -- same
         FindWindowW + SetForegroundWindow mechanism single_instance.py
         already uses for the second-launch case, pointed at the webview
-        window's title instead."""
+        window's title instead.
+
+        The spawn itself goes through unelevated_launch.launch_unelevated()
+        rather than a bare subprocess.Popen() -- when this backend is
+        running elevated (someone clicked "Relaunch elevated" for CPU
+        Temp -- see controller.py's relaunch_elevated()), a plain Popen
+        here would hand the elevated token straight to the `--ui` child,
+        and WebView2 silently doesn't work at all in an elevated host
+        process (black window, nothing in the log -- see
+        unelevated_launch.py's own docstring for the confirmed upstream
+        reports). launch_unelevated() only takes the Task Scheduler
+        detour when it's actually needed (this process is elevated);
+        the common, unelevated case is a plain Popen exactly as before."""
         with self._ui_lock:
             if self._ui_process is not None and self._ui_process.poll() is None:
                 self._focus_ui_window()
                 return
             try:
-                self._ui_process = subprocess.Popen(self._ui_process_command())
+                handle = unelevated_launch.launch_unelevated(
+                    self._ui_process_command(), log=self.controller._log)
+                self._ui_process = handle if handle is not None else _DetachedProcessHandle(UI_WINDOW_TITLE)
             except Exception as e:  # noqa: BLE001 -- surfaced in the log either way
                 self.controller._log(f"(couldn't open the UI window: {e})")
 

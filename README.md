@@ -546,3 +546,10 @@ read out of the vendor app's own source (framing, handshake and command
 set all match byte-for-byte) — see FINDINGS.md for the full protocol
 reference, the two faults that blocked this, and the dead ends, so they
 don't get re-explored later.
+
+## Contributing
+
+Bug reports, feature ideas, themes and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup and PR workflow
+(PRs target `develop`), and [SECURITY.md](SECURITY.md) for reporting
+security issues privately.
