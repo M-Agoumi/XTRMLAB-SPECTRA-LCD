@@ -3,14 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Minimal React shell for the Hongtai Screen backend control API (ROADMAP.md Phase 2b). Talks to the always-on Python backend over HTTP -- see src/api.js. Not wired into a webview window yet (that's Phase 2c); today it's a normal web page you build and open in a browser.",
+  "description": "Minimal React shell for the Hongtai Screen backend control API (ROADMAP.md Phase 2b). Talks to the always-on Python backend over HTTP -- see src/api.js. Not wired into a webview yet; meant to be served by Vite in development, and built out as the UI evolves.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^18.3.1",
+    "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
