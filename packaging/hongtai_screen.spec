@@ -128,6 +128,11 @@ a = Analysis(
         # sys._MEIPASS/assets/backgrounds/*.jpg the same way it finds
         # icon.ico.
         (os.path.join(REPO_ROOT, "assets", "backgrounds", "*.jpg"), "assets/backgrounds"),
+        # Bar skins and dial faces (dashboard_theme.py's _bar_skin_tiles(),
+        # widget_styles._face_image()), and the presets shipped as data
+        # (_load_bundled_presets()), same route.
+        (os.path.join(REPO_ROOT, "assets", "skins", "*.png"), "assets/skins"),
+        (os.path.join(REPO_ROOT, "assets", "presets", "*.json"), "assets/presets"),
         # The bundled display fonts (dashboard_theme.py's
         # FONT_FAMILIES), resolved through the same resource_path()
         # mechanism. Without these a frozen build silently falls back
