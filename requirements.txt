@@ -45,7 +45,7 @@ pythonnet>=3.0        # optional -- CPU Temp, via the open-source LibreHardwareM
                      #             just reads "--", same as any other missing stat here)
 
 # --- video_theme.py: stream a video file to the panel ------------------
-opencv-python-headless>=4.8
+opencv-python-headless>=5.0.0.93
 # pygame            # optional -- only needed for --audio; also needs ffmpeg on PATH
 
 # --- webpage_theme.py: mirror a webpage to the panel --------------------
