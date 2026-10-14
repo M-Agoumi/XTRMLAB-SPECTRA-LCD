@@ -49,7 +49,7 @@ opencv-python-headless>=4.8
 # pygame            # optional -- only needed for --audio; also needs ffmpeg on PATH
 
 # --- webpage_theme.py: mirror a webpage to the panel --------------------
-playwright>=1.40
+playwright>=1.63.0
 # after installing, run once:  playwright install chromium   (~150MB download)
 
 # --- Desktop app extra: system tray icon on close/at startup -----------
