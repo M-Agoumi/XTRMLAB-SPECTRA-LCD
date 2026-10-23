@@ -9,6 +9,9 @@ All notable changes to this project are documented here.
 - **Presets as data**: `assets/presets/*.json` load at startup next to the built-in presets. A new theme is a JSON file and a picture.
 - **Picture skins**: `skin` on a horizontal bar turns the meter into a picture that lights up to the value (a katana, a row of lanterns, battery cells); `face_image` on a styled dial replaces the dial face. Bundled skins live in `assets/skins/`; uploaded ones go through the image store and travel with exported presets.
 
+### Fixed
+- **Blank white window when WebView2 is broken**: if the window opens but its page never loads (a damaged, not missing, WebView2 Runtime), the app now explains how to repair WebView2 and closes the blank window instead of leaving it white with no error.
+
 ## [2.1.1] — 2026-09-22
 
 ### Fixed
