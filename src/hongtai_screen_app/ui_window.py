@@ -26,6 +26,7 @@ tested from a sandbox with no display at all.
 import argparse
 import os
 import sys
+import threading
 
 # WebView2's underlying Chromium tries to hardware-accelerate its
 # compositor -- in a GPU-less environment (Windows Sandbox, most VMs,
@@ -64,7 +65,38 @@ def _looks_like_missing_webview2(exc):
     return "webview2" in text or ("edge" in text and "runtime" in text)
 
 
-def _show_webview2_missing_message():
+_WEBVIEW2_MISSING_TEXT = (
+    "Hongtai Screen needs the Microsoft Edge WebView2 Runtime "
+    "to show its window, and couldn't find it on this machine.\n\n"
+    "It ships with Windows 11 and is usually already present on "
+    "Windows 10 via Edge -- if it's missing, install it from:\n"
+    "https://developer.microsoft.com/microsoft-edge/webview2/")
+
+# Shown by _start_load_watchdog() below instead -- the runtime IS
+# registered as installed (so create_window()/start() raise nothing and
+# the check above never fires), but the page still never loads. Seen
+# for real: a WebView2 update left the runtime broken on one machine,
+# every WebView2 app on it (WhatsApp included) stayed blank, and its
+# installer refused to run because "WebView2 is already installed" --
+# so the advice here is repair, not install.
+_WEBVIEW2_BROKEN_TEXT = (
+    "Hongtai Screen's window couldn't load its page.\n\n"
+    "This usually means the Microsoft Edge WebView2 Runtime on this "
+    "machine is damaged (other apps that use it, like WhatsApp, will "
+    "show a blank or error window too). To fix it, open Settings > "
+    "Apps > Installed apps > Microsoft Edge WebView2 Runtime > Modify "
+    "and let it repair, or reinstall it from:\n"
+    "https://developer.microsoft.com/microsoft-edge/webview2/\n\n"
+    "The app keeps running in the tray in the meantime.")
+
+# How long the window gets to fire its `loaded` event before
+# _start_load_watchdog() gives up on it. The page comes from our own
+# backend on 127.0.0.1, so a healthy load takes well under a second --
+# this only has to be long enough not to trip on a slow, busy machine.
+LOAD_TIMEOUT_SECONDS = 20
+
+
+def _show_webview2_missing_message(text=_WEBVIEW2_MISSING_TEXT):
     """Best-effort native message box pointing at the download page --
     WebView2 ships with Windows 11 and is normally present on Windows
     10 via Edge, but isn't guaranteed (a stripped-down or LTSC install,
@@ -81,15 +113,43 @@ def _show_webview2_missing_message():
         import ctypes
         MB_ICONERROR, MB_OK = 0x10, 0x0
         ctypes.windll.user32.MessageBoxW(
-            0,
-            "Hongtai Screen needs the Microsoft Edge WebView2 Runtime "
-            "to show its window, and couldn't find it on this machine.\n\n"
-            "It ships with Windows 11 and is usually already present on "
-            "Windows 10 via Edge -- if it's missing, install it from:\n"
-            "https://developer.microsoft.com/microsoft-edge/webview2/",
-            "Hongtai Screen", MB_ICONERROR | MB_OK)
+            0, text, "Hongtai Screen", MB_ICONERROR | MB_OK)
     except Exception:  # noqa: BLE001 -- best-effort, never fatal
         pass
+
+
+def _start_load_watchdog(window, timeout=LOAD_TIMEOUT_SECONDS):
+    """Covers the case _looks_like_missing_webview2() can't: a broken
+    (rather than absent) WebView2 Runtime, where create_window() and
+    start() both succeed and the window opens -- but stays plain white
+    forever, with no exception anywhere to catch. The only observable
+    difference is that pywebview's `loaded` event never fires, so this
+    waits for it on a daemon thread and, if it hasn't arrived after
+    `timeout` seconds, shows _WEBVIEW2_BROKEN_TEXT and then closes the
+    blank window (which ends this UI process -- see the module
+    docstring -- while the backend and tray carry on).
+
+    Daemon thread, so closing the window early never waits on it; and
+    a `loaded` that arrives late, while the message box is still up,
+    still wins -- the window is only destroyed if it's STILL not loaded
+    once the person dismisses the message."""
+    loaded = threading.Event()
+    try:
+        window.events.loaded += loaded.set
+    except Exception:  # noqa: BLE001 -- older pywebview without .events.loaded
+        return
+
+    def _watch():
+        if loaded.wait(timeout):
+            return
+        _show_webview2_missing_message(_WEBVIEW2_BROKEN_TEXT)
+        if not loaded.is_set():
+            try:
+                window.destroy()
+            except Exception:  # noqa: BLE001 -- already closing/closed
+                pass
+
+    threading.Thread(target=_watch, name="webview-load-watchdog", daemon=True).start()
 
 
 def main(argv=None):
@@ -115,6 +175,8 @@ def main(argv=None):
             _show_webview2_missing_message()
             raise SystemExit(1)
         raise
+
+    _start_load_watchdog(window)
 
     if args.icon:
         # pywebview's own `icon=` on start() only does anything on GTK/Qt
