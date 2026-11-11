@@ -37,7 +37,7 @@ winsdk>=1.0.0b10      # optional -- Spotify/now-playing album art (Windows 10 18
                      # like this is what tells pip to actually consider
                      # winsdk's pre-releases for this one requirement
                      # (PEP 440) without needing a blanket --pre flag.
-pycaw>=20240210      # optional -- the "Volume" stat (Windows master output level); without it
+pycaw>=20260927      # optional -- the "Volume" stat (Windows master output level); without it
                      #             that one stat reads "--" and nothing else is affected
 pythonnet>=3.0        # optional -- CPU Temp, via the open-source LibreHardwareMonitorLib
                      #             (also needs its DLL placed by hand -- see BUILD.md's
