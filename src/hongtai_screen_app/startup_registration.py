@@ -379,12 +379,44 @@ def _launch_command():
     return f'"{interpreter}" "{app_path}" --autostart'
 
 
-def _run_level():
-    """schtasks' /rl value for enable_startup(): "highest" when this
-    process is elevated right now, "limited" otherwise -- see
-    enable_startup()'s docstring for why the choice follows the
-    current elevation rather than being fixed either way."""
-    return "highest" if _is_elevated() else "limited"
+def _launch_target_is_admin_only():
+    """True if the exe the startup task launches lives under Program
+    Files -- i.e. somewhere a standard user (or anything running as
+    one) can't overwrite. A /rl highest logon task runs its /tr target
+    with full admin rights and no UAC prompt, so if that target were
+    user-writable -- the per-user install in %LOCALAPPDATA%\Programs
+    (the .iss's PrivilegesRequired=lowest default), or a source run's
+    pythonw.exe + scripts/run_v2_app.py -- any non-elevated process
+    could swap it and get silent admin at the next logon (flagged by
+    code scanning on the PR that added highest). Only a frozen build
+    qualifies: a source run's interpreter and script are never under
+    an admin-only location in practice."""
+    if not getattr(sys, "frozen", False):
+        return False
+    exe = os.path.normcase(os.path.realpath(sys.executable))
+    for var in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
+        root = os.environ.get(var)
+        if root and exe.startswith(os.path.normcase(os.path.realpath(root)) + os.sep):
+            return True
+    return False
+
+
+def _run_level(log=_noop_log):
+    """schtasks' /rl value for enable_startup(): "highest" only when
+    this process is elevated right now AND the launch target is
+    admin-only (see _launch_target_is_admin_only()), "limited"
+    otherwise -- see enable_startup()'s docstring for why the choice
+    follows the current elevation rather than being fixed either way."""
+    if not _is_elevated():
+        return "limited"
+    if not _launch_target_is_admin_only():
+        log("(startup: not registering elevated -- the app is installed "
+            "somewhere a non-admin can modify, so an elevated logon task "
+            "would let anything running as you gain admin silently. "
+            "Reinstall with \"Install for all users\" (Program Files) to "
+            "start elevated, with CPU Temp, at logon.)")
+        return "limited"
+    return "highest"
 
 
 def enable_startup(log=_noop_log):
@@ -410,7 +442,10 @@ def enable_startup(log=_noop_log):
     CPU Temp) after every reboot -- the real report this fixes.
     Elevating at startup is a security decision rather than a default
     (ROADMAP.md's CPU Temp section), so it's tied to the person having
-    already chosen to run the app elevated, not turned on for everyone.
+    already chosen to run the app elevated, not turned on for everyone
+    -- and only for an all-users (Program Files) install, since an
+    elevated task pointing at a user-writable exe is a silent UAC
+    bypass (see _launch_target_is_admin_only()).
     The UI window is unaffected either way: backend_app.py's _on_show()
     already spawns it unelevated (WebView2 doesn't work elevated).
 
@@ -432,7 +467,7 @@ def enable_startup(log=_noop_log):
     needed an elevated creator."""
     if sys.platform != "win32":
         raise RuntimeError("Launch-at-startup is only supported on Windows.")
-    run_level = _run_level()
+    run_level = _run_level(log=log)
     log(f"(startup: enabling -- command that will run at logon: {_launch_command()}"
         f" -- run level: {run_level})")
     _migrate_legacy_startup_file(log=log)
