@@ -28,6 +28,7 @@ import uuid
 from collections import namedtuple
 
 from .paths import _app_base_dir
+from .unelevated_launch import _is_elevated
 
 STARTUP_TASK_NAME = "HongtaiScreenApp"
 
@@ -378,16 +379,40 @@ def _launch_command():
     return f'"{interpreter}" "{app_path}" --autostart'
 
 
+def _run_level():
+    """schtasks' /rl value for enable_startup(): "highest" when this
+    process is elevated right now, "limited" otherwise -- see
+    enable_startup()'s docstring for why the choice follows the
+    current elevation rather than being fixed either way."""
+    return "highest" if _is_elevated() else "limited"
+
+
 def enable_startup(log=_noop_log):
     """Registers a Task Scheduler task, triggered at this user's logon,
     that runs `_launch_command()` -- see this module's own docstring
-    for why Task Scheduler instead of the Startup folder. `/rl limited`
-    runs it with the same (standard, non-elevated) privileges the
-    person's own logon session has, same as a Startup-folder launch
-    always did; `/f` overwrites a previous registration instead of
-    failing if the checkbox is toggled on twice, or if an old task
-    exists from before some earlier field (like the command line, on
-    an app reinstalled somewhere else) changed.
+    for why Task Scheduler instead of the Startup folder. `/f`
+    overwrites a previous registration instead of failing if the
+    checkbox is toggled on twice, or if an old task exists from before
+    some earlier field (like the command line, on an app reinstalled
+    somewhere else) changed.
+
+    The run level follows whether THIS process is elevated when the
+    checkbox is ticked (see _run_level()): ticked from an ordinary
+    launch, the task is `/rl limited` and starts the app with the
+    person's own standard privileges, same as a Startup-folder launch
+    always did; ticked from an elevated one ("Relaunch elevated" /
+    Run as administrator), it's `/rl highest` and the app comes back
+    elevated at every logon -- with no UAC prompt, since a logon task
+    already registered at highest by an administrator is exactly the
+    mechanism Windows provides for that. Before this, the task was
+    always /rl limited, so someone who relaunched elevated for CPU Temp
+    and re-ticked the box still got a non-elevated app (and "--" for
+    CPU Temp) after every reboot -- the real report this fixes.
+    Elevating at startup is a security decision rather than a default
+    (ROADMAP.md's CPU Temp section), so it's tied to the person having
+    already chosen to run the app elevated, not turned on for everyone.
+    The UI window is unaffected either way: backend_app.py's _on_show()
+    already spawns it unelevated (WebView2 doesn't work elevated).
 
     `log` (a plain str -> None callable) gets every step of this --
     see _run_schtasks()'s docstring for why that's unconditional, not
@@ -407,12 +432,14 @@ def enable_startup(log=_noop_log):
     needed an elevated creator."""
     if sys.platform != "win32":
         raise RuntimeError("Launch-at-startup is only supported on Windows.")
-    log(f"(startup: enabling -- command that will run at logon: {_launch_command()})")
+    run_level = _run_level()
+    log(f"(startup: enabling -- command that will run at logon: {_launch_command()}"
+        f" -- run level: {run_level})")
     _migrate_legacy_startup_file(log=log)
     create_args = (
         "/create", "/tn", STARTUP_TASK_NAME,
         "/tr", _launch_command(),
-        "/sc", "onlogon", "/rl", "limited", "/f",
+        "/sc", "onlogon", "/rl", run_level, "/f",
     )
     result = _run_schtasks(*create_args, log=log)
     if result.returncode != 0 and _looks_like_permission_error(result):

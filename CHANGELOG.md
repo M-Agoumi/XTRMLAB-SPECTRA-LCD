@@ -11,6 +11,7 @@ All notable changes to this project are documented here.
 
 ### Fixed
 - **Blank white window when WebView2 is broken**: if the window opens but its page never loads (a damaged, not missing, WebView2 Runtime), the app now explains how to repair WebView2 and closes the blank window instead of leaving it white with no error.
+- **Launch at startup now keeps Administrator rights**: ticking "Launch at Windows startup" while the app is running elevated registers the logon task at highest privileges, so the app (and CPU Temp) comes back elevated after a reboot with no UAC prompt. Ticked from a normal launch, it still starts with standard rights as before. Existing users re-tick the box once from an elevated app to switch.
 
 ## [2.1.1] — 2026-09-22
 
